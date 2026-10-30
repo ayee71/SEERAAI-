@@ -27,13 +27,15 @@ export interface QueuedDocumentEdit {
 }
 
 const DB_NAME = 'SeeraAIOfflineDB';
-const DB_VERSION = 8;
+const DB_VERSION = 9;
 const STORE_DOCS = 'documents';
 const STORE_TRANSLATIONS = 'translations';
 const STORE_EDITS = 'edits';
 const STORE_RAG_CACHE = 'rag_cache';
 const STORE_LEGISLATION = 'legislation';
 const STORE_ACTIVE_CASE = 'active_case';
+const STORE_DEADLINES = 'deadlines';
+
 
 export function openOfflineDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -84,7 +86,12 @@ export function openOfflineDB(): Promise<IDBDatabase> {
         if (!db.objectStoreNames.contains(STORE_ACTIVE_CASE)) {
           db.createObjectStore(STORE_ACTIVE_CASE, { keyPath: 'id' });
         }
+
+        if (!db.objectStoreNames.contains(STORE_DEADLINES)) {
+          db.createObjectStore(STORE_DEADLINES, { keyPath: 'id' });
+        }
       };
+
     } catch (err) {
       reject(err);
     }
@@ -348,4 +355,51 @@ export async function getActiveCaseFromDB(id: string): Promise<any | null> {
     return null;
   }
 }
+
+export async function saveOfflineDeadlineToDB(deadline: any): Promise<void> {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_DEADLINES, 'readwrite');
+      const store = transaction.objectStore(STORE_DEADLINES);
+      const request = store.put(deadline);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.error('IndexedDB saveOfflineDeadline error:', e);
+  }
+}
+
+export async function getOfflineDeadlinesFromDB(): Promise<any[]> {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_DEADLINES, 'readonly');
+      const store = transaction.objectStore(STORE_DEADLINES);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.error('IndexedDB getOfflineDeadlines error:', e);
+    return [];
+  }
+}
+
+export async function deleteOfflineDeadlineFromDB(id: string): Promise<void> {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_DEADLINES, 'readwrite');
+      const store = transaction.objectStore(STORE_DEADLINES);
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.error('IndexedDB deleteOfflineDeadline error:', e);
+  }
+}
+
 

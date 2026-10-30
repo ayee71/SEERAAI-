@@ -349,6 +349,22 @@ export interface TranslationDictionary {
     shareDesc: string;
     shareView: string;
   };
+  analytics: {
+    dashboardTitle: string;
+    exportPdf: string;
+    caseStatusTitle: string;
+    casePriorityTitle: string;
+    outcomeTrendsTitle: string;
+    durationStatsTitle: string;
+    statusWon: string;
+    statusLost: string;
+    statusPending: string;
+    statusDismissed: string;
+    avgDurationDays: string;
+    month: string;
+    caseCount: string;
+    days: string;
+  };
 }
 
 import om from './om';

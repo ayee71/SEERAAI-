@@ -66,16 +66,30 @@ export function isOwnerKey(key?: string | null): boolean {
 
 /**
  * Reads any stored owner credentials from localStorage (key or email)
+ * Double-guarded: if a non-owner cached/stored email exists, returns false!
  */
 export function getStoredOwnerStatus(): boolean {
   if (typeof window === 'undefined') return false;
   try {
+    const storedEmail = localStorage.getItem(OWNER_STORAGE_KEYS.OWNER_EMAIL);
+    const cachedEmail = localStorage.getItem(OWNER_STORAGE_KEYS.CACHED_EMAIL);
+
+    // If an explicit non-owner email is stored/cached, reject owner status
+    if (cachedEmail && !isOwnerEmail(cachedEmail)) {
+      return false;
+    }
+    if (storedEmail && !isOwnerEmail(storedEmail)) {
+      return false;
+    }
+
     const storedKey = localStorage.getItem(OWNER_STORAGE_KEYS.OWNER_KEY) || 
                       localStorage.getItem(OWNER_STORAGE_KEYS.OWNER_ADMIN_KEY) || '';
-    if (isOwnerKey(storedKey)) return true;
+    if (isOwnerKey(storedKey)) {
+      if (storedEmail && !isOwnerEmail(storedEmail)) return false;
+      if (cachedEmail && !isOwnerEmail(cachedEmail)) return false;
+      return true;
+    }
 
-    const storedEmail = localStorage.getItem(OWNER_STORAGE_KEYS.OWNER_EMAIL) || 
-                        localStorage.getItem(OWNER_STORAGE_KEYS.CACHED_EMAIL) || '';
     if (isOwnerEmail(storedEmail)) return true;
   } catch {
     // LocalStorage restricted or SSR
@@ -91,24 +105,38 @@ export function isOwnerAccount(
   userName?: string | null,
   providedKey?: string | null
 ): boolean {
-  if (isOwnerEmail(email)) return true;
-  if (isOwnerUsername(userName)) return true;
+  const cleanEmail = normalizeIdentifier(email);
+  const cleanUser = normalizeIdentifier(userName);
+
+  // 1. If an email is explicitly provided (e.g. active logged-in user email):
+  if (cleanEmail) {
+    if (isOwnerEmail(cleanEmail)) return true;
+    // CRITICAL: If an explicit email is passed and it's NOT an owner email,
+    // this user is 100% NOT an owner! Return false immediately.
+    return false;
+  }
+
+  // 2. If a username is explicitly provided:
+  if (cleanUser) {
+    if (isOwnerUsername(cleanUser)) return true;
+    return false;
+  }
+
+  // 3. If an explicit PIN/key argument is passed to this call:
   if (isOwnerKey(providedKey)) return true;
 
-  // Check URL query parameters (e.g. when opening direct links ?email=ayeledha@saiethio.com or ?user=ayeledha@saiethio.com)
+  // 4. Check URL query parameters
   if (typeof window !== 'undefined' && window.location?.search) {
     try {
       const params = new URLSearchParams(window.location.search);
       const urlEmail = params.get('email') || params.get('user') || params.get('u') || params.get('owner');
-      if (urlEmail && (isOwnerEmail(urlEmail) || isOwnerUsername(urlEmail))) {
-        // Persist to session so user stays unlocked
-        try {
-          localStorage.setItem(OWNER_STORAGE_KEYS.OWNER_EMAIL, normalizeIdentifier(urlEmail));
-          localStorage.setItem(OWNER_STORAGE_KEYS.OWNER_KEY, '2026');
-          localStorage.setItem(OWNER_STORAGE_KEYS.IS_PREMIUM, 'true');
-          localStorage.setItem(OWNER_STORAGE_KEYS.PREMIUM_PLAN, 'unlimited');
-        } catch {}
-        return true;
+      if (urlEmail) {
+        if (isOwnerEmail(urlEmail) || isOwnerUsername(urlEmail)) {
+          unlockOwnerPrivileges(urlEmail);
+          return true;
+        } else {
+          return false;
+        }
       }
       const urlKey = params.get('key') || params.get('pin');
       if (urlKey && isOwnerKey(urlKey)) {
@@ -117,7 +145,7 @@ export function isOwnerAccount(
     } catch {}
   }
 
-  // Check stored status in localStorage
+  // 5. Fallback for anonymous/unauthenticated PIN sessions
   return getStoredOwnerStatus();
 }
 
@@ -127,11 +155,26 @@ export function isOwnerAccount(
 export function unlockOwnerPrivileges(email: string = 'ayeledha@saiethio.com'): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(OWNER_STORAGE_KEYS.OWNER_EMAIL, email);
+    localStorage.setItem(OWNER_STORAGE_KEYS.OWNER_EMAIL, normalizeIdentifier(email));
     localStorage.setItem(OWNER_STORAGE_KEYS.OWNER_KEY, '2026');
     localStorage.setItem(OWNER_STORAGE_KEYS.OWNER_ADMIN_KEY, '2026');
     localStorage.setItem(OWNER_STORAGE_KEYS.IS_PREMIUM, 'true');
     localStorage.setItem(OWNER_STORAGE_KEYS.PREMIUM_PLAN, 'unlimited');
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('seera_premium_updated'));
+  } catch {}
+}
+
+/**
+ * Helper to clear owner privileges when a regular non-owner user logs in or logs out
+ */
+export function clearOwnerPrivileges(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(OWNER_STORAGE_KEYS.OWNER_KEY);
+    localStorage.removeItem(OWNER_STORAGE_KEYS.OWNER_ADMIN_KEY);
+    localStorage.removeItem(OWNER_STORAGE_KEYS.OWNER_EMAIL);
+    localStorage.removeItem('seera_court_access_authorized');
     window.dispatchEvent(new Event('storage'));
     window.dispatchEvent(new Event('seera_premium_updated'));
   } catch {}

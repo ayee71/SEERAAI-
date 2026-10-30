@@ -305,10 +305,25 @@ export const Navbar: React.FC<NavbarProps> = ({
       <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-slate-100 pb-1.5 md:pb-0">
         {/* Offline Status Banner */}
         {!isOnline && (
-          <div className="bg-amber-950 border-b border-amber-500/40 px-4 py-1.5 text-center text-xs text-amber-200 font-medium flex flex-wrap items-center justify-center gap-2">
-            <span>⚠️</span>
-            <span>You are offline (Navigator.onLine: false). Saved library and offline mode active.</span>
-            <SyncStatusIndicator currentLang={currentLang} variant="compact" />
+          <div className="bg-amber-950 border-b border-amber-500/40 px-4 py-2 text-center text-xs text-amber-200 font-medium flex flex-col items-center justify-center gap-1">
+            <div className="flex items-center justify-center gap-2">
+              <WifiOff className="w-4 h-4 text-amber-400" />
+              <span className="font-bold uppercase tracking-wider">Offline Mode Active</span>
+            </div>
+            <p className="max-w-3xl">
+              {currentLang === 'om' 
+                ? 'Isin neetworkii irraa ala jirtu. Garuu, Heerota, Labsiiwwan, Murtiilee Ijibbaataa fi Sanadoota ol-kaawwattan hunda kutaalee "Library" fi "My Content" keessaa dubbisuu ni dandeessu.'
+                : currentLang === 'am'
+                ? 'ከኢንተርኔት ውጭ ነዎት። ነገር ግን፣ የተቀመጡ ሕጎችን፣ አዋጆችን፣ የሰበር ውሳኔዎችን እና ፋይሎችን በ"ቤተ-መጻሕፍት" እና "የእኔ ይዘቶች" ክፍል ውስጥ ማየት ይችላሉ።'
+                : 'You are currently offline. However, all cached Statutes, Proclamations, Cassation Precedents, and Saved Documents remain available for viewing in the Library and My Content sections.'
+              }
+            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <SyncStatusIndicator currentLang={currentLang} variant="compact" />
+              <span className="text-[10px] opacity-70">
+                {currentLang === 'om' ? '(Kuusaa keessan irraa)' : currentLang === 'am' ? '(ከአካባቢያዊ መሸጎጫ)' : '(From local cache)'}
+              </span>
+            </div>
           </div>
         )}
 

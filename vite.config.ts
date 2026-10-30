@@ -48,11 +48,13 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,woff,woff2}'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,woff,woff2,json}'],
           maximumFileSizeToCacheInBytes: 20 * 1024 * 1024,
           skipWaiting: true,
           clientsClaim: true,
           cleanupOutdatedCaches: true,
+          navigateFallback: '/index.html',
+          navigateFallbackDenylist: [/^\/api/],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
@@ -85,6 +87,36 @@ export default defineConfig(({ mode }) => {
               options: {
                 cacheName: 'version-info-cache',
                 networkTimeoutSeconds: 3,
+              },
+            },
+            {
+              urlPattern: /\/(?:cases|court-documents|precedents|drafts|court-files|legal-documents)\/.*/i,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'court-case-files-cache',
+                networkTimeoutSeconds: 4,
+                expiration: {
+                  maxEntries: 120,
+                  maxAgeSeconds: 60 * 60 * 24 * 14, // 14 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'firestore-court-data-cache',
+                networkTimeoutSeconds: 3,
+                expiration: {
+                  maxEntries: 250,
+                  maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
               },
             },
           ],
@@ -140,8 +172,16 @@ export default defineConfig(({ mode }) => {
             ) {
               return 'vendor-docs';
             }
+            if (
+              id.includes('node_modules/recharts/') ||
+              id.includes('node_modules/d3-') ||
+              id.includes('node_modules/victory-vendor/')
+            ) {
+              return 'vendor-charts';
+            }
           },
         },
+
       },
     },
   };

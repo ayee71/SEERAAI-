@@ -105,6 +105,29 @@ export function downloadPdf(blob: Blob, filename: string): void {
 }
 
 /**
+ * Converts verification history to a JSON string.
+ */
+export function exportVerificationHistoryToJson(history: HashVerificationResult[]): string {
+  if (!history || history.length === 0) return '[]';
+  return JSON.stringify(history, null, 2);
+}
+
+/**
+ * Triggers a browser download for a JSON file.
+ */
+export function downloadJson(content: string, filename: string): void {
+  const blob = new Blob([content], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+/**
  * Formats a timestamp into a human-readable legal date.
  */
 export function formatLegalTimestamp(isoString: string): string {

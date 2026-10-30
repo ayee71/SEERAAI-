@@ -34,6 +34,13 @@ export interface DraftCollaborator {
   color: string;
 }
 
+export interface DraftSignature {
+  userId: string;
+  name: string;
+  signatureData: string;
+  signedAt: string;
+}
+
 export interface SharedDraft {
   id: string;
   shareToken: string;
@@ -50,6 +57,7 @@ export interface SharedDraft {
   viewsCount: number;
   comments: SharedDraftComment[];
   activeCollaborators?: DraftCollaborator[];
+  signatures?: DraftSignature[];
   isLocked?: boolean;
 }
 
@@ -413,3 +421,25 @@ export async function sendCollaboratorPresence(
     },
   ];
 }
+
+export async function addSignatureToSharedDraft(
+  token: string,
+  signature: DraftSignature
+): Promise<boolean> {
+  // Local update
+  try {
+    const localRaw = localStorage.getItem(`${STORAGE_KEY_PREFIX}${token}`);
+    if (localRaw) {
+      const draft: SharedDraft = JSON.parse(localRaw);
+      draft.signatures = draft.signatures || [];
+      draft.signatures.push(signature);
+      draft.updatedAt = new Date().toISOString();
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}${token}`, JSON.stringify(draft));
+      return true;
+    }
+  } catch (e) {
+    console.error('Error adding signature locally:', e);
+  }
+  return false;
+}
+

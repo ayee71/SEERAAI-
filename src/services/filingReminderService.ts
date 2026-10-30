@@ -1,3 +1,8 @@
+import { 
+  saveOfflineDeadlineToDB, 
+  getOfflineDeadlinesFromDB 
+} from './indexedDb';
+
 export interface FilingDeadline {
   id: string;
   caseTitle: string;
@@ -12,6 +17,7 @@ export interface FilingDeadline {
 }
 
 const STORAGE_KEY = 'seera_filing_deadlines_v1';
+
 
 export function getSavedDeadlines(): FilingDeadline[] {
   if (typeof window === 'undefined') return [];
@@ -53,7 +59,13 @@ export function getSavedDeadlines(): FilingDeadline[] {
 export function saveDeadlines(deadlines: FilingDeadline[]): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(deadlines));
+  
+  // Sync to IndexedDB for service worker access
+  deadlines.forEach(d => {
+    saveOfflineDeadlineToDB(d).catch(err => console.warn('Failed to sync deadline to IDB:', err));
+  });
 }
+
 
 export async function requestNotificationPermission(): Promise<boolean> {
   if (typeof window === 'undefined' || !('Notification' in window)) return false;
@@ -82,8 +94,27 @@ export function triggerDesktopNotification(title: string, body: string) {
 export function initFilingReminderWorker() {
   if (typeof window === 'undefined') return;
 
-  // Check every 60 seconds
+  // Attempt to trigger a check via service worker immediately
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({ type: 'CHECK_DEADLINES' });
+  }
+
+  // Register Background Sync or Periodic Sync if supported
+  if ('serviceWorker' in navigator && 'SyncManager' in window) {
+    navigator.serviceWorker.ready.then((registration) => {
+      (registration as any).sync.register('sync-hearing-deadlines').catch(() => {
+        // Fallback or ignore if background sync fails
+      });
+    });
+  }
+
+  // Check every 60 seconds as a reliable foreground fallback
   const interval = setInterval(async () => {
+    // Force a message to the service worker to check deadlines
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'CHECK_DEADLINES' });
+    }
+
     const deadlines = getSavedDeadlines();
     const now = Date.now();
     let updated = false;
@@ -102,6 +133,7 @@ export function initFilingReminderWorker() {
             );
           }
         });
+        updated = true;
         return { ...d, notified48h: true };
       }
 
@@ -115,6 +147,7 @@ export function initFilingReminderWorker() {
             );
           }
         });
+        updated = true;
         return { ...d, notified24h: true };
       }
 
@@ -128,3 +161,4 @@ export function initFilingReminderWorker() {
 
   return () => clearInterval(interval);
 }
+

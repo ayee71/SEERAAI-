@@ -57,7 +57,15 @@ import {
   getVerificationHistory,
   clearVerificationHistory,
 } from '../services/documentHashVerificationService';
-import { exportVerificationHistoryToCsv, exportVerificationHistoryToPdf, downloadCsv, downloadPdf, formatLegalTimestamp } from '../utils/legalReportExport';
+import {
+  exportVerificationHistoryToCsv,
+  exportVerificationHistoryToPdf,
+  exportVerificationHistoryToJson,
+  downloadCsv,
+  downloadPdf,
+  downloadJson,
+  formatLegalTimestamp
+} from '../utils/legalReportExport';
 import { DocumentHashStatusIndicator } from '../components/DocumentHashStatusIndicator';
 import { ProgressiveLegalImageLoader } from '../components/ProgressiveLegalImageLoader';
 import { DocumentViewer } from '../components/DocumentViewer';
@@ -88,6 +96,8 @@ import {
 } from '../services/legalTerminologyHighlighter';
 
 import { BatchDocumentUploadPanel } from '../components/BatchDocumentUploadPanel';
+import { runSDFHHComplianceAudit, ComplianceAuditResult } from '../utils/complianceEngine';
+import { AuditComplianceDashboard } from '../components/AuditComplianceDashboard';
 
 // Re-export the legal terminology highlight function for DocumentAnalysisView
 export { highlightKeyLegalTerminology, wrapKeyLegalTermsHtml };
@@ -157,7 +167,8 @@ export const DocumentAnalysisView: React.FC<DocumentAnalysisViewProps> = ({
 
   // Citation Finder state
   const [detectedCitations, setDetectedCitations] = useState<DetectedCitation[]>([]);
-  const [activeOutputTab, setActiveOutputTab] = useState<'content' | 'citations' | 'terminology' | 'timeline' | 'discussion'>('content');
+  const [activeOutputTab, setActiveOutputTab] = useState<'content' | 'citations' | 'terminology' | 'timeline' | 'discussion' | 'compliance'>('content');
+  const [complianceResult, setComplianceResult] = useState<ComplianceAuditResult | null>(null);
   const [isTimelinePanelOpen, setIsTimelinePanelOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -646,6 +657,19 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
     }
   };
 
+  const handleExportHistoryJson = () => {
+    setIsExportingHistory(true);
+    try {
+      const json = exportVerificationHistoryToJson(verificationHistory);
+      const filename = `SeeraAI_Audit_Log_${new Date().toISOString().split('T')[0]}.json`;
+      downloadJson(json, filename);
+    } catch (err) {
+      console.warn('JSON Export failed:', err);
+    } finally {
+      setIsExportingHistory(false);
+    }
+  };
+
   const handleClearHistory = () => {
     if (confirm(currentLang === 'om' ? 'Seenaa ragaa qulqulleessuu ni barbaaduu?' : 'የማረጋገጫ ታሪክን ማጽዳት ይፈልጋሉ?')) {
       clearVerificationHistory();
@@ -899,6 +923,16 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
       });
 
       setResult(data);
+      
+      // Perform automated SDFHH compliance audit if requested
+      if (typeToRun === 'compliance') {
+        const audit = runSDFHHComplianceAudit(pastedText || data.analysis);
+        setComplianceResult(audit);
+        setActiveOutputTab('compliance');
+      } else {
+        setActiveOutputTab('content');
+      }
+
       if (typeToRun === 'extract_text') {
         const detected = data.detectedInputLang || currentLang;
         setExtractedQuickLang(detected);
@@ -2591,6 +2625,22 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
 
                   <button
                     type="button"
+                    onClick={() => setActiveOutputTab('compliance')}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                      activeOutputTab === 'compliance'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-950 text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="View SDFHH Procedural Compliance Score"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>
+                      {currentLang === 'om' ? 'Qabxii Audit' : 'የኦዲት ውጤት'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setActiveOutputTab('discussion')}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
                       activeOutputTab === 'discussion'
@@ -3245,6 +3295,15 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
               {activeOutputTab === 'discussion' && result && (
                 <DiscussionPanel targetId={result.fileName || 'general'} />
               )}
+
+              {/* View 6: COMPLIANCE DASHBOARD */}
+              {activeOutputTab === 'compliance' && complianceResult && (
+                <AuditComplianceDashboard
+                  currentLang={currentLang}
+                  result={complianceResult}
+                  onViewStatute={(ref) => handleOpenInExplainLaw(ref)}
+                />
+              )}
             </div>
 
           ) : isTimelinePanelOpen || activeOutputTab === 'timeline' ? (
@@ -3408,6 +3467,16 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
             >
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>{currentLang === 'om' ? 'PDF (Audit)' : 'ፒዲኤፍ (ኦዲት)'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportHistoryJson}
+              disabled={verificationHistory.length === 0 || isExportingHistory}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-700 transition-colors"
+              title="Export Full Audit Log as JSON"
+            >
+              <FileDown className="w-3.5 h-3.5" />
+              <span>JSON</span>
             </button>
             <button
               type="button"

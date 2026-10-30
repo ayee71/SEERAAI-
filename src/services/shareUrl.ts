@@ -28,17 +28,39 @@ export function saveCreatorName(name: string): void {
  * If running on Cloud Run or in local preview, uses the live working domain (converting ais-dev- to ais-pre- for public access).
  */
 export function getAppBaseUrl(): string {
+  const FALLBACK_PRE_URL = 'https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app';
+  
   if (typeof window !== 'undefined' && window.location.origin) {
     let origin = window.location.origin;
+    
+    // If we are on an ais-dev domain, we MUST convert it to ais-pre for public access
     if (origin.includes('ais-dev-')) {
-      origin = origin.replace('ais-dev-', 'ais-pre-');
+      return origin.replace('ais-dev-', 'ais-pre-');
     }
-    // If the host is not the placeholder custom domain that lacks DNS records, use it
-    if (!origin.includes('saiethio.com')) {
+
+    // If we are already on ais-pre, return as is
+    if (origin.includes('ais-pre-')) {
+      return origin;
+    }
+
+    // If we are inside the AI Studio preview frame or a placeholder domain, fallback to the official FALLBACK_PRE_URL
+    if (
+      origin.includes('aistudio.googleusercontent.com') || 
+      origin.includes('localhost') || 
+      origin.includes('127.0.0.1') ||
+      origin.includes('stackblitz') ||
+      origin.includes('webcontainer')
+    ) {
+      return FALLBACK_PRE_URL;
+    }
+    
+    // If the host is a custom domain that is not a placeholder, use it
+    if (!origin.includes('saiethio.com') && !origin.includes('example.com') && !origin.includes('googleusercontent.com')) {
       return origin;
     }
   }
-  return 'https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app';
+  
+  return FALLBACK_PRE_URL;
 }
 
 /**

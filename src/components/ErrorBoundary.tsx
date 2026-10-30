@@ -34,10 +34,19 @@ export class ErrorBoundary extends Component<Props, State> {
     this.setState({ hasError: false, error: null, errorInfo: null });
     if (this.props.onReset) {
       this.props.onReset();
-    } else {
-      window.location.reload();
+    } else if (typeof window !== 'undefined') {
+      sessionStorage.clear();
+      const win = window as any;
+      if (win.caches) {
+        win.caches.keys().then((ks: string[]) => Promise.all(ks.map((k: string) => win.caches.delete(k)))).finally(() => {
+          win.location.reload();
+        });
+      } else {
+        win.location.reload();
+      }
     }
   };
+
 
   private handleGoHome = () => {
     this.setState({ hasError: false, error: null, errorInfo: null });

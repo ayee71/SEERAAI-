@@ -381,6 +381,22 @@ const en: TranslationDictionary = {
     shareDesc: "This link captures the current legal content and view state.",
     shareView: "Page",
   },
+  analytics: {
+    dashboardTitle: "Personnel & Case Analytics",
+    exportPdf: "Export Analytics PDF",
+    caseStatusTitle: "Case Load by Status",
+    casePriorityTitle: "Case Load by Priority",
+    outcomeTrendsTitle: "Case Outcome Trends (Monthly)",
+    durationStatsTitle: "Case Duration Statistics",
+    statusWon: "Won",
+    statusLost: "Lost",
+    statusPending: "Pending",
+    statusDismissed: "Dismissed",
+    avgDurationDays: "Avg. Completion Time (Days)",
+    month: "Month",
+    caseCount: "Number of Cases",
+    days: "Days",
+  },
 };
 
 export default en;

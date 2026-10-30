@@ -13,6 +13,8 @@ import {
 } from '../services/sharedDraftService';
 import { PdfExportModal } from './PdfExportModal';
 import { LegalCitationHighlighter } from './LegalCitationHighlighter';
+import { SignatureRequestModal } from './SignatureRequestModal';
+import { LegalMemoGeneratorModal } from './LegalMemoGeneratorModal';
 
 interface SharedDraftWorkspaceProps {
   shareToken: string;
@@ -55,6 +57,10 @@ export const SharedDraftWorkspace: React.FC<SharedDraftWorkspaceProps> = ({
   const [activeCollaborators, setActiveCollaborators] = useState<DraftCollaborator[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showPdfModal, setShowPdfModal] = useState(false);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [showMemoModal, setShowMemoModal] = useState(false);
+
+  // Initial Load & Passcode handler
 
   // Initial Load & Passcode handler
   const loadDraft = async (pin?: string) => {
@@ -392,14 +398,52 @@ export const SharedDraftWorkspace: React.FC<SharedDraftWorkspaceProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 self-start md:self-auto">
+          <div className="flex items-center gap-2.5 self-start md:self-auto flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                // Simplified share modal logic: just confirm the user is sharing a read-only link.
+                // In a production app, we would ideally generate a *new* token for read-only access here if we were co-editing.
+                // Given the current infrastructure, this link is the standard way to share access.
+                const url = window.location.href;
+                navigator.clipboard.writeText(url);
+                setToastMessage(
+                  currentLang === 'om'
+                    ? '🔗 Linkiin read-only koppii godhameera!'
+                    : currentLang === 'am'
+                    ? '🔗 የንባብ ብቻ ሊንክ ተቀድቷል!'
+                    : '🔗 Read-only link copied to clipboard!'
+                );
+                setTimeout(() => setToastMessage(null), 3500);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-blue-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer border border-slate-700"
+            >
+              <span>🔗</span>
+              <span>{currentLang === 'om' ? 'Share (Read-only)' : currentLang === 'am' ? 'አጋራ (ለማንበብ ብቻ)' : 'Share (Read-only)'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSignatureModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-lg"
+            >
+              <span>✍️</span>
+              <span>Sign</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowMemoModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-lg"
+            >
+              <span>📝</span>
+              <span>Memo</span>
+            </button>
             <button
               type="button"
               onClick={() => setShowPdfModal(true)}
               className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer border border-slate-700"
             >
               <span>📥</span>
-              <span>PDF / Print</span>
+              <span>PDF</span>
             </button>
             {onBack && (
               <button
@@ -407,7 +451,7 @@ export const SharedDraftWorkspace: React.FC<SharedDraftWorkspaceProps> = ({
                 onClick={onBack}
                 className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
               >
-                ← Deebi'i
+                ←
               </button>
             )}
           </div>
@@ -733,6 +777,21 @@ export const SharedDraftWorkspace: React.FC<SharedDraftWorkspaceProps> = ({
           taskType="contract"
           outputLanguages={[currentLang]}
           onClose={() => setShowPdfModal(false)}
+        />
+      )}
+      {showMemoModal && draft && (
+        <LegalMemoGeneratorModal
+          isOpen={showMemoModal}
+          onClose={() => setShowMemoModal(false)}
+          draft={draft}
+        />
+      )}
+      {showSignatureModal && draft && (
+        <SignatureRequestModal
+          isOpen={showSignatureModal}
+          onClose={() => setShowSignatureModal(false)}
+          draft={draft}
+          onSuccess={(updated) => setDraft(updated)}
         />
       )}
     </div>

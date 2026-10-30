@@ -381,6 +381,22 @@ const om: TranslationDictionary = {
     shareDesc: "Liinkiin kun qabiyyee fi fuula amma irra jirtan of keessatti qabata.",
     shareView: "Fuula",
   },
+  analytics: {
+    dashboardTitle: "Xiinxala Hojjettootaa fi Galmeewwanii",
+    exportPdf: "Gabaasa PDF Galmeessi",
+    caseStatusTitle: "Raabsa Galmeewwanii Haalaan",
+    casePriorityTitle: "Raabsa Galmeewwanii Prioritii-dhaan",
+    outcomeTrendsTitle: "Adeemsa Bu'aa Galmeewwanii (Monthly)",
+    durationStatsTitle: "Iyyaannoo Yeroo Xumura Galmeewwanii",
+    statusWon: "Mo'atame",
+    statusLost: "Mo'ame",
+    statusPending: "Adeemsa Irra",
+    statusDismissed: "Kufaa Ta'e",
+    avgDurationDays: "Avg. Yeroo Xumuraa (Guyyaa)",
+    month: "Ji'a",
+    caseCount: "Baay'ina Galmeewwanii",
+    days: "Guyyoota",
+  },
 };
 
 export default om;

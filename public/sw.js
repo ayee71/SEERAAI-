@@ -18,14 +18,17 @@ self.addEventListener('activate', (event) => {
       );
     }).then(() => self.clients.claim()).then(() => {
       // Notify all clients that new service worker is active and ready
-      return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
         for (const client of clients) {
           client.postMessage({ type: 'SEERA_SW_ACTIVATED', version: '4.1.0' });
         }
       });
+      // Perform initial deadline check on activation
+      return checkDeadlinesAndNotify();
     })
   );
 });
+
 
 // PASS THROUGH ALL FETCH REQUESTS - never block or rewrite requests
 self.addEventListener('fetch', () => {
@@ -38,8 +41,71 @@ self.addEventListener('sync', (event) => {
     event.waitUntil(handlePrecedentsSync());
   } else if (event.tag === 'sync-queued-document-edits') {
     event.waitUntil(handleQueuedEditsSync());
+  } else if (event.tag === 'sync-hearing-deadlines') {
+    event.waitUntil(checkDeadlinesAndNotify());
   }
 });
+
+async function checkDeadlinesAndNotify() {
+  try {
+    const deadlines = await getDeadlinesFromIDB();
+    const now = Date.now();
+    let notificationsShown = 0;
+
+    for (const d of deadlines) {
+      const targetTime = new Date(d.deadlineDate).getTime();
+      const diffHours = (targetTime - now) / (1000 * 60 * 60);
+
+      // Alert 24 hours in advance (window between 23 and 25 hours)
+      if (diffHours > 23 && diffHours <= 25 && !d.notified24h) {
+        await showPrecedentNotification({
+          title: `🚨 BEELLAMA ARIITII (24 Hours Left)!`,
+          body: `Galmee: ${d.caseTitle}\nMannii Murtii: ${d.courtName}\nBeellamni boru ga'a! Sanada qopheessaa.`,
+          tag: `deadline-24h-${d.id}`,
+        });
+        d.notified24h = true;
+        notificationsShown++;
+        await saveDeadlineUpdateToIDB(d);
+      }
+    }
+    return notificationsShown;
+  } catch (err) {
+    console.error('Deadline check error in SW:', err);
+  }
+}
+
+async function getDeadlinesFromIDB() {
+  return new Promise((resolve) => {
+    const request = indexedDB.open('SeeraAIOfflineDB');
+    request.onsuccess = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('deadlines')) return resolve([]);
+      const transaction = db.transaction('deadlines', 'readonly');
+      const store = transaction.objectStore('deadlines');
+      const getAllRequest = store.getAll();
+      getAllRequest.onsuccess = () => resolve(getAllRequest.result || []);
+      getAllRequest.onerror = () => resolve([]);
+    };
+    request.onerror = () => resolve([]);
+  });
+}
+
+async function saveDeadlineUpdateToIDB(deadline) {
+  return new Promise((resolve) => {
+    const request = indexedDB.open('SeeraAIOfflineDB');
+    request.onsuccess = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('deadlines')) return resolve();
+      const transaction = db.transaction('deadlines', 'readwrite');
+      const store = transaction.objectStore('deadlines');
+      store.put(deadline);
+      transaction.oncomplete = () => resolve();
+    };
+    request.onerror = () => resolve();
+  });
+}
+
+
 
 async function handleQueuedEditsSync() {
   try {
@@ -98,6 +164,12 @@ self.addEventListener('message', (event) => {
     return;
   }
 
+  if (event.data.type === 'CHECK_DEADLINES') {
+    event.waitUntil(checkDeadlinesAndNotify());
+    return;
+  }
+
+
   if (event.data.type === 'NOTIFY_PRECEDENTS_DOWNLOADED') {
     const { count, precedentTitles, customTitle, customBody } = event.data;
     const title = customTitle || (count > 1 ? `Murtiiwwan Ijoo ${count} Offline Kuufamaniiru! ⚖️` : 'Murtii Ijoo Haaraa Kuufameera! ⚖️');
@@ -137,10 +209,11 @@ self.addEventListener('notificationclick', (event) => {
       for (const client of windowClients) {
         if ('focus' in client) {
           try {
-            client.postMessage({ type: 'SEERA_NAVIGATE_TAB', tab: 'cassation' });
+            client.postMessage({ type: 'SEERA_NAVIGATE_TAB', tab: 'calendar' });
           } catch {}
           return client.focus();
         }
+
       }
     })
   );

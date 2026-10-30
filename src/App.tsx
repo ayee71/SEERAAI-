@@ -12,7 +12,7 @@ import { Language, translations, loadLanguage } from './i18n/translations';
 import { getUserSettings, saveUserSettings, UserSettings, SavedLegalDocument } from './services/storage';
 import { readShareableStateFromUrl, syncBrowserUrlWithState, ShareableAppState, isRestrictedTab } from './services/shareUrl';
 import { ReadingProgressBar } from './components/ReadingProgressBar';
-import { Scale, Globe, Shield, WifiOff, Lock } from 'lucide-react';
+import { Scale, Globe, Shield, WifiOff, Lock, RefreshCw } from 'lucide-react';
 import { trackReferralVisit, getStoredOwnerKey } from './services/referralTracking';
 import { isOwnerAccount, isOwnerEmail, unlockOwnerPrivileges } from './services/ownerAuth';
 import { logRealtimeEvent } from './services/realtimeTracker';
@@ -46,25 +46,107 @@ function safeLazy<T extends React.ComponentType<any>>(
         return { default: module[exportName] };
       }
       return module.default ? module : { default: module };
-    } catch (error) {
-      console.warn('Dynamic import failed, retrying once...', error);
-      try {
-        await new Promise((r) => setTimeout(r, 300));
-        const retryModule = await importFn();
-        if (exportName && retryModule[exportName]) {
-          return { default: retryModule[exportName] };
-        }
-        return retryModule.default ? retryModule : { default: retryModule };
-      } catch (retryErr) {
-        if (typeof window !== 'undefined' && !sessionStorage.getItem('chunk_reload_attempted')) {
-          sessionStorage.setItem('chunk_reload_attempted', 'true');
+    } catch (error: any) {
+      console.warn(`[safeLazy] Dynamic import failed for ${exportName || 'module'}:`, error);
+
+      // Check if this error is chunk load failure (stale deployment, network drop, MIME type mismatch)
+      const errorMsg = String(error?.message || error || '');
+      const isChunkError = 
+        errorMsg.includes('Failed to fetch dynamically imported module') ||
+        errorMsg.includes('Importing a module script failed') ||
+        errorMsg.includes('error loading dynamically imported module') ||
+        errorMsg.includes('text/html') ||
+        errorMsg.includes('is not a valid JavaScript MIME type') ||
+        error?.name === 'TypeError';
+
+      if (typeof window !== 'undefined' && isChunkError) {
+        const reloadKey = `seera_chunk_reload_${exportName || 'app'}`;
+        const lastReload = Number(sessionStorage.getItem(reloadKey) || '0');
+        const now = Date.now();
+
+        // If not reloaded in the last 20 seconds, attempt a single clean reload
+        if (now - lastReload > 20000) {
+          sessionStorage.setItem(reloadKey, String(now));
+          console.info(`[safeLazy] Auto-recovering stale chunk for ${exportName || 'module'}. Refreshing view...`);
+          if ('caches' in window) {
+            try {
+              const keys = await caches.keys();
+              await Promise.all(keys.map((k) => caches.delete(k)));
+            } catch {}
+          }
           window.location.reload();
+          // Return pending promise during reload
+          return new Promise(() => {});
         }
-        throw retryErr;
       }
+
+      // Safe, non-crashing fallback view with retry button
+      return {
+        default: (props: any) => {
+          const lang: Language = props?.currentLang || 'om';
+          const isOm = lang === 'om';
+          const isAm = lang === 'am';
+
+          return (
+            <div className="min-h-[45vh] flex flex-col items-center justify-center p-6 my-8 text-center bg-slate-900/90 border border-amber-500/30 rounded-3xl max-w-xl mx-auto shadow-2xl backdrop-blur-md animate-in fade-in duration-200">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mb-4">
+                <RefreshCw className="w-6 h-6 animate-spin text-amber-400" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-100 mb-2 font-serif-legal">
+                {isOm
+                  ? 'Kutaa Seeraa Haaromsuun Barbaachisa'
+                  : isAm
+                  ? 'ይህ የሕግ ክፍል እንደገና መጫን ይፈልጋል'
+                  : 'Module Update Required'}
+              </h3>
+              <p className="text-xs text-slate-300 max-w-md mb-6 leading-relaxed">
+                {isOm
+                  ? `Kutaan (${exportName || 'Mana Murtii'}) haaromsa haaraa qaba. Yeroo networkiin tasgabbaa'u irra deebi'aanii fe'uuf as tuqaa.`
+                  : isAm
+                  ? `ይህ ክፍል (${exportName || 'የፍርድ ቤት ስራ'}) አዲስ ማሻሻያ አለው። እባክዎ እንደገና ለመጫን ከታች ያለውን አዝራር ይጫኑ።`
+                  : `This module (${exportName || 'Court Work'}) has been updated on the server. Please reload to sync the latest version.`}
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <button
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      sessionStorage.clear();
+                      const win = window as any;
+                      if (win.caches) {
+                        win.caches.keys().then((ks: string[]) => Promise.all(ks.map((k: string) => win.caches.delete(k)))).finally(() => {
+                          win.location.reload();
+                        });
+                      } else {
+                        win.location.reload();
+                      }
+                    }
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-2 cursor-pointer shadow-lg transition-all"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>
+                    {isOm ? 'Amma Haaromsi (Reload)' : isAm ? 'አሁን አድስ (Reload)' : 'Reload Now'}
+                  </span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      window.location.href = window.location.origin + window.location.pathname + '?tab=home';
+                    }
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 cursor-pointer transition-all"
+                >
+                  {isOm ? 'Gara Fuula Duraa' : isAm ? 'ወደ ዋና ገጽ' : 'Go Home'}
+                </button>
+              </div>
+            </div>
+          );
+        },
+      };
     }
   });
 }
+
 
 const HomeView = safeLazy(() => import('./views/HomeView'), 'HomeView');
 const CreateView = safeLazy(() => import('./views/CreateView'), 'CreateView');

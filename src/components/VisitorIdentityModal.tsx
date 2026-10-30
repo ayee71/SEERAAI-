@@ -8,7 +8,9 @@ import {
   getBiometricEnrollmentStatus, 
   BiometricEnrollment 
 } from '../utils/biometric';
-import { isOwnerEmail, isOwnerUsername, isOwnerKey, unlockOwnerPrivileges } from '../services/ownerAuth';
+import { isOwnerEmail, isOwnerUsername, isOwnerKey, unlockOwnerPrivileges, clearOwnerPrivileges } from '../services/ownerAuth';
+import { loginAsCourtAdmin, getLocalInstitutions } from '../services/courtInstitutionService';
+
 
 interface VisitorIdentityModalProps {
   currentLang: Language;
@@ -33,9 +35,11 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
     enrollBiometrics,
     isBiometricEnrolled
   } = useAuth();
-  const [authMode, setAuthMode] = useState<'biometric' | 'username_signup' | 'username_login' | 'quick_link' | 'forgot_password'>('biometric');
+  const [authMode, setAuthMode] = useState<'biometric' | 'username_signup' | 'username_login' | 'quick_link' | 'forgot_password' | 'court_admin'>('biometric');
   const [accountUsername, setAccountUsername] = useState('');
   const [accountPassword, setAccountPassword] = useState('');
+  const [courtAdminEmail, setCourtAdminEmail] = useState('gurbicha@court.oromia.et');
+  const [courtAdminCode, setCourtAdminCode] = useState('GURBICHA-2026');
   const [resetEmail, setResetEmail] = useState('');
   const [resetSuccess, setResetSuccess] = useState(false);
   const [name, setName] = useState('');
@@ -192,6 +196,9 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
       return;
     }
 
+    clearOwnerPrivileges();
+
+
     if (!accountPassword || accountPassword.length < 6) {
       setError(
         currentLang === 'om'
@@ -302,6 +309,8 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
       return;
     }
 
+    clearOwnerPrivileges();
+
     if (!accountPassword) {
       setError(
         currentLang === 'om'
@@ -349,6 +358,50 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
             : 'የተጠቃሚ ስም ወይም የይለፍ ቃል የተሳሳተ ነው።'
         );
       }
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleCourtAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    const cleanEmail = courtAdminEmail.trim().toLowerCase();
+    const cleanCode = courtAdminCode.trim();
+
+    if (!cleanEmail || !cleanCode) {
+      setError(
+        currentLang === 'om'
+          ? 'Maaloo Email Admin fi Access Code galchaa.'
+          : 'እባክዎ የፍርድ ቤት አስተዳዳሪ ኢሜይል እና ኮድ ያስገቡ።'
+      );
+      return;
+    }
+
+    setIsVerifying(true);
+    try {
+      const res = await loginAsCourtAdmin(cleanEmail, cleanCode);
+      if (res.success && res.session) {
+        await updateProfile({
+          visitorName: res.session.user.fullName,
+          isLegalProfessional: true,
+          legalRole: 'court_admin' as any,
+          verifiedAt: new Date().toISOString(),
+        });
+        await logRealtimeEvent(
+          'visit',
+          `Court Admin Seene: ${res.session.user.fullName} (${res.session.courtName})`,
+          'Court Admin Gateway',
+          referralCreator || 'Direct Login',
+          res.session.user.fullName
+        );
+        onIdentify(res.session.user.fullName, 'court_admin');
+      } else {
+        setError(res.message);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Login failed');
     } finally {
       setIsVerifying(false);
     }
@@ -511,6 +564,7 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
   };
 
   const handleInstantGuestAccess = async () => {
+    clearOwnerPrivileges();
     setIsVerifying(true);
     try {
       const guestName = referralCreator
@@ -662,7 +716,7 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
           </div>
 
           {/* AUTH MODE SELECTOR TABS */}
-          <div className="grid grid-cols-4 gap-1 p-1 bg-slate-950 rounded-2xl border border-slate-800 text-xs">
+          <div className="grid grid-cols-5 gap-1 p-1 bg-slate-950 rounded-2xl border border-slate-800 text-xs">
             <button
               type="button"
               onClick={() => {
@@ -676,6 +730,20 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
               }`}
             >
               <span>🔐 Biometric</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('court_admin');
+                setError('');
+              }}
+              className={`py-2 px-1 rounded-xl font-bold transition-all text-center cursor-pointer text-[10px] sm:text-[11px] ${
+                authMode === 'court_admin'
+                  ? 'bg-amber-500 text-slate-950 shadow-md'
+                  : 'text-amber-400 hover:text-amber-200 font-extrabold'
+              }`}
+            >
+              <span>🏛️ Admin MM</span>
             </button>
             <button
               type="button"
@@ -846,6 +914,83 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
                 </div>
               </div>
             </div>
+          )}
+
+          {/* COURT ADMIN LOGIN PANEL */}
+          {authMode === 'court_admin' && (
+            <form onSubmit={handleCourtAdminLogin} className="space-y-4 animate-in fade-in duration-200">
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 space-y-1">
+                <p className="font-bold flex items-center gap-1.5">
+                  <span>🏛️</span>
+                  <span>Bulchaa Mana Murtii (Court Admin Portal):</span>
+                </p>
+                <p className="text-[11px] text-slate-300">
+                  Email Admin Mana Murtii fi Access Code keessan galchuun seenaa. Ogeessota seeraa, Qindeessaa KTAS, Ofiisara Seeraa fi Abbootii Seeraa dabalaa.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Email Bulchaa Mana Murtii (Admin Email):
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={courtAdminEmail}
+                  onChange={(e) => {
+                    setCourtAdminEmail(e.target.value);
+                    if (error) setError('');
+                  }}
+                  placeholder="fkn: gurbicha@court.oromia.et ykn gurbicha.@court.oromia.et"
+                  className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Koodii Eeyyama Admin (Access Code / Passcode):
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={courtAdminCode}
+                  onChange={(e) => {
+                    setCourtAdminCode(e.target.value);
+                    if (error) setError('');
+                  }}
+                  placeholder="fkn: GURBICHA-2026"
+                  className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono"
+                />
+              </div>
+
+              {/* Pre-fill shortcut for Mana Murtii Aanaa Gurbicha */}
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                <span className="text-[11px] font-bold text-amber-300 block">
+                  📍 Fakkeenya Mana Murtii Aanaa Gurbicha (Pre-fill Demo):
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCourtAdminEmail('gurbicha@court.oromia.et');
+                    setCourtAdminCode('GURBICHA-2026');
+                    if (error) setError('');
+                  }}
+                  className="w-full py-2 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold text-left transition-all flex items-center justify-between cursor-pointer"
+                >
+                  <span>🏛️ Mana Murtii Aanaa Gurbicha</span>
+                  <span className="font-mono text-[10px] text-slate-400">gurbicha@court.oromia.et (GURBICHA-2026)</span>
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isVerifying}
+                className="w-full py-3.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>🏛️</span>
+                <span>Bulchaa Ta'ii Seeni (Enter Court Admin Portal)</span>
+              </button>
+            </form>
           )}
 
           {/* 1. USERNAME SIGN UP FORM */}

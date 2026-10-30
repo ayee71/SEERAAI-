@@ -33,7 +33,9 @@ import {
   Loader2,
   FileText,
   MessageCircle,
+  Gavel,
 } from 'lucide-react';
+
 import { DiscussionPanel } from '../components/DiscussionPanel';
 import { Language, translations } from '../i18n/translations';
 import {
@@ -73,7 +75,10 @@ import { DocumentQuickPreviewModal } from '../components/DocumentQuickPreviewMod
 import { TelegramImportModal } from '../components/TelegramImportModal';
 import { directExportSavedDocument } from '../services/legalDocumentExport';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
+import { SavedCitationsModal } from '../components/SavedCitationsModal';
+import { getLocalSavedCitations } from '../services/citationLibraryService';
 import { Bell, CalendarPlus, Share2 } from 'lucide-react';
+
 
 const LITIGATION_STAGES = [
   { id: 'filing', om: 'Iyyannoo', am: 'አቤቱታ', en: 'Filing', color: 'bg-slate-500' },
@@ -959,6 +964,17 @@ END:VCALENDAR`;
           Recent Offline Translations ({offlineTranslations.length})
         </button>
         <button
+          onClick={() => setActiveSubTab('citations' as any)}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            activeSubTab === ('citations' as any)
+              ? 'bg-amber-500 text-slate-950 shadow'
+              : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
+          }`}
+        >
+          <Gavel className="w-3.5 h-3.5 text-amber-400" />
+          <span>{currentLang === 'om' ? 'Wabiilee & Murtiiwwan Koo' : 'Saved Citations & Precedents'} ({getLocalSavedCitations().length})</span>
+        </button>
+        <button
           onClick={() => setActiveSubTab('discussion' as any)}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
             activeSubTab === ('discussion' as any)
@@ -970,6 +986,15 @@ END:VCALENDAR`;
           <span>💬 Collaboration Discussion</span>
         </button>
       </div>
+
+      {activeSubTab === ('citations' as any) && (
+        <SavedCitationsModal
+          isOpen={true}
+          onClose={() => setActiveSubTab('documents')}
+          currentLang={currentLang}
+        />
+      )}
+
 
       {activeSubTab === ('discussion' as any) && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4">

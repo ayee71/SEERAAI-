@@ -381,6 +381,22 @@ const am: TranslationDictionary = {
     shareDesc: "ይህ ሊንክ አሁን ያለህበትን ይዘት እና ገጽ አካቶ ይይዛል።",
     shareView: "ገጽ",
   },
+  analytics: {
+    dashboardTitle: "የሰራተኞች እና የመዝገቦች ትንተና",
+    exportPdf: "የትንተና ሪፖርት (PDF)",
+    caseStatusTitle: "የመዝገቦች ስርጭት በሁኔታ",
+    casePriorityTitle: "የመዝገቦች ስርጭት በቅድሚያ",
+    outcomeTrendsTitle: "የመዝገቦች ውጤት አዝማሚያ (በወር)",
+    durationStatsTitle: "የመዝገቦች ማጠናቀቂያ ጊዜ አሃዞች",
+    statusWon: "የተረታ",
+    statusLost: "የተሸነፈ",
+    statusPending: "በሂደት ላይ",
+    statusDismissed: "ውድቅ የተደረገ",
+    avgDurationDays: "አማካኝ የማጠናቀቂያ ጊዜ (ቀናት)",
+    month: "ወር",
+    caseCount: "የመዝገቦች ብዛት",
+    days: "ቀናት",
+  },
 };
 
 export default am;

@@ -4093,6 +4093,13 @@ async function setupServer() {
         }
       }
     }));
+    // Prevent index.html fallback for missing JS/CSS/asset requests which causes MIME type errors and dynamic import crashes
+    app.all(/^\/(assets|css|js|images|fonts)\/.*|\.(js|css|map|json|png|jpg|jpeg|svg|webp|ico|woff|woff2)$/, (_req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('X-Chunk-Error', 'chunk_not_found');
+      res.status(404).type('text/plain').send('Asset chunk not found');
+    });
+
     app.get('*', (_req: Request, res: Response) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');

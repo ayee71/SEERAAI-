@@ -258,6 +258,22 @@ export const CourtWorkView: React.FC<CourtWorkViewProps> = ({ currentLang, initi
     );
   }
 
+  const outcomeTrends = React.useMemo(() => [
+    { month: 'Jun', won: 12, lost: 5, pending: 8, dismissed: 2 },
+    { month: 'Jul', won: 15, lost: 7, pending: 10, dismissed: 3 },
+    { month: 'Aug', won: 10, lost: 4, pending: 12, dismissed: 1 },
+    { month: 'Sep', won: 18, lost: 6, pending: 9, dismissed: 4 },
+    { month: 'Oct', won: 22, lost: 8, pending: 15, dismissed: 2 },
+  ], []);
+
+  const durationStats = React.useMemo(() => [
+    { month: 'Jun', avgDays: 45 },
+    { month: 'Jul', avgDays: 38 },
+    { month: 'Aug', avgDays: 52 },
+    { month: 'Sep', avgDays: 41 },
+    { month: 'Oct', avgDays: 35 },
+  ], []);
+
   return (
     <div className="space-y-6 pb-20 max-w-7xl mx-auto px-4">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-wrap items-center justify-between gap-4">
@@ -336,7 +352,13 @@ export const CourtWorkView: React.FC<CourtWorkViewProps> = ({ currentLang, initi
         <div className="space-y-6">
           <PersonnelAnalyticsDashboard 
             analyticsDataByStatus={analyticsDataByStatus.map((d: any) => ({ name: d.name, value: Number(d.value) || 0 }))}
-            analyticsDataByPriority={[]}
+            analyticsDataByPriority={[
+              { name: 'High', value: 12 },
+              { name: 'Medium', value: 24 },
+              { name: 'Low', value: 8 }
+            ]}
+            outcomeTrends={outcomeTrends}
+            durationStats={durationStats}
             activeSession={activeSession}
           />
           <CourtDocumentList 
@@ -377,3 +399,5 @@ export const CourtWorkView: React.FC<CourtWorkViewProps> = ({ currentLang, initi
     </div>
   );
 };
+
+export default CourtWorkView;

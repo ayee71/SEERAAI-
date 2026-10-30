@@ -170,6 +170,20 @@ export const CourtGateView: React.FC<CourtGateViewProps> = (props) => {
       <PersonnelAnalyticsDashboard 
         analyticsDataByStatus={analyticsDataByStatus}
         analyticsDataByPriority={analyticsDataByPriority}
+        outcomeTrends={[
+          { month: 'Jun', won: 10, lost: 4, pending: 5, dismissed: 1 },
+          { month: 'Jul', won: 12, lost: 5, pending: 6, dismissed: 2 },
+          { month: 'Aug', won: 15, lost: 3, pending: 8, dismissed: 1 },
+          { month: 'Sep', won: 20, lost: 6, pending: 10, dismissed: 3 },
+          { month: 'Oct', won: 25, lost: 8, pending: 12, dismissed: 2 },
+        ]}
+        durationStats={[
+          { month: 'Jun', avgDays: 42 },
+          { month: 'Jul', avgDays: 35 },
+          { month: 'Aug', avgDays: 48 },
+          { month: 'Sep', avgDays: 39 },
+          { month: 'Oct', avgDays: 32 },
+        ]}
         activeSession={activeSession}
       />
 

@@ -21,7 +21,8 @@ import {
   onSnapshot 
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../services/firebase';
-import { isOwnerEmail, isOwnerUsername, unlockOwnerPrivileges } from '../services/ownerAuth';
+import { isOwnerEmail, isOwnerUsername, unlockOwnerPrivileges, clearOwnerPrivileges } from '../services/ownerAuth';
+
 import { UserSettings, DEFAULT_SETTINGS } from '../services/storage';
 import { getDeviceInfo } from '../utils/device';
 import { 
@@ -285,9 +286,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(firebaseUser);
 
         // Retain or sync email in cached storage to guarantee persistence across anonymous/popup flows
-        if (firebaseUser.email) {
-          localStorage.setItem('seera_cached_email', firebaseUser.email);
+        const activeEmail = firebaseUser.email || localStorage.getItem('seera_cached_email') || '';
+        if (activeEmail) {
+          localStorage.setItem('seera_cached_email', activeEmail);
+          if (!isOwnerEmail(activeEmail)) {
+            clearOwnerPrivileges();
+          }
         }
+
 
         // Apply instant baseline profile so the app opens immediately without network delay
         const cachedEmail = localStorage.getItem('seera_cached_email') || firebaseUser.email || '';
@@ -459,6 +465,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithEmail = async (emailOrUsername: string, pass: string) => {
     const email = normalizeEmail(emailOrUsername);
+    const isOwnerTarget = isOwnerEmail(email) || isOwnerUsername(emailOrUsername);
+    if (isOwnerTarget) {
+      unlockOwnerPrivileges(email);
+    } else {
+      clearOwnerPrivileges();
+    }
     console.log('Attempting sign in with:', email);
     try {
       await signInWithEmailAndPassword(auth, email, pass);
@@ -471,6 +483,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUpWithEmail = async (emailOrUsername: string, pass: string, name: string) => {
     const email = normalizeEmail(emailOrUsername);
     const isOwnerTarget = isOwnerEmail(email) || isOwnerUsername(emailOrUsername);
+    if (isOwnerTarget) {
+      unlockOwnerPrivileges(email);
+    } else {
+      clearOwnerPrivileges();
+    }
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, pass);
       if (cred.user) {
@@ -505,7 +522,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (isVerifiedOwner || isOwnerTarget) {
       unlockOwnerPrivileges(email);
+    } else {
+      clearOwnerPrivileges();
     }
+
     
     const isApprovedOwner = isVerifiedOwner || isOwnerTarget;
     

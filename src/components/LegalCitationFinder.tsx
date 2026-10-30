@@ -18,8 +18,21 @@ import {
   ExternalLink,
   ChevronRight,
   RefreshCw,
-  Info
+  Info,
+  Download,
+  FileCode,
+  Bookmark,
+  BookmarkCheck,
 } from 'lucide-react';
+import { CassationBibliographyModal } from './CassationBibliographyModal';
+import { SavedCitationsModal } from './SavedCitationsModal';
+import {
+  saveCitationToLibrary,
+  removeCitationFromLibrary,
+  getLocalSavedCitations,
+} from '../services/citationLibraryService';
+
+
 
 interface LegalCitationFinderProps {
   currentLang: Language;
@@ -43,7 +56,47 @@ export const LegalCitationFinder: React.FC<LegalCitationFinderProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [insertedId, setInsertedId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  const [showBibliographyModal, setShowBibliographyModal] = useState(false);
+  const [showSavedModal, setShowSavedModal] = useState(false);
+
+  const [savedIds, setSavedIds] = useState<Set<string>>(() => {
+    return new Set(getLocalSavedCitations().map((item) => item.id));
+  });
   const debounceTimerRef = useRef<any>(null);
+
+  const refreshSavedIds = () => {
+    setSavedIds(new Set(getLocalSavedCitations().map((item) => item.id)));
+  };
+
+  useEffect(() => {
+    const handleSavedUpdated = () => refreshSavedIds();
+    window.addEventListener('seera:saved_citations_updated' as any, handleSavedUpdated);
+    return () => window.removeEventListener('seera:saved_citations_updated' as any, handleSavedUpdated);
+  }, []);
+
+  const handleToggleBookmark = async (item: LegalCitationSuggestion) => {
+    if (savedIds.has(item.id)) {
+      await removeCitationFromLibrary(item.id);
+      const next = new Set(savedIds);
+      next.delete(item.id);
+      setSavedIds(next);
+    } else {
+      await saveCitationToLibrary(item, inputText ? `Research: ${inputText.slice(0, 30)}` : '');
+      const next = new Set(savedIds);
+      next.add(item.id);
+      setSavedIds(next);
+    }
+  };
+
+  const handleSaveAllFoundToLibrary = async () => {
+    for (const item of filteredSuggestions) {
+      await saveCitationToLibrary(item, inputText ? `Research: ${inputText.slice(0, 30)}` : '');
+    }
+    refreshSavedIds();
+  };
+
+
 
   // Quick preset keyword scenarios
   const QUICK_KEYWORDS = [
@@ -308,7 +361,7 @@ export const LegalCitationFinder: React.FC<LegalCitationFinderProps> = ({
       </div>
 
       {/* Results Header */}
-      <div className="flex items-center justify-between px-1">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
         <div className="flex items-center gap-2">
           <BookOpen className="w-4 h-4 text-amber-400" />
           <h3 className="text-sm font-bold text-slate-200">
@@ -319,10 +372,49 @@ export const LegalCitationFinder: React.FC<LegalCitationFinderProps> = ({
               : `Suggested Citations (${filteredSuggestions.length})`}
           </h3>
         </div>
-        <span className="text-[11px] text-slate-500 font-mono">
-          {currentLang === 'om' ? 'Bu\'uura RAG & Kuusaa Seeraa' : 'Verified Statutory Grounding'}
-        </span>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {filteredSuggestions.length > 0 && (
+            <button
+              type="button"
+              onClick={handleSaveAllFoundToLibrary}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+            >
+              <Plus className="w-3.5 h-3.5 text-amber-400" />
+              <span>{currentLang === 'om' ? 'Hunda Kuusatti Qabadhu' : 'Save All to Library'}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowSavedModal(true)}
+            className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+          >
+            <Bookmark className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+            <span>{currentLang === 'om' ? 'Kuusaa Koo' : 'My Library'}</span>
+            {savedIds.size > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 font-mono font-extrabold text-[10px]">
+                {savedIds.size}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowBibliographyModal(true)}
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+          >
+            <Gavel className="w-3.5 h-3.5 text-amber-400" />
+            <span>
+              {currentLang === 'om'
+                ? 'Export (PDF/MD)'
+                : 'Export Bibliography'}
+            </span>
+          </button>
+        </div>
       </div>
+
+
 
       {/* Suggestions List */}
       {filteredSuggestions.length === 0 ? (
@@ -432,6 +524,24 @@ export const LegalCitationFinder: React.FC<LegalCitationFinderProps> = ({
 
                   <button
                     type="button"
+                    onClick={() => handleToggleBookmark(item)}
+                    title={savedIds.has(item.id) ? 'Remove from My Library' : 'Save to My Library'}
+                    className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                      savedIds.has(item.id)
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border-slate-700/80'
+                    }`}
+                  >
+                    {savedIds.has(item.id) ? (
+                      <BookmarkCheck className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                    ) : (
+                      <Bookmark className="w-3.5 h-3.5" />
+                    )}
+                    <span className="hidden sm:inline">{savedIds.has(item.id) ? 'Saved' : 'Save'}</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => handleCopyCitation(item)}
                     title="Copy Citation"
                     className="py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-700/80 text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
@@ -456,6 +566,25 @@ export const LegalCitationFinder: React.FC<LegalCitationFinderProps> = ({
           })}
         </div>
       )}
+
+      {/* Cassation Precedents Bibliography Export Modal */}
+      <CassationBibliographyModal
+        isOpen={showBibliographyModal}
+        onClose={() => setShowBibliographyModal(false)}
+        currentLang={currentLang}
+        suggestions={suggestions}
+        currentQuery={inputText}
+      />
+
+      {/* Saved Research Citations Library Modal */}
+      <SavedCitationsModal
+        isOpen={showSavedModal}
+        onClose={() => setShowSavedModal(false)}
+        currentLang={currentLang}
+        onInsertCitation={onInsertCitation}
+      />
     </div>
   );
 };
+
+
