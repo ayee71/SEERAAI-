@@ -1,0 +1,778 @@
+@import "tailwindcss";
+
+/* Light Theme Overrides */
+html.light,
+body.light,
+[data-theme="light"] {
+  color-scheme: light;
+}
+
+html.light body,
+body.light {
+  background-color: var(--gadaa-white);
+  color: var(--gadaa-black);
+}
+
+html.light .bg-slate-950,
+body.light .bg-slate-950 {
+  background-color: #f1f5f9;
+  color: var(--oromia-court-blue);
+}
+
+html.light .bg-slate-900,
+body.light .bg-slate-900 {
+  background-color: var(--gadaa-white);
+  border-color: var(--oromia-court-blue);
+  color: var(--oromia-court-blue);
+}
+
+html.light .bg-slate-950\/70,
+html.light .bg-slate-950\/80,
+html.light .bg-slate-950\/90,
+body.light .bg-slate-950\/70,
+body.light .bg-slate-950\/80,
+body.light .bg-slate-950\/90 {
+  background-color: #e2e8f0;
+}
+
+html.light .bg-slate-900\/50,
+html.light .bg-slate-900\/70,
+html.light .bg-slate-900\/80,
+html.light .bg-slate-900\/90,
+body.light .bg-slate-900\/50,
+body.light .bg-slate-900\/70,
+body.light .bg-slate-900\/80,
+body.light .bg-slate-900\/90 {
+  background-color: #f8fafc;
+}
+
+html.light .bg-slate-800,
+body.light .bg-slate-800 {
+  background-color: #e2e8f0;
+}
+
+html.light .border-slate-800,
+body.light .border-slate-800 {
+  border-color: #cbd5e1;
+}
+
+html.light .border-slate-700,
+body.light .border-slate-700 {
+  border-color: #94a3b8;
+}
+
+html.light .text-slate-100,
+html.light .text-slate-200,
+body.light .text-slate-100,
+body.light .text-slate-200 {
+  color: #0f172a;
+}
+
+html.light .text-slate-300,
+html.light .text-slate-400,
+body.light .text-slate-300,
+body.light .text-slate-400 {
+  color: #334155;
+}
+
+html.light .text-slate-500,
+body.light .text-slate-500 {
+  color: #64748b;
+}
+
+html.light ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
+@layer base {
+  body {
+    font-family: 'Inter', 'Noto Sans Ethiopic', system-ui, -apple-system, sans-serif;
+  }
+  
+  .font-ethiopic {
+    font-family: 'Noto Sans Ethiopic', 'Inter', system-ui, sans-serif;
+  }
+
+  .font-serif-legal {
+    font-family: 'Cinzel', Georgia, serif;
+  }
+}
+
+/* Custom scrollbar for legal document reading */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.4);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
+
+/* =========================================================================
+   TRILINGUAL LEGAL PRINT STYLESHEET (PDF & PAPER EXPORT)
+   Guarantees clear section separators, solid dividers, and consistent typography
+   across Afaan Oromoo, Amharic (አማርኛ), and English.
+   ========================================================================= */
+
+/* =========================================================================
+   OROMIA REGIONAL SUPREME COURT - PRIMARY THEME
+   ========================================================================= */
+:root {
+  /* Oromia Court Palette - Enhanced Brightness */
+  --primary-blue: #004080; /* Brighter Navy */
+  --secondary-gold: #FFD700; /* Vivid Gold */
+  --accent-gold: #FFE066;
+  
+  /* Gadaa Flag Palette */
+  --gadaa-red: #E63946;
+  --gadaa-black: #1A1A1A;
+  --gadaa-white: #FFFFFF;
+  --gadaa-yellow: #FFD700;
+
+  /* Global Mappings - High Contrast */
+  --bg-primary: #001f3f; /* Lighter Deep Blue */
+  --bg-secondary: #002d5e;
+  --text-primary: #FFFFFF;
+  --text-secondary: #F0F0F0;
+}
+
+/* Base Layout Container */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Global Component Updates - Higher Contrast */
+.bg-slate-900 { background-color: var(--bg-secondary) !important; border-color: var(--secondary-gold) !important; }
+.bg-slate-950 { background-color: var(--bg-primary) !important; }
+.border-slate-800 { border-color: var(--secondary-gold) !important; opacity: 0.6; }
+.text-amber-500, .text-amber-400, .text-amber-300 { color: var(--secondary-gold) !important; }
+.bg-amber-500 { background-color: var(--secondary-gold) !important; color: var(--primary-blue) !important; font-weight: bold; }
+.text-emerald-400, .text-emerald-300 { color: var(--accent-gold) !important; }
+
+/* Subtle Gadaa Pattern - Repeating */
+.bg-gadaa-pattern {
+  background-color: var(--primary-blue);
+  background-image: 
+    radial-gradient(circle at 10px 10px, rgba(212, 175, 55, 0.2) 1px, transparent 1px),
+    radial-gradient(circle at 30px 30px, rgba(206, 17, 38, 0.1) 0.5px, transparent 0.5px);
+  background-size: 40px 40px;
+}
+
+.bg-oromia-header {
+  background: linear-gradient(135deg, var(--primary-blue) 0%, #003366 100%);
+  border-bottom: 4px solid var(--secondary-gold);
+}
+/* Trilingual Typography & Section Separators (Applies to both screen preview and print) */
+.legal-print-wrapper {
+  color: #0f172a;
+  background-color: #ffffff;
+  font-family: 'Inter', 'Noto Sans Ethiopic', 'Times New Roman', Georgia, serif;
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+}
+
+.legal-print-wrapper::before {
+  content: "CONFIDENTIAL - SEERA AI ORO ETHIOPIA";
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-35deg);
+  font-size: 52pt;
+  font-weight: 900;
+  color: rgba(15, 23, 42, 0.06);
+  z-index: 1000;
+  pointer-events: none;
+  text-transform: uppercase;
+  letter-spacing: 0.25em;
+  white-space: nowrap;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.legal-section-divider {
+  border: 0;
+  border-top: 2px solid #0f172a;
+  margin: 28px 0 20px 0;
+  clear: both;
+}
+
+.legal-section-divider-double {
+  border: 0;
+  border-top: 3px double #0f172a;
+  margin: 32px 0 24px 0;
+  clear: both;
+}
+
+.legal-lang-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background-color: #f1f5f9;
+  border-left: 5px solid #0f172a;
+  border-bottom: 1.5px solid #cbd5e1;
+  margin-bottom: 16px;
+  break-after: avoid;
+  page-break-after: avoid;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.legal-lang-header-title {
+  font-family: 'Inter', 'Noto Sans Ethiopic', sans-serif;
+  font-weight: 700;
+  font-size: 11pt;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0f172a;
+}
+
+.legal-lang-header-badge {
+  font-family: 'Inter', monospace;
+  font-size: 8.5pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #475569;
+}
+
+.legal-content-body {
+  font-family: 'Inter', 'Noto Sans Ethiopic', Georgia, serif;
+  font-size: 11pt;
+  line-height: 1.65;
+  color: #1e293b;
+  text-align: justify;
+  text-justify: inter-word;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Consistent Ethiopic (Amharic) typography parity */
+.legal-content-body.lang-am,
+.font-ethiopic-print {
+  font-family: 'Noto Sans Ethiopic', 'Inter', serif;
+  line-height: 1.75;
+  letter-spacing: 0.01em;
+}
+
+/* Afaan Oromoo & English typography */
+.legal-content-body.lang-om,
+.legal-content-body.lang-en {
+  font-family: 'Inter', Georgia, serif;
+  line-height: 1.65;
+}
+
+/* Print Media Query */
+@media print {
+  @page {
+    margin: 15mm 15mm 15mm 15mm;
+    size: A4 portrait;
+  }
+
+  /* Force clean white background and hide everything outside print document */
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 11pt !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  /* Only display the dedicated legal print container */
+  #legal-print-container,
+  #legal-print-container * {
+    visibility: visible;
+  }
+
+  #legal-print-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* Hide screen UI controls, modals wrappers, buttons */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Clear section separators in print */
+  .legal-section-divider {
+    border-top: 2.5pt solid #0f172a !important;
+    margin: 24pt 0 16pt 0 !important;
+    display: block !important;
+  }
+
+  .legal-section-divider-double {
+    border-top: 3.5pt double #0f172a !important;
+    margin: 28pt 0 20pt 0 !important;
+    display: block !important;
+  }
+
+  /* Clear Language Headers in print with exact background color rendering */
+  .legal-lang-header {
+    background-color: #f1f5f9 !important;
+    border-left: 5pt solid #0f172a !important;
+    border-bottom: 1.5pt solid #94a3b8 !important;
+    padding: 6pt 10pt !important;
+    margin-bottom: 14pt !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .legal-lang-header-title {
+    font-size: 11pt !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+  }
+
+  .legal-lang-header-badge {
+    font-size: 8.5pt !important;
+    color: #334155 !important;
+  }
+
+  /* Strict typography parity for all 3 languages */
+  .legal-content-body {
+    font-size: 10.5pt !important;
+    line-height: 1.6 !important;
+    color: #0f172a !important;
+    text-align: justify !important;
+    text-justify: inter-word !important;
+  }
+
+  .legal-content-body.lang-am,
+  .font-ethiopic-print {
+    font-family: 'Noto Sans Ethiopic', 'Inter', serif !important;
+    line-height: 1.7 !important;
+    font-size: 10.5pt !important;
+  }
+
+  .legal-content-body.lang-om,
+  .legal-content-body.lang-en {
+    font-family: 'Inter', 'Times New Roman', Georgia, serif !important;
+    line-height: 1.6 !important;
+    font-size: 10.5pt !important;
+  }
+
+  /* Page break rules */
+  .page-break-before {
+    page-break-before: always !important;
+    break-before: page !important;
+    margin-top: 20pt !important;
+  }
+
+  .avoid-break-inside {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Keep headings with subsequent content */
+  h1, h2, h3, h4, .legal-lang-header {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  /* Formal borders & signatures preservation */
+  .legal-signatory-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    border-top: 2pt solid #0f172a !important;
+    margin-top: 24pt !important;
+    padding-top: 14pt !important;
+  }
+}
+
+/* Highlight Confirmation Transition & Pulse Animation for .legal-content-body */
+.legal-content-body {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.legal-content-body.highlight-saved-active {
+  animation: legalHighlightPulse 1.8s ease-in-out;
+  box-shadow: inset 0 0 25px rgba(16, 185, 129, 0.25), 0 0 20px rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.6) !important;
+}
+
+@keyframes legalHighlightPulse {
+  0% {
+    box-shadow: inset 0 0 0px rgba(16, 185, 129, 0), 0 0 0px rgba(16, 185, 129, 0);
+  }
+  30% {
+    box-shadow: inset 0 0 30px rgba(16, 185, 129, 0.4), 0 0 25px rgba(16, 185, 129, 0.5);
+    border-color: rgba(16, 185, 129, 0.8);
+    transform: scale(1.002);
+  }
+  70% {
+    box-shadow: inset 0 0 20px rgba(16, 185, 129, 0.25), 0 0 15px rgba(16, 185, 129, 0.3);
+    border-color: rgba(16, 185, 129, 0.5);
+  }
+  100% {
+    box-shadow: inset 0 0 0px rgba(16, 185, 129, 0), 0 0 0px rgba(16, 185, 129, 0);
+  }
+}
+.legal-print-wrapper {
+  position: relative;
+  overflow: hidden;
+}
+
+.legal-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-35deg);
+  font-family: 'Cinzel', 'Inter', sans-serif;
+  font-size: 56pt;
+  font-weight: 800;
+  color: rgba(15, 23, 42, 0.035);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+  white-space: nowrap;
+}
+
+@media print {
+  .legal-watermark {
+    color: rgba(15, 23, 42, 0.045) !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* ==========================================================================
+   Interactive Legal Citation Badges & Official Source Tooltip Popups
+   ========================================================================== */
+
+.legal-citation-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  margin: 0 0.125rem;
+  border-radius: 0.375rem;
+  background-color: #1e293b;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fde68a;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease-in-out;
+  user-select: text;
+  vertical-align: baseline;
+}
+
+.legal-citation-badge:hover,
+.legal-citation-badge:focus-visible {
+  background-color: #334155;
+  border-color: #f59e0b;
+  color: #ffffff;
+  outline: 2px solid rgba(245, 158, 11, 0.5);
+  outline-offset: 1px;
+}
+
+.legal-citation-popup-tooltip {
+  position: absolute;
+  z-index: 99999;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out;
+  pointer-events: auto;
+}
+
+.legal-citation-popup-tooltip.visible {
+  display: block;
+  opacity: 1;
+}
+
+.legal-tooltip-card {
+  background-color: #0f172a;
+  border: 1px solid #d97706;
+  border-radius: 0.75rem;
+  padding: 0.875rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  color: #f8fafc;
+}
+
+.legal-tooltip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #1e293b;
+  margin-bottom: 0.5rem;
+}
+
+.legal-tooltip-badge-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fbbf24;
+  font-family: monospace;
+}
+
+.legal-tooltip-domain {
+  font-size: 0.6875rem;
+  color: #94a3b8;
+  font-family: monospace;
+  text-transform: uppercase;
+}
+
+.legal-tooltip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.legal-tooltip-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.legal-tooltip-source-box {
+  background-color: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+}
+
+.legal-tooltip-source-label {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #fbbf24;
+  margin-bottom: 0.25rem;
+}
+
+.legal-tooltip-source-text {
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.legal-tooltip-principle-box {
+  background-color: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+}
+
+.legal-tooltip-principle-label {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #34d399;
+  margin-bottom: 0.25rem;
+}
+
+.legal-tooltip-principle-text {
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.legal-tooltip-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.375rem;
+  margin-top: 0.625rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #1e293b;
+}
+
+.btn-tooltip-refine-ai {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.375rem;
+  background-color: #78350f;
+  border: 1px solid #d97706;
+  color: #fef3c7;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.btn-tooltip-refine-ai:hover:not(:disabled) {
+  background-color: #b45309;
+  border-color: #fbbf24;
+  color: #ffffff;
+}
+
+.btn-tooltip-update-check {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.375rem;
+  background-color: #1e293b;
+  border: 1px solid #475569;
+  color: #e2e8f0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.btn-tooltip-update-check:hover:not(:disabled) {
+  background-color: #334155;
+  border-color: #f59e0b;
+  color: #ffffff;
+}
+
+.btn-tooltip-update-check:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-tooltip-navigate-law {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.375rem;
+  background-color: #d97706;
+  border: 1px solid #b45309;
+  color: #020617;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.btn-tooltip-navigate-law:hover {
+  background-color: #f59e0b;
+  color: #000000;
+}
+
+.legal-tooltip-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 0.375rem;
+  border-top: 1px solid #1e293b;
+  font-size: 0.6875rem;
+  color: #64748b;
+}
+
+.legal-tooltip-verified {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.legal-tooltip-year {
+  font-family: monospace;
+  color: #94a3b8;
+}
+
+.legal-tooltip-context-relevance-box {
+  background-color: #030712;
+  border: 1px solid #059669;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+}
+
+.legal-tooltip-context-relevance-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #34d399;
+  margin-bottom: 0.25rem;
+}
+
+.legal-tooltip-context-relevance-text {
+  font-size: 0.75rem;
+  color: #e2e8f0;
+  line-height: 1.45;
+  margin: 0;
+  font-style: italic;
+}
+
+/* ==========================================================================
+   Subtle Gold Underline for Key Legal Terminology
+   ========================================================================== */
+.legal-term-gold-underline {
+  text-decoration: underline;
+  text-decoration-color: rgba(245, 158, 11, 0.75); /* amber/gold */
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3.5px;
+  color: #fef3c7; /* amber-100 */
+  font-weight: 500;
+  transition: all 0.2s ease-in-out;
+  cursor: help;
+  display: inline;
+}
+
+.legal-term-gold-underline:hover {
+  text-decoration-color: #fbbf24;
+  color: #ffffff;
+  background-color: rgba(245, 158, 11, 0.15);
+  border-radius: 2px;
+}
+
+/* ==========================================================================
+   Subtle Fade-In Animation for Court Folder Directory & Filtering
+   ========================================================================== */
+@keyframes folderFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-folder-fade-in {
+  animation: folderFadeIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}

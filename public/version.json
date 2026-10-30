@@ -1,0 +1,19 @@
+{
+  "version": "4.1.0",
+  "buildTime": "2026-10-29T12:35:00Z",
+  "appName": "SeeraAI Legal Intelligence Platform",
+  "author": "Ayele Be Dha",
+  "forceUpdate": true,
+  "hidePrivateDataForVisitors": true,
+  "releaseNotes": "Haaromfama Dirqamaa (Mandatory Update v4.1.0): Chaanala Telegram (https://t.me/seeraai_ethio), Case Logic Audit & Version History, Share & Copy Link, fi Admin Referral Tracking.",
+  "features": [
+    "Dedicated Telegram Channel link (https://t.me/seeraai_ethio) for instant legal updates",
+    "Procedural & Statutory Case Logic Audit with Version History Timeline in Cases View",
+    "Native Web Share API and Copy to Clipboard with instant subtle toast notification",
+    "Admin Dashboard Referral Tracking Widget for Channels, Devices, and Browsers",
+    "Universal Public Link Access with Automated Cache Invalidation and Hard-Sync",
+    "Trilingual Legal Terminology & Court Proceedings (Afaan Oromoo, አማርኛ, English)",
+    "Document Manager with Folder Organization and Case Notes",
+    "Zero-Knowledge Biometric Security, Local Encryption & Strict Privacy Safeguards"
+  ]
+}

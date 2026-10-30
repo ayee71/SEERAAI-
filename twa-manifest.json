@@ -1,0 +1,22 @@
+{
+  "packageId": "com.saiethio.seeraai",
+  "host": "ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app",
+  "name": "SeeraAI - Ethiopian Legal AI Assistant",
+  "shortName": "SeeraAI",
+  "startUrl": "/",
+  "display": "standalone",
+  "themeColor": "#0f172a",
+  "backgroundColor": "#0f172a",
+  "iconUrl": "/og-image.jpg",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "seeraai"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "/manifest.json",
+  "fallbackType": "customtab"
+}

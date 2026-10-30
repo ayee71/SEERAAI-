@@ -1,0 +1,269 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==========================================
+    // 1. GLOBAL HELPERS
+    // ==========================================
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.token.firebase.sign_in_provider == 'phone' || request.auth.token.firebase.sign_in_provider == 'anonymous');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'ayeledha@saiethio.com' ||
+        request.auth.token.email == 'ayeledha@gmail.com' ||
+        request.auth.token.email == 'ayele@saiethio.com'
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==========================================
+    // 2. ENTITY VALIDATORS
+    // ==========================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'visitorName', 'courtId']) &&
+             data.keys().hasOnly(['uid', 'email', 'visitorName', 'courtId', 'createdAt', 'updatedAt', 'phone', 'photoURL', 'role', 'subscriptionTier', 'languagePreference']) &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.visitorName is string && data.visitorName.size() <= 100 &&
+             data.courtId is string && data.courtId.size() <= 64;
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll(['userId', 'planId', 'amountETB', 'transactionReference', 'status', 'createdAt']) &&
+             data.keys().hasOnly(['userId', 'planId', 'amountETB', 'transactionReference', 'status', 'createdAt', 'payerPhone', 'payerName', 'notes', 'updatedAt']) &&
+             data.userId == request.auth.uid &&
+             data.status in ['pending', 'completed', 'rejected'] &&
+             data.amountETB is number;
+    }
+
+    // ==========================================
+    // 3. COLLECTION MATCH BLOCKS
+    // ==========================================
+
+    // User Profiles Isolation
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().uid == userId;
+      allow update: if isOwner(userId) && isValidUser(incoming()) && 
+                    incoming().uid == existing().uid && 
+                    incoming().email == existing().email; // Immutable fields
+      
+      match /webauthn_credentials/{credId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Legal Repositories (Public Read, Admin Write)
+    match /legislation_repository/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /telegram_legal_documents/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /vector_chunks/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /legal_qna_repository/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /social_legal_repository/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // User Content (Scoped to userId)
+    match /objection_templates/{id} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isEmailVerified() && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == existing().userId;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /court_sessions/{id} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isEmailVerified() && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && existing().userId == request.auth.uid;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /annotations/{id} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isEmailVerified() && incoming().userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /document_drafts/{id} {
+      allow read, write: if true;
+    }
+
+    match /user_documents/{id} {
+      allow read, write: if true;
+    }
+
+    // Shared Content
+    match /shared_drafts/{id} {
+      allow read: if isSignedIn() && (resource.data.ownerId == request.auth.uid || (resource.data.sharedWith != null && request.auth.uid in resource.data.sharedWith) || isAdmin());
+      allow create: if isSignedIn() && isEmailVerified() && incoming().ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && existing().ownerId == request.auth.uid;
+    }
+
+    match /shared_folders/{id} {
+      allow read: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isEmailVerified() && incoming().ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && existing().ownerId == request.auth.uid;
+    }
+
+    match /discussions/{id} {
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || 
+        resource.data.ownerId == request.auth.uid || 
+        (resource.data.participants != null && request.auth.uid in resource.data.participants) || 
+        isAdmin()
+      );
+      allow create: if isSignedIn() && isEmailVerified() && (incoming().userId == request.auth.uid || incoming().ownerId == request.auth.uid);
+      allow update, delete: if isSignedIn() && (existing().userId == request.auth.uid || existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /dossier_audits/{id} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isEmailVerified() && incoming().userId == request.auth.uid;
+    }
+
+    // Feedback & Analytics
+    match /feedback_messages/{id} {
+      allow create: if isSignedIn();
+      allow read, write: if isAdmin();
+    }
+
+    match /analytics_events/{id} {
+      allow create: if isSignedIn();
+      allow read, write: if isAdmin();
+    }
+
+    // Payments Isolation
+    match /payment_transactions/{id} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isEmailVerified() && isValidPayment(incoming()) && incoming().status == 'pending';
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /airtime_requests/{id} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isEmailVerified() && incoming().userId == request.auth.uid;
+    }
+
+    // Logs & Audits (Admin Only)
+    match /audit_logs/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_activity_logs/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_activity_logs_archived/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /auth_logs/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // System Config
+    match /system_config/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Institutional & Courtroom Management Isolation
+    match /courtroom_sessions/{id} {
+      allow read: if isSignedIn() || isAdmin();
+      allow create: if isAdmin();
+      allow update: if (isSignedIn() || isAdmin()) && 
+                    (incoming().keys().hasOnly(['logs', 'lastScreenCapture', 'lastUpdated', 'institutionName', 'status', 'vkLink', 'googleMeetLink', 'courtLogoUrl', 'autoJoin', 'config', 'hardRefreshTrigger', 'resetTrigger', 'diagnosticsTrigger', 'captureTrigger']));
+      allow delete: if isAdmin();
+    }
+
+    match /court_institutions/{id} {
+      allow read: if true;
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (isSignedIn() && request.auth.token.email == resource.data.adminEmail);
+      allow delete: if isAdmin();
+    }
+
+    match /court_users/{id} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin() || request.auth.token.email == resource.data.createdByAdminEmail);
+      allow create: if isAdmin() || (isSignedIn() && incoming().createdByAdminEmail == request.auth.token.email);
+      allow update: if isAdmin() || (isSignedIn() && existing().createdByAdminEmail == request.auth.token.email && incoming().createdByAdminEmail == existing().createdByAdminEmail);
+      allow delete: if isAdmin();
+    }
+
+    match /court_access_requests/{id} {
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow read, write: if isAdmin();
+    }
+
+    match /test/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /verifications/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // Court Cases & Judicial Dockets
+    match /cases/{id} {
+      allow read: if true;
+      allow write: if isSignedIn() || isAdmin();
+
+      match /activity_logs/{logId} {
+        allow read: if true;
+        allow write: if isSignedIn() || isAdmin();
+      }
+    }
+
+    // Court Notifications & Automated 24-Hour Session Alerts
+    match /court_notifications/{id} {
+      allow read: if true;
+      allow write: if isSignedIn() || isAdmin();
+    }
+  }
+}

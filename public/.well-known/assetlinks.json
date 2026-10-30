@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.saiethio.seeraai",
+      "sha256_cert_fingerprints": [
+        "14:6D:E9:44:C5:9F:97:72:D1:86:2E:7B:65:4B:8A:F3:66:F2:95:F4:99:99:A2:3D:2E:3F:8A:22:E1:9B:4C:11"
+      ]
+    }
+  }
+]

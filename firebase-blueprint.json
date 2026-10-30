@@ -1,0 +1,676 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user settings and profile information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique identifier for the user." },
+        "email": { "type": "string", "description": "User's email address." },
+        "visitorName": { "type": "string", "description": "User's display name or handle." },
+        "appLanguage": { "type": "string", "enum": ["om", "am", "en"], "description": "Preferred app language." },
+        "fontSize": { "type": "string", "enum": ["normal", "large"], "description": "Preferred font size." },
+        "autoDetectInput": { "type": "boolean", "description": "Whether to auto-detect input language." },
+        "aiModelTier": { "type": "string", "enum": ["flash", "pro", "deep_thinking"], "description": "AI model tier selection." },
+        "lawFirmBranding": { "type": "object", "description": "Custom law firm branding details." },
+        "referrerId": { "type": "string", "description": "User vanity referral ID." },
+        "appProtection": { "type": "object", "description": "Application protection settings." },
+        "passcodeHash": { "type": "string", "description": "Hashed passcode for sensitive access." },
+        "theme": { "type": "string", "enum": ["system", "light", "dark"], "description": "Preferred visual theme." },
+        "photoUrl": { "type": "string", "description": "Base64 encoded or URL reference of profile photo." },
+        "facebookLink": { "type": "string", "description": "Facebook profile link." },
+        "telegramLink": { "type": "string", "description": "Telegram link." },
+        "linkedinLink": { "type": "string", "description": "LinkedIn profile link." },
+        "appUsername": { "type": "string", "description": "Social-media style username for search and identity." },
+        "legalRole": { "type": "string", "description": "Legal professional role selected." },
+        "licenseOrInstitution": { "type": "string", "description": "Organization, bar, or institution affiliation." },
+        "activeSessions": { "type": "object", "description": "Map of sessionId to session details (device, browser, os, lastActive)." },
+        "courtId": { "type": "string", "description": "The institution ID this user belongs to." },
+        "legalUpdateSubscription": {
+          "type": "object",
+          "description": "User's email subscription preferences for legal updates.",
+          "properties": {
+            "optIn": { "type": "boolean", "description": "Whether the user opted-in for email notifications." },
+            "email": { "type": "string", "description": "Target email address for updates." },
+            "practiceAreas": { "type": "array", "description": "List of preferred practice areas selected." },
+            "frequency": { "type": "string", "enum": ["instant", "weekly", "monthly"], "description": "Notification frequency." }
+          }
+        },
+        "updatedAt": { "type": "object", "description": "Server timestamp of last update." }
+      },
+      "required": ["uid", "email", "visitorName", "courtId"]
+    },
+    "DossierAudit": {
+      "title": "Court Dossier Audit Record",
+      "description": "Stores the results of a court record audit for history and tracking.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "courtName": { "type": "string" },
+        "fileName": { "type": "string" },
+        "content": { "type": "string" },
+        "auditResult": { "type": "string" },
+        "createdAt": { "type": "object" }
+      },
+      "required": ["userId", "auditResult", "createdAt"]
+    },
+    "SharedDraft": {
+      "title": "Shared Document Draft",
+      "description": "A document shared with a unique token for collaboration.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "token": { "type": "string", "description": "Unique secure access token." },
+        "accessLevel": { "type": "string", "enum": ["view", "comment", "edit"] },
+        "comments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "authorName": { "type": "string" },
+              "text": { "type": "string" },
+              "createdAt": { "type": "object" }
+            }
+          }
+        },
+        "createdAt": { "type": "object" },
+        "expiresAt": { "type": "object" }
+      },
+      "required": ["ownerId", "content", "token", "createdAt"]
+    },
+    "SharedFolder": {
+      "title": "Shared Folder",
+      "description": "A folder shared with a unique token for access.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "folderName": { "type": "string" },
+        "documentIds": { "type": "array", "items": { "type": "string" } },
+        "token": { "type": "string", "description": "Unique secure access token." },
+        "sharedWith": { "type": "array", "items": { "type": "string" }, "description": "List of user IDs granted access." },
+        "createdAt": { "type": "object" }
+      },
+      "required": ["ownerId", "folderName", "token", "createdAt"]
+    },
+    "AnalyticsEvent": {
+      "title": "Real-Time Analytics Event",
+      "description": "Live real-time stream of user actions, legal searches, document analyses, and visits.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "User UID who triggered the action." },
+        "userName": { "type": "string", "description": "Display name of the user/visitor." },
+        "actionType": { "type": "string", "description": "Action performed (e.g. visit, explain_law, doc_analysis, cassation, translate)." },
+        "category": { "type": "string", "description": "Legal topic or category." },
+        "details": { "type": "string", "description": "Details about query or document analyzed." },
+        "referrer": { "type": "string", "description": "Referral source or link creator." },
+        "createdAt": { "type": "object", "description": "Server timestamp when event occurred." }
+      },
+      "required": ["userId", "userName", "actionType", "createdAt"]
+    },
+    "FeedbackMessage": {
+      "title": "Feedback & User Message",
+      "description": "User opinions, feedback, suggestions, and legal consultation inquiries.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Sender user ID." },
+        "senderName": { "type": "string", "description": "Sender full name." },
+        "senderEmail": { "type": "string", "description": "Sender contact email." },
+        "contactInfo": { "type": "string", "description": "Sender phone, Telegram username, or contact handle." },
+        "topic": { "type": "string", "description": "Subject or topic of feedback/inquiry." },
+        "message": { "type": "string", "description": "The message body text." },
+        "rating": { "type": "number", "description": "Optional satisfaction rating (1-5)." },
+        "status": { "type": "string", "enum": ["new", "read", "resolved"], "description": "Message processing status." },
+        "createdAt": { "type": "object", "description": "Server timestamp when message was sent." }
+      },
+      "required": ["userId", "senderName", "message", "createdAt"]
+    },
+    "Annotation": {
+      "title": "Document Annotation",
+      "description": "User-created annotations on legal documents.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Creator user ID." },
+        "documentId": { "type": "string", "description": "ID of the document being annotated." },
+        "content": { "type": "string", "description": "The annotation note text." },
+        "rangeStart": { "type": "number", "description": "Start position of the highlighted text." },
+        "rangeEnd": { "type": "number", "description": "End position of the highlighted text." },
+        "createdAt": { "type": "object", "description": "Server timestamp when annotation was created." }
+      },
+      "required": ["userId", "documentId", "content", "rangeStart", "rangeEnd", "createdAt"]
+    },
+    "TelegramLegalDocument": {
+      "title": "Harvested Telegram Legal Document",
+      "description": "Proclamations, regulations, directives, and court cassation decisions extracted from Telegram channels like @wakoyeb and indexed for platform retrieval.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique ID for the harvested legal document." },
+        "channelHandle": { "type": "string", "description": "Telegram channel username or handle (e.g. wakoyeb)." },
+        "channelTitle": { "type": "string", "description": "Title of the Telegram source channel." },
+        "postUrl": { "type": "string", "description": "Direct URL link to the original Telegram post." },
+        "referenceNumber": { "type": "string", "description": "Extracted legal reference (e.g. Lakk. Galmee 214539, Labsii 242/2014)." },
+        "type": { "type": "string", "enum": ["proclamation", "regulation", "directive", "cassation_decision"], "description": "Detected legislation/decision type." },
+        "jurisdiction": { "type": "string", "enum": ["oromia", "federal"], "description": "Jurisdiction of the enactment." },
+        "category": { "type": "string", "description": "Legal topic category (e.g. labor, property_land, civil_contract, family)." },
+        "title": { "type": "object", "description": "Extracted trilingual titles (om, am, en)." },
+        "summary": { "type": "object", "description": "Extracted trilingual summary of the legal enactment or ruling." },
+        "keyPrinciples": { "type": "object", "description": "Extracted binding legal ratio / principle." },
+        "rawText": { "type": "string", "description": "Original raw message text from Telegram." },
+        "keyArticles": { "type": "array", "description": "List of referenced statutory articles extracted." },
+        "tags": { "type": "array", "description": "Searchable keywords and index tags." },
+        "yearEC": { "type": "number", "description": "Enactment Ethiopian calendar year." },
+        "yearGC": { "type": "number", "description": "Enactment Gregorian calendar year." },
+        "createdAt": { "type": "object", "description": "Server timestamp when stored in Firestore." }
+      },
+      "required": ["id", "channelHandle", "referenceNumber", "type", "jurisdiction", "title", "summary", "rawText", "createdAt"]
+    },
+    "ObjectionTemplate": {
+      "title": "Objection Template",
+      "description": "Customizable legal objection templates grouped by category.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "label": { "type": "string" },
+        "category": { "type": "string", "enum": ["form", "content", "procedure"] },
+        "template": { "type": "string" },
+        "isDefault": { "type": "boolean" },
+        "createdAt": { "type": "object" }
+      },
+      "required": ["id", "label", "category", "template"]
+    },
+    "CourtSession": {
+      "title": "Courtroom Session (Dhaddacha)",
+      "description": "Stores a complete courtroom session including logs, witnesses, and procedural state, categorized by court level.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string", "description": "User-defined title or case number." },
+        "courtLevel": { "type": "string", "enum": ["firstInstance", "highCourt", "cassation"] },
+        "currentStepIndex": { "type": "number" },
+        "logs": { "type": "array" },
+        "witnesses": { "type": "array" },
+        "quickNotes": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "createdAt": { "type": "object" },
+        "updatedAt": { "type": "object" }
+      },
+      "required": ["id", "userId", "title", "courtLevel", "createdAt"]
+    },
+    "KioskSession": {
+      "title": "Courtroom Kiosk Session",
+      "description": "Stores live state, configuration, activity logs, and remote diagnostics for a courtroom kiosk.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "institutionName": { "type": "string" },
+        "googleMeetLink": { "type": "string" },
+        "vkLink": { "type": "string" },
+        "courtLogoUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "autoJoin": { "type": "boolean" },
+        "logs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": { "type": "string", "format": "date-time" },
+              "message": { "type": "string" },
+              "type": { "type": "string", "enum": ["info", "error", "command"] }
+            }
+          }
+        },
+        "config": { "type": "object" },
+        "lastScreenCapture": { "type": "string", "description": "Base64 data URL of the last remote screenshot." },
+        "captureTrigger": { "type": "object", "description": "Timestamp when a new capture is requested." },
+        "hardRefreshTrigger": { "type": "object" },
+        "resetTrigger": { "type": "object" },
+        "diagnosticsTrigger": { "type": "object" },
+        "lastUpdated": { "type": "object" }
+      }
+    },
+    "PaymentTransaction": {
+      "title": "Payment Transaction Record",
+      "description": "Records user payment transactions for subscription plans and credit purchases.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "planId": { "type": "string" },
+        "amountETB": { "type": "number" },
+        "creditsAdded": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["telebirr", "cbe", "chapa", "card", "manual"] },
+        "networkProvider": { "type": "string" },
+        "transactionReference": { "type": "string" },
+        "status": { "type": "string", "enum": ["completed", "pending", "rejected"] },
+        "ownerAccount": { "type": "string" },
+        "createdAt": { "type": "object" }
+      },
+      "required": ["userId", "planId", "amountETB", "transactionReference", "status", "createdAt"]
+    },
+    "LegislationItem": {
+      "title": "Legislation Repository Record",
+      "description": "Statutory laws, proclamations, regulations, and directives repository.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["proclamation", "regulation", "directive", "cassation_decision"] },
+        "jurisdiction": { "type": "string", "enum": ["oromia", "federal"] },
+        "number": { "type": "string" },
+        "title": { "type": "object" },
+        "authority": { "type": "object" },
+        "yearEC": { "type": "number" },
+        "yearGC": { "type": "number" },
+        "category": { "type": "string" },
+        "summary": { "type": "object" },
+        "fullTextArticles": { "type": "array" },
+        "keyPrinciples": { "type": "object" },
+        "status": { "type": "string", "enum": ["active", "amended", "repealed"] },
+        "lastUpdatedDate": { "type": "string" },
+        "tags": { "type": "array" },
+        "createdAt": { "type": "object" }
+      },
+      "required": ["id", "type", "jurisdiction", "number", "title", "status"]
+    },
+    "Discussion": {
+      "title": "Discussion Thread",
+      "description": "Discussion comments on a document or folder.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "targetId": { "type": "string", "description": "ID of the folder or document being discussed." },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "text": { "type": "string" },
+        "meetingLink": { "type": "string", "description": "Shared meeting link for real-time discussion." },
+        "participants": { "type": "array", "items": { "type": "object" }, "description": "List of invited participants and their contact handles." },
+        "createdAt": { "type": "object" }
+      },
+      "required": ["id", "targetId", "authorId", "text", "createdAt"]
+    },
+    "LegalQnA": {
+      "title": "Legal Q&A Repository Record",
+      "description": "Precedent-backed question and answer legal knowledge repository.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "question": { "type": "string" },
+        "answer": { "type": "string" },
+        "category": { "type": "string" }
+      }
+    },
+    "SocialLegalPost": {
+      "title": "Social Legal Post Record",
+      "description": "Legal awareness updates and commentary posts.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "content": { "type": "string" },
+        "platform": { "type": "string" }
+      }
+    },
+    "TestDoc": {
+      "title": "Connection Test Document",
+      "description": "Test doc used for verifying Firestore server connectivity.",
+      "type": "object",
+      "properties": {
+        "connection": { "type": "string" }
+      }
+    },
+    "WebAuthnCredential": {
+      "title": "WebAuthn Biometric Credential",
+      "description": "Stores WebAuthn biometric credentials for user authentication.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "credentialId": { "type": "string" },
+        "publicKey": { "type": "string" },
+        "counter": { "type": "number" },
+        "transports": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["userId", "credentialId", "publicKey", "counter"]
+    },
+    "CourtInstitution": {
+      "title": "Court Judicial Institution",
+      "description": "Stores authorized court institutions, jurisdictions, and institutional admin access info.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "region": { "type": "string" },
+        "courtLevel": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "adminName": { "type": "string" },
+        "accessCode": { "type": "string" },
+        "status": { "type": "string" },
+        "approvedBy": { "type": "string" },
+        "customCourtName": { "type": "string", "description": "Display name overridden by institutional super-admin." },
+        "logoUrl": { "type": "string", "description": "Base64 encoded logo image for the court." }
+      },
+      "required": ["name", "adminEmail", "accessCode", "status"]
+    },
+    "CourtUser": {
+      "title": "Court Judicial Staff / Judge",
+      "description": "Stores judges and court legal officers provisioned by an authorized institutional court admin.",
+      "type": "object",
+      "properties": {
+        "institutionId": { "type": "string" },
+        "courtName": { "type": "string" },
+        "fullName": { "type": "string" },
+        "usernameOrEmail": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "passcode": { "type": "string" },
+        "role": { "type": "string" },
+        "bench": { "type": "string" },
+        "status": { "type": "string" },
+        "licenseNumber": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "assignedCourtLevel": { "type": "string" },
+        "courtId": { "type": "string", "description": "The institution ID this staff belongs to." }
+      },
+      "required": ["institutionId", "fullName", "usernameOrEmail", "passcode", "role", "bench", "status", "courtId"]
+    },
+    "CourtAccessRequest": {
+      "title": "Court Institutional Accession Request",
+      "description": "Stores requests from judicial institutions seeking admin provisioning and onboarding.",
+      "type": "object",
+      "properties": {
+        "institutionName": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "courtLevel": { "type": "string" },
+        "jurisdiction": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["institutionName", "contactPerson", "email", "status"]
+    },
+    "SystemConfig": {
+      "title": "Global System Configuration",
+      "description": "Platform-wide system configuration settings managed exclusively by the owner.",
+      "type": "object",
+      "properties": {
+        "defaultAiModel": { "type": "string" },
+        "maintenanceMode": { "type": "boolean" },
+        "antiCloningActive": { "type": "boolean" },
+        "systemBroadcast": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "updatedAt": { "type": "object" }
+      }
+    },
+    "AdminActivityLog": {
+      "title": "Administrative Action Audit Log",
+      "description": "Audit records of all administrative actions executed by system administrators.",
+      "type": "object",
+      "properties": {
+        "actionType": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "target": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "object" }
+      },
+      "required": ["actionType", "adminEmail", "details"]
+    },
+    "AuditLogEntry": {
+      "title": "Administrative Audit Log Entry",
+      "description": "Stores detailed logs for administrative actions, bench assignments, and approvals.",
+      "type": "object",
+      "properties": {
+        "actionType": { "type": "string" },
+        "institutionId": { "type": "string" },
+        "targetId": { "type": "string" },
+        "performedBy": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "object" }
+      },
+      "required": ["actionType", "performedBy", "details", "timestamp"]
+    },
+    "VectorChunk": {
+      "title": "Vector Embedding Chunk",
+      "description": "Text chunk and its associated embedding vector for RAG.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "embedding": { "type": "array", "items": { "type": "number" } },
+        "metadata": { "type": "object" },
+        "createdAt": { "type": "object" }
+      },
+      "required": ["text", "embedding", "createdAt"]
+    },
+    "VectorFeedback": {
+      "title": "Vector Search Feedback",
+      "description": "Feedback on RAG-grounded AI responses.",
+      "type": "object",
+      "properties": {
+        "query": { "type": "string" },
+        "responseText": { "type": "string" },
+        "rating": { "type": "string", "enum": ["thumbs-up", "thumbs-down"] },
+        "timestamp": { "type": "object" },
+        "userId": { "type": "string" }
+      },
+      "required": ["query", "responseText", "rating", "timestamp", "userId"]
+    },
+    "AuthLog": {
+      "title": "Authentication Log",
+      "description": "Logs of user and biometric authentication events.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "action": { "type": "string" },
+        "timestamp": { "type": "object" },
+        "details": { "type": "string" }
+      }
+    },
+    "CourtStaffRequest": {
+      "title": "Court Staff Request",
+      "description": "Staff account provisioning requests for court personnel.",
+      "type": "object",
+      "properties": {
+        "courtId": { "type": "string" },
+        "staffName": { "type": "string" },
+        "role": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "object" }
+      }
+    },
+    "AirtimeRequest": {
+      "title": "Airtime Recharge Request",
+      "description": "User airtime and credit top-up requests.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "object" }
+      }
+    },
+    "VerificationToken": {
+      "title": "Email Verification Token",
+      "description": "Tokens for URL email verification and account activation.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "used": { "type": "boolean" },
+        "createdAt": { "type": "object" }
+      }
+    },
+    "AdminActivityLogArchived": {
+      "title": "Archived Admin Log",
+      "description": "Archived administrator actions for historical compliance.",
+      "type": "object",
+      "properties": {
+        "actionType": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "object" }
+      }
+    },
+    "CaseDocket": {
+      "title": "Court Case Docket",
+      "description": "Judicial docket record, litigation lifecycle stages, and assignments.",
+      "type": "object",
+      "properties": {
+        "caseNumber": { "type": "string" },
+        "claimantName": { "type": "string" },
+        "respondentName": { "type": "string" },
+        "claimSubject": { "type": "string" },
+        "assignedJudge": { "type": "string" },
+        "status": { "type": "string" },
+        "nextHearingDate": { "type": "string" },
+        "deadline24hNotified": { "type": "boolean" },
+        "createdAt": { "type": "object" }
+      }
+    },
+    "CourtNotification": {
+      "title": "Court Notification",
+      "description": "Consolidated assignments and automated 24-hour hearing session alerts.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "recipientRole": { "type": "string" },
+        "recipientName": { "type": "string" },
+        "type": { "type": "string" },
+        "caseId": { "type": "string" },
+        "caseNumber": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "object" }
+      }
+    }
+  },
+  "firestore": {
+    "vector_feedback/{feedbackId}": {
+      "schema": "VectorFeedback",
+      "description": "Feedback for vector search results."
+    },
+    "vector_chunks/{chunkId}": {
+      "schema": "VectorChunk",
+      "description": "Storage for text chunks and embeddings for RAG."
+    },
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles keyed by user ID."
+    },
+    "users/{userId}/webauthn_credentials/{credentialId}": {
+      "schema": "WebAuthnCredential",
+      "description": "Collection of WebAuthn credentials for user authentication."
+    },
+    "payment_transactions/{txId}": {
+      "schema": "PaymentTransaction",
+      "description": "Payment records and reconciliation audit logs."
+    },
+    "courtroom_sessions/{sessionId}": {
+      "schema": "KioskSession",
+      "description": "Live state and control data for courtroom kiosks."
+    },
+    "analytics_events/{eventId}": {
+      "schema": "AnalyticsEvent",
+      "description": "Real-time feed of user interactions and feature usage without page reload."
+    },
+    "feedback_messages/{messageId}": {
+      "schema": "FeedbackMessage",
+      "description": "Real-time user feedback, comments, reviews, and consultation inbox messages."
+    },
+    "annotations/{annotationId}": {
+      "schema": "Annotation",
+      "description": "Annotations made by users on legal documents."
+    },
+    "telegram_legal_documents/{documentId}": {
+      "schema": "TelegramLegalDocument",
+      "description": "Harvested legal proclamations, regulations, and cassation rulings from public Telegram channels stored for platform indexing and retrieval."
+    },
+    "dossier_audits/{auditId}": {
+      "schema": "DossierAudit",
+      "description": "Historical record of court dossier audits performed by users for daily tracking."
+    },
+    "shared_drafts/{draftId}": {
+      "schema": "SharedDraft",
+      "description": "Access-controlled legal document drafts for collaborative review and commenting."
+    },
+    "shared_folders/{folderId}": {
+      "schema": "SharedFolder",
+      "description": "Access-controlled shared folder links."
+    },
+    "discussions/{discussionId}": {
+      "schema": "Discussion",
+      "description": "Discussion threads for documents and folders."
+    },
+    "objection_templates/{templateId}": {
+      "schema": "ObjectionTemplate",
+      "description": "Customizable legal objection templates grouped by category."
+    },
+    "legislation_repository/{docId}": {
+      "schema": "LegislationItem",
+      "description": "Repository of regional and federal legal proclamations."
+    },
+    "legal_qna_repository/{docId}": {
+      "schema": "LegalQnA",
+      "description": "Repository of legal questions and verified answers."
+    },
+    "social_legal_repository/{docId}": {
+      "schema": "SocialLegalPost",
+      "description": "Repository of legal awareness and case commentary posts."
+    },
+    "auth_logs/{logId}": {
+      "schema": "AuthLog",
+      "description": "Logs of WebAuthn biometric authentication attempts."
+    },
+    "court_institutions/{instId}": {
+      "schema": "CourtInstitution",
+      "description": "Registered and authorized court institutions."
+    },
+    "court_users/{userId}": {
+      "schema": "CourtUser",
+      "description": "Judges and court legal experts created by court admins."
+    },
+    "court_access_requests/{requestId}": {
+      "schema": "CourtAccessRequest",
+      "description": "Accession requests from judicial institutions."
+    },
+    "system_config/{configId}": {
+      "schema": "SystemConfig",
+      "description": "Platform-wide system configuration settings."
+    },
+    "admin_activity_logs/{logId}": {
+      "schema": "AdminActivityLog",
+      "description": "Historical audit logs of administrative actions."
+    },
+    "audit_logs/{logId}": {
+      "schema": "AuditLogEntry",
+      "description": "Detailed audit trail of administrative actions including bench assignments."
+    },
+    "test/{docId}": {
+      "schema": "TestDoc",
+      "description": "Connection test documents."
+    },
+    "court_staff_requests/{requestId}": {
+      "schema": "CourtStaffRequest",
+      "description": "Staff provisioning requests."
+    },
+    "airtime_requests/{requestId}": {
+      "schema": "AirtimeRequest",
+      "description": "User airtime and credit top-up requests."
+    },
+    "verifications/{tokenId}": {
+      "schema": "VerificationToken",
+      "description": "Verification tokens."
+    },
+    "admin_activity_logs_archived/{logId}": {
+      "schema": "AdminActivityLogArchived",
+      "description": "Archived administrative action logs."
+    },
+    "cases/{caseId}": {
+      "schema": "CaseDocket",
+      "description": "Court cases, litigation lifecycle dockets, and hearing schedules."
+    },
+    "court_notifications/{notifId}": {
+      "schema": "CourtNotification",
+      "description": "Consolidated assignments and automated 24-hour hearing session push notifications."
+    }
+  }
+}
+

@@ -1,0 +1,6 @@
+{
+  "summary":  "Initial security specification for SEERAAI, outlining the data invariants, threat model (Dirty Dozen payloads), and testing plan for Firestore rules.",
+  "updatedAt":  "2026-10-25T18:25:17.518185125Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

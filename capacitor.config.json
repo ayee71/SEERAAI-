@@ -1,0 +1,15 @@
+{
+  "appId": "com.saiethio.seeraai.ios",
+  "appName": "SeeraAI Legal Assistant",
+  "webDir": "dist",
+  "server": {
+    "url": "https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app",
+    "cleartext": true
+  },
+  "ios": {
+    "contentInset": "automatic"
+  },
+  "android": {
+    "backgroundColor": "#0f172a"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "id": "/",
+  "name": "SAI Ethio • SeeraAI Legal Platform",
+  "short_name": "SeeraAI",
+  "description": "Sirna Qorannoo fi Tajaajila Seeraa Afaan-Sadee Ogeessa Seeraa Ayele Be Dha (ayeledha@gmail.com).",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "categories": ["productivity", "business", "legal"],
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "author": {
+    "name": "Ayele Be Dha",
+    "email": "ayeledha@gmail.com",
+    "url": "https://www.saiethio.com"
+  },
+  "prefer_related_applications": false
+}
