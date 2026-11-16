@@ -1,0 +1,33 @@
+SEERAAI PRO — PHASE 8B CI WORKFLOW CORRECTION
+MODE: PREPARE A MINIMAL PATCH; DO NOT PUSH OR DEPLOY
+TARGET: Existing repository workflow only
+
+Context:
+- The GitHub Actions run for "NodeJS with Webpack" selected Node.js 18.20.8.
+- The reported package engine requirements include @google/genai >=20, @simplewebauthn/server >=22, and @vitejs/plugin-react ^20.19.0 || >=22.12.0.
+- Therefore Node 18 is incompatible with the declared dependency requirements. Node 22.x is the minimum common major version supported by the supplied evidence.
+- The workflow is reported at .github/workflows/webpack.yml and currently tests a matrix including Node 18.x, 20.x and 22.x.
+- The separate .github/workflows/firebase-hosting-merge.yml deploys to Firebase Hosting channelId: live on pushes to main. Do not touch it in this task.
+
+Your task:
+1. Inspect the actual current contents of .github/workflows/webpack.yml and package.json before proposing changes.
+2. Prepare the smallest safe change so the existing build workflow no longer runs the incompatible Node 18.x and Node 20.x matrix entries; use Node 22.x only, unless the actual package.json shows a different minimum supported runtime. Do not guess.
+3. Keep the workflow's build steps and other settings unchanged unless a change is essential. Do not change package.json, package-lock.json, application source, Firebase configuration, Firestore rules, Storage rules, or any other workflow.
+4. If a validation on branch ci/rules-emulator-tests is necessary, propose (but do not silently add) the smallest trigger change to allow this build-only workflow to run on that branch. Explain whether it has any production deployment step before recommending it.
+5. Show the exact unified diff, explain each changed line, and run only local non-deployment YAML/syntax validation if available.
+
+STRICT SAFETY RULES:
+- Do not edit .github/workflows/firebase-hosting-merge.yml.
+- Do not edit deploy-pages.yml or jekyll-gh-pages.yml.
+- Do not change the repository default branch or switch branches.
+- Do not run git commit, git push, gh workflow run, Firebase CLI deploy, Hosting deploy, Cloud Run deploy, or any production command.
+- Do not access, print, request, or expose any secret or credential.
+- Do not merge anything into main.
+- Do not claim GitHub Actions passed; only a real GitHub run can establish that.
+
+Return:
+A. Exact files inspected.
+B. Current workflow behavior and why Node 18 fails compatibility.
+C. Exact proposed diff (or say no change if the file differs from the report).
+D. Local validation results and limitations.
+E. Explicit confirmation that no commit, push, merge, Firebase deployment, or production change was performed.

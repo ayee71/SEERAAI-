@@ -1,0 +1,135 @@
+SEERAAI PRO — PHASE 8B.6.11
+CODESPACES IMPORT, BRANCH PUSH & CI CHECKLIST
+
+GOAL
+Import the verified Phase 8B.6.8 candidate into a separate GitHub branch, include the Node 22 workflow patch, run GitHub Actions, and keep production unchanged.
+
+IMPORTANT
+- Do NOT push directly to main.
+- Do NOT merge the Pull Request.
+- Do NOT run Firebase deploy commands.
+- Do NOT stage firestore.rules, storage.rules, or firebase.json.
+- The Phase 8B.6.8 ZIP checksum proves the ZIP itself and the files listed in SHA256SUMS.txt. It does NOT automatically prove that a later Node 22 webpack.yml patch is inside that older ZIP.
+
+STEP 1 — OPEN THE CORRECT REPOSITORY IN GITHUB CODESPACES
+Open the existing SEERAAI repository in Codespaces. In the terminal, run:
+
+pwd
+git remote -v
+git branch --show-current
+git status --short
+
+Make sure this is the correct repository. If git status shows unexpected changes, STOP and inspect them before copying or staging anything.
+
+STEP 2 — CREATE / SWITCH TO THE ISOLATED BRANCH
+If the branch does not already exist locally:
+
+git fetch origin
+git switch -c ci/rules-emulator-tests origin/main
+
+If it already exists locally, use:
+
+git switch ci/rules-emulator-tests
+
+Do not switch to main to perform the import. Confirm:
+
+git branch --show-current
+
+Expected output:
+ci/rules-emulator-tests
+
+STEP 3 — VERIFY THE EXACT ZIP BEFORE EXTRACTING
+Upload the already-downloaded, unchanged ZIP into the Codespaces repository. The following assumes it is located at public/seeraai_phase_8b_6_8_candidate_handoff.zip. If you uploaded it elsewhere, adjust ZIP_PATH only.
+
+ZIP_PATH="public/seeraai_phase_8b_6_8_candidate_handoff.zip"
+stat -c '%s' "$ZIP_PATH"
+sha256sum "$ZIP_PATH"
+unzip -t "$ZIP_PATH"
+
+Expected size:
+204547
+
+Expected SHA-256:
+31119addd0a766a1c73e5e19d6fb2cbd3b82ad3b6e2ce905827a113b06bc0d9b
+
+STOP if the size or SHA-256 differs, or if unzip -t reports an error. Do not recreate or alter the ZIP.
+
+STEP 4 — EXTRACT TO A TEMPORARY FOLDER AND VERIFY THE MANIFEST
+
+rm -rf /tmp/seeraai-8b68
+mkdir -p /tmp/seeraai-8b68
+unzip -q "$ZIP_PATH" -d /tmp/seeraai-8b68
+(cd /tmp/seeraai-8b68 && sha256sum -c SHA256SUMS.txt)
+
+All entries listed in SHA256SUMS.txt must report OK. STOP if any entry fails.
+
+STEP 5 — IMPORT THE CHECKSUM-VERIFIED CANDIDATE FILES
+
+cp -a /tmp/seeraai-8b68/. .
+
+Do not stage or commit the ZIP itself. Keep the ZIP outside the Git commit, or remove only the separate uploaded Codespaces copy after confirming extraction. Do not delete or alter the original copy in the AI Studio project.
+
+STEP 6 — VERIFY THE NODE 22 WORKFLOW PATCH SEPARATELY
+The Phase 8B.6.8 ZIP may predate the later Node 22 workflow edit. Therefore, do not assume the ZIP imported that edit.
+
+Inspect the current Codespaces file:
+
+grep -n -A3 -B3 'node-version' .github/workflows/webpack.yml
+git diff -- .github/workflows/webpack.yml
+
+The intended matrix line must be:
+node-version: [22.x]
+
+If the file still shows [18.x, 20.x, 22.x], STOP. Transfer the already-reviewed Node 22 webpack.yml from the AI Studio workspace into Codespaces, or apply only the approved one-line change using the editor. Then inspect the diff and confirm that no other workflow settings changed.
+
+Also confirm the build script:
+
+grep -n '"build"' package.json
+
+Expected script:
+"build": "vite build && node scripts/prepare-build.js"
+
+STEP 7 — CHECK PRODUCTION FILES ARE UNCHANGED
+
+git diff --exit-code -- firestore.rules storage.rules firebase.json
+
+This command must exit with code 0. Do not add these production files to the candidate commit.
+
+STEP 8 — REVIEW THE EXACT STAGING LIST
+Run the explicit staging command from the Phase 8B.6.10 report only after all previous checks pass:
+
+git add .github/workflows/rules-test.yml .github/workflows/webpack.yml firebase.emulator.test.json firestore.rules.phase8b5.3.integrated.candidate storage.rules.phase8b5.4.integrated.candidate package.json package-lock.json SHA256SUMS.txt tests/firestore.rules.test.ts tests/storage.rules.test.ts src/services/courtDocuments.ts src/components/CourtFolderExplorer.tsx src/services/ownerAuth.ts src/context/AuthContext.tsx src/views/LandingView.tsx src/App.tsx src/components/VisitorIdentityModal.tsx src/components/Navbar.tsx
+
+Then inspect staged files:
+
+git diff --cached --check
+git diff --cached --stat
+git diff --cached --name-only
+git status --short
+
+Confirm that firestore.rules, storage.rules, and firebase.json are NOT staged. Confirm that .github/workflows/webpack.yml contains only the intended Node-version change (unless other changes are separately authorized and explained). If any unexpected file appears, STOP; unstage it and inspect before continuing.
+
+STEP 9 — COMMIT AND PUSH THE BRANCH
+Only after the staged diff is fully reviewed:
+
+git commit -m "test: import Phase 8B.6.8 candidate and Node 22 CI"
+git push -u origin ci/rules-emulator-tests
+
+Do not push to main.
+
+STEP 10 — RUN BOTH CI WORKFLOWS WITHOUT MERGING
+After the branch push, open GitHub → Actions.
+- Confirm rules-emulator-tests / rules-test.yml runs on the ci/rules-emulator-tests branch.
+- The webpack.yml workflow described in the audit targets main pushes and pull requests to main. To trigger its pull_request run, open a Pull Request from ci/rules-emulator-tests into main, but DO NOT merge it.
+- A Pull Request to main does not itself trigger the reported Firebase Hosting workflow, which is configured for pushes to main. Do not merge or push main.
+
+Capture and retain:
+1. Repository URL and branch URL.
+2. Commit SHA.
+3. GitHub Actions run URL(s).
+4. Full Firestore and Storage emulator test output.
+5. webpack build workflow result and logs.
+6. Confirmation that no merge and no Firebase production deployment occurred.
+
+FINAL STATUS RULE
+Until the live GitHub Actions runs complete successfully and their logs are reviewed, status remains BLOCKED / CI PENDING. A local build PASS is not proof that GitHub CI or production deployment passed.

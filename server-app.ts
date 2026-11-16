@@ -5706,8 +5706,12 @@ async function runAutomated24hDeadlineScanner(scopedInstitutionId?: string): Pro
         }
       }
     }
-  } catch (error) {
-    console.warn('[Deadline Scanner] Error during scan:', error);
+  } catch (error: any) {
+    if (error?.code === 7 || error?.message?.includes('PERMISSION_DENIED') || error?.details?.includes('PERMISSION_DENIED')) {
+      console.warn('[Deadline Scanner] Firestore permissions restricted in current environment (gracefully skipped).');
+    } else {
+      console.warn('[Deadline Scanner] Error during scan:', error?.message || error);
+    }
   }
 
   return results;

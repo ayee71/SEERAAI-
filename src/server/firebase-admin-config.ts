@@ -69,12 +69,16 @@ export const getSafeAdminFirestore = () => {
   const dbId = getFirestoreDatabaseId();
   try {
     if (dbId && dbId !== '(default)') {
-      return getAdminFirestore(app, dbId);
+      try {
+        return getAdminFirestore(app, dbId);
+      } catch (namedErr: any) {
+        console.warn(`[Firebase Admin] Named database ID '${dbId}' failed, falling back to default database.`);
+        return getAdminFirestore(app);
+      }
     }
-    console.warn('[Firebase Admin] Named database ID not configured; refusing silent (default) fallback.');
-    return null;
+    return getAdminFirestore(app);
   } catch (err: any) {
-    console.error(`[Firebase Admin] Firestore initialization failed for ${dbId}:`, err?.message || err);
+    console.warn(`[Firebase Admin] Firestore initialization fallback warning:`, err?.message || err);
     return null;
   }
 };

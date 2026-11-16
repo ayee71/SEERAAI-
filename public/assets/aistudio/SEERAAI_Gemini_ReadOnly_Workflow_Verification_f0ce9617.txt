@@ -1,0 +1,58 @@
+SEERAAI PRO — READ-ONLY GITHUB ACTIONS WORKFLOW VERIFICATION
+
+ROLE
+Act as a senior DevOps and Firebase deployment auditor. Inspect the EXISTING SEERAAI PRO project in the current Google AI Studio workspace. Do not create a new project or replace the existing application.
+
+TASK
+Verify the GitHub Actions workflow whose relevant content is:
+
+name: Deploy to Firebase Hosting on merge
+'on':
+  push:
+    branches:
+      - main
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci && npm run build
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_LEAFY_RUSH_XVD6F }}'
+          channelId: live
+          projectId: leafy-rush-xvd6f
+
+READ-ONLY / SAFETY RESTRICTIONS — MANDATORY
+1. Inspect only. Do not edit, create, delete, rename, move, or overwrite any file.
+2. Do not run Git commands that change repository state. Do not commit, push, pull, merge, rebase, reset, or switch branches.
+3. Do not run Firebase deploy, Hosting deploy, Firebase CLI deploy, or any command that could publish to production.
+4. Do not reveal, print, copy, or request the value of any secret, token, service-account key, password, or credential.
+5. Do not change Firebase project settings, GitHub settings, workflow permissions, or environment variables.
+6. If the current workspace does not contain the repository or a file, state that it is unavailable. Do not pretend to have inspected GitHub remotely.
+
+INSPECTION CHECKLIST
+A. Identify the exact workflow file path and report whether the complete file matches the workflow excerpt above. If it differs, quote only the relevant non-secret lines.
+B. Explain the trigger precisely: does a push to branch `main` start this workflow? Does it also run on other branches or pull requests?
+C. Explain the deployment target: does `channelId: live` configure a live Firebase Hosting deployment rather than a preview channel?
+D. Inspect `package.json` and verify whether `npm ci` and `npm run build` are valid for this project. Report the exact build script and any obvious mismatch.
+E. Inspect `firebase.json` and relevant Firebase Hosting configuration. Check whether the configured project ID and Hosting settings are consistent with `leafy-rush-xvd6f`. Do not change anything.
+F. Check whether the referenced GitHub secret NAME is documented or referenced elsewhere in the repository. IMPORTANT: repository files cannot prove that the secret is actually configured in GitHub Settings or that its value is valid. State this limitation explicitly unless you have authorized GitHub access that can verify secret presence without exposing its value.
+G. Determine whether this workflow can automatically publish to production when a commit is pushed to `main`.
+H. Check for other workflow files that could also deploy to Firebase Hosting, GitHub Pages, or change Firebase security rules. List their paths and triggers. Do not execute them.
+I. Distinguish facts verified from files in the current workspace from facts that require GitHub Actions logs, GitHub repository settings, or Firebase Console access.
+
+REPORT FORMAT
+Return a concise audit report with these headings:
+1. Inspection scope and access limitations
+2. Exact workflow path and verification result
+3. Trigger and deployment behavior
+4. Build and Firebase configuration compatibility
+5. Secret-reference verification (never reveal secret values)
+6. Other related workflows
+7. Risks and required human checks
+8. Final verdict: WORKFLOW CONFIGURED / CONFIGURATION ISSUE FOUND / CANNOT VERIFY
+
+FINAL DECISION RULE
+Do not claim that deployment succeeded merely because the workflow file exists. A successful deployment can be confirmed only from the relevant GitHub Actions run and Firebase Hosting deployment evidence. Do not perform any remediation. Give findings and recommended next steps only; wait for explicit human approval before any modification.

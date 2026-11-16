@@ -1,0 +1,42 @@
+SEERAAI PRO — NODEJS WITH WEBPACK CI FAILURE: SAFE MINIMAL FIX
+
+FIRST: Inspect only. Do not make changes until you identify the exact workflow file and report the relevant lines.
+
+CONTEXT FROM THE FAILED GITHUB ACTIONS RUN
+- Workflow title: NodeJS with Webpack
+- Job: build (18.x)
+- Commit: bb7e9be8c1b8125a9fec5f9f00a14c30a5b0ef6d
+- The workflow installed Node.js 18.20.8.
+- npm reported EBADENGINE for dependencies requiring newer Node versions, including:
+  * @google/genai@2.32.0 requires Node >=20
+  * @simplewebauthn/server@14.1.0 requires Node >=22
+  * @vitejs/plugin-react@6.3.0 requires ^20.19.0 or >=22.12.0
+  * @tailwindcss/oxide@4.3.5 requires Node >=20
+- The pasted log does not include the final npm error line, so do not claim these warnings are conclusively the only failure cause.
+
+TASK
+1. Find the exact GitHub Actions workflow file whose displayed name is "NodeJS with Webpack" and inspect its Node version configuration.
+2. Confirm whether its matrix/config explicitly uses Node 18.x.
+3. Inspect package.json and package-lock.json to confirm the project's Node compatibility requirements.
+4. If the workflow uses Node 18.x, prepare the smallest safe patch to use Node 22.x (22.12 or later). Do not use Node 18. Keep unrelated workflow settings unchanged.
+5. Do not change dependency versions, package-lock.json, Firebase config, Firebase Hosting workflow, firestore.rules, storage.rules, or application source code unless a separate proven issue makes it absolutely necessary. If anything else appears necessary, stop and explain before changing it.
+6. Show the exact diff and explain why Node 22.x meets the listed dependency engine requirements.
+7. Run only non-deployment validation that is available, such as the existing build/test commands. Report exact commands and results. Do not hide failures.
+
+STRICT SAFETY BOUNDARIES
+- This is an inspection/minimal-CI-fix task only.
+- Do not run Firebase deploy, Firebase Hosting deploy, GitHub Pages deploy, or any production deployment.
+- Do not read, print, request, or expose secret values or credentials.
+- Do not commit, push, merge, create/delete branches, or trigger GitHub Actions.
+- Do not change the current GitHub branch or sync settings.
+- Do not modify the separate workflow named "Deploy to Firebase Hosting on merge". It has a separate failure and must be diagnosed independently from its own logs.
+- Do not claim the Firebase deployment problem is fixed by changing the NodeJS with Webpack workflow.
+
+FINAL RESPONSE FORMAT
+A. Exact workflow file path
+B. Evidence of the current Node version
+C. Confirmed dependency engine requirements
+D. Exact proposed/applied diff (only if safe)
+E. Validation commands and results
+F. Remaining uncertainty, especially the missing final npm error line
+G. Explicit confirmation: no push, merge, or deployment was performed

@@ -1,0 +1,74 @@
+SEERAAI PRO — PHASE 8B.6.10
+FINAL PRE-PUSH AUDIT: NODE 22 WORKFLOW + CANDIDATE HANDOFF
+
+MODE: STRICT READ-ONLY INSPECTION
+
+OBJECTIVE
+Prepare a verified, safe handoff to GitHub branch ci/rules-emulator-tests. Do not push, commit, merge, deploy, publish, or modify any file.
+
+IMPORTANT PRODUCTION SAFETY RULES
+1. Do not modify or deploy firestore.rules, storage.rules, firebase.json, Firebase Hosting, Cloud Run, Firebase Functions, or any production resource.
+2. Do not modify, recreate, rename, replace, extract over, or regenerate the existing candidate archive:
+   public/seeraai_phase_8b_6_8_candidate_handoff.zip
+3. Do not change application source, package.json, package-lock.json, dependencies, or any workflow during this audit.
+4. Do not perform git commit, git push, git merge, branch creation, pull-request creation, or deployment.
+5. Report only facts verified from the current workspace. Clearly label anything that cannot be checked locally or requires GitHub access.
+
+TASK A — VERIFY THE NODE 22 WORKFLOW PATCH
+Inspect .github/workflows/webpack.yml and report:
+- Exact workflow file path and displayed workflow name.
+- Exact current Node matrix. Confirm whether it is [22.x] only.
+- Exact triggers (push branches, pull_request branches, workflow_dispatch, if present).
+- Exact YAML diff relative to the prior matrix [18.x, 20.x, 22.x].
+- Confirm whether any other lines in this workflow changed.
+- Check YAML syntax/structure without modifying the file.
+
+TASK B — VERIFY THE PACKAGE BUILD COMMAND
+Inspect package.json and package-lock.json:
+- Quote the exact package.json build script.
+- Confirm whether npm ci is valid for this repository (lockfile exists and is synchronized, to the extent locally verifiable).
+- Compare the workflow's install/build commands against package.json.
+- Distinguish a successful local build from a GitHub Actions run; do not claim CI passed unless a real Actions run is available.
+- Check the exact installed engine requirements for Vite, @vitejs/plugin-react, @google/genai, @simplewebauthn/server, and @tailwindcss/vite if their package metadata is locally available. Do not claim Node 20 is incompatible if its declared requirement permits >=20.19.0. Explain that selecting Node 22 only may be a project standardization decision.
+
+TASK C — VERIFY THE EXISTING CANDIDATE ZIP WITHOUT CHANGING IT
+Inspect the exact existing file:
+   public/seeraai_phase_8b_6_8_candidate_handoff.zip
+Expected size: 204547 bytes
+Expected SHA-256:
+   31119addd0a766a1c73e5e19d6fb2cbd3b82ad3b6e2ce905827a113b06bc0d9b
+Report actual size, SHA-256, ZIP entry count, and whether the internal SHA256SUMS.txt verification passes. Do not alter the ZIP under any circumstance.
+
+TASK D — RECONCILE THE HANDOFF CONTENTS
+- List the exact files inside the candidate ZIP.
+- Determine whether .github/workflows/webpack.yml is included in that ZIP.
+- Determine whether the workflow patch is therefore a separate file that must be added separately during the GitHub branch import.
+- Compare this with the existing Phase 8B.6.9 import guide if that file is present.
+- If the guide's explicit git add list omits the patched workflow, identify that omission and propose the minimal additional staging command. Do not execute it.
+- Preserve the guide's exact candidate file list and checksum requirements; do not broaden staging with git add . or git add -A.
+
+TASK E — GITHUB ACTIONS TRIGGER AND SAFETY REVIEW
+Using the current workflow files, report whether pushing to ci/rules-emulator-tests will trigger:
+- rules-test.yml
+- webpack.yml
+- firebase-hosting-merge.yml
+- deploy-pages.yml / jekyll-gh-pages.yml
+Also report whether opening a pull request from ci/rules-emulator-tests to main would trigger the relevant CI workflows, based on their actual triggers.
+Do not infer successful execution from workflow configuration.
+Emphasize that firebase-hosting-merge.yml must not deploy on a branch push or pull_request if its trigger is push to main only; verify rather than assume.
+
+TASK F — FINAL OPERATIONAL CHECKLIST
+Produce a concise numbered checklist for the user to:
+1. Import only the verified candidate files and the workflow patch (if it is separate) into ci/rules-emulator-tests.
+2. Run the required GitHub Actions checks without merging to main.
+3. Capture the branch URL, commit SHA, Actions run URL, and complete Firestore/Storage test output.
+4. Verify that no production deployment occurred.
+
+FINAL REPORT FORMAT
+A. Executive verdict: READY FOR MANUAL GITHUB IMPORT / BLOCKED, with exact reason.
+B. Verified evidence (paths, sizes, hashes, command exit codes, YAML triggers).
+C. Exact minimal git add command(s) to be run manually, if they can be established from the guide and archive.
+D. Remaining limitations and items that require live GitHub access.
+E. Explicit confirmation: READ-ONLY AUDIT ONLY; no files modified; no commit/push/merge/deployment performed.
+
+Never fabricate a checksum, workflow run, commit SHA, GitHub status, secret, or deployment result. If any expected file is absent or inaccessible, state that clearly.

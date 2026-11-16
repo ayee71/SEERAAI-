@@ -1,0 +1,63 @@
+SEERAAI PRO — NODE 22 CI VERIFICATION
+READ-ONLY AUDIT PROMPT
+
+GOAL
+Verify whether the Node 22 build and CI claims in the Engineering Review are supported by the actual repository files and GitHub Actions execution evidence.
+
+IMPORTANT SAFETY RULES
+1. READ-ONLY ONLY. Do not edit, create, delete, rename, or overwrite any repository file.
+2. Do not change package.json, package-lock.json, either workflow, Firebase configuration, Firestore rules, Storage rules, or application source code.
+3. Do not install, upgrade, downgrade, or remove dependencies.
+4. Do not push commits, merge branches, deploy, publish, or change cloud resources.
+5. Do not expose secrets, API keys, tokens, credentials, private environment variables, or user data in the report.
+6. Do not claim that a CI workflow passed unless its actual GitHub Actions run and job logs are available and verified.
+7. If evidence is unavailable, label the item NOT VERIFIED. Do not guess.
+
+FILES AND EVIDENCE TO INSPECT
+A. package.json
+- Read the exact scripts: build, test, lint, and dev.
+- Read the exact declared versions of vite, @vitejs/plugin-react, @simplewebauthn/server, @google/genai, @tailwindcss/vite, tsx, typescript, and esbuild if present.
+- Check whether package.json declares an engines.node range.
+
+B. Lockfile
+- Determine whether package-lock.json exists and is committed.
+- Confirm whether its dependency versions correspond to package.json.
+- Do not regenerate or modify the lockfile.
+
+C. GitHub workflows
+- Inspect .github/workflows/rules-test.yml and .github/workflows/webpack.yml.
+- Quote the exact Node version configuration used by each workflow.
+- Check whether installation uses npm ci or npm install.
+- Check whether the workflow runs build, type-check, Firestore Rules tests, and Storage Rules tests.
+- Check emulator configuration, ports, startup, readiness, and cleanup.
+- Check whether any test step can be skipped or allowed to fail.
+
+D. Actual CI execution evidence
+- Locate the GitHub Actions runs associated with the current candidate commit/branch.
+- Record the commit SHA, workflow name, run ID or URL, event, branch, Node version shown in logs, job result, and failing step (if any).
+- Inspect logs for EBADENGINE, deprecation warnings, missing packages, emulator startup errors, test failures, and build failures.
+- Distinguish a workflow file being syntactically valid from a workflow having actually passed.
+
+CLAIMS THAT MUST BE CHECKED CAREFULLY
+1. Do not describe Node 22 as “100% compatible” merely because package engine ranges appear to allow it. State only what the declared engines and actual tests prove.
+2. `tsc --noEmit` is a TypeScript type-check command, not a linter, unless a separate lint tool is actually invoked.
+3. Do not claim `npx tsx` can never access the network. Verify that tsx is declared and installed through the lockfile-based install.
+4. Do not claim a 50 MB buffer test proves Node 22 memory performance or proves all 50 MB uploads work end-to-end. State exactly what the test checks.
+5. Do not claim Node 22 native watch mode is used unless the script actually invokes Node's watch mode. A `tsx watch` command should be described accurately.
+6. Do not state a build takes less than six seconds unless supported by a measured CI/local log, including the environment and command.
+7. Check whether `webpack.yml` uses `npm install`. If a committed package-lock.json exists, explain whether `npm ci` would improve deterministic CI installation. Do not change it during this audit.
+8. Confirm whether the stated dependency versions and Node engine ranges match the actual installed/locked package metadata. Do not rely on the earlier review's table.
+
+REQUIRED OUTPUT FORMAT
+Produce a concise evidence-based report with these sections:
+
+1. VERDICT: PASS / FAIL / PARTIALLY VERIFIED.
+2. REPOSITORY STATE: branch, candidate commit SHA, and whether the working tree or repository changed during this audit (it must remain unchanged).
+3. FILE EVIDENCE: exact file paths and line numbers for scripts, Node versions, install commands, tests, and emulator settings.
+4. CI RUN EVIDENCE: workflow names, run IDs/URLs, commit SHA, job results, and verified Node versions. If unavailable, say NOT VERIFIED.
+5. CLAIM-BY-CLAIM TABLE: claim, PASS / FAIL / NOT VERIFIED, and evidence.
+6. RISKS OR CONTRADICTIONS: list only issues supported by inspected files/logs.
+7. NEXT ACTION: recommend exactly one next action. Do not implement it.
+
+FINAL INSTRUCTION
+This is an inspection task, not a repair task. Preserve the existing SEERAAI PRO application, Firebase project, users, documents, data, workflows, and deployment. Make no changes. Report evidence, not assumptions.
