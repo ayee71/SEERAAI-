@@ -1,0 +1,611 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==========================================
+    // 1. GLOBAL HELPERS
+    // ==========================================
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isNonAnonymous() {
+      return isSignedIn() &&
+        request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    // Strict email verification check: never treats phone or anonymous auth as verified email
+    function isEmailVerified() {
+      return isNonAnonymous() &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.firebase.sign_in_provider != 'phone';
+    }
+
+    function isOwner(userId) {
+      return isNonAnonymous() && request.auth.uid == userId;
+    }
+
+    // Strict claim-based global administrator check (no hardcoded unverified emails)
+    function isAdmin() {
+      return isEmailVerified() && (
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'superadmin'
+      );
+    }
+
+    function effectiveCourtRole() {
+      return request.auth.token.courtRole is string
+        ? request.auth.token.courtRole
+        : (request.auth.token.role is string ? request.auth.token.role : '');
+    }
+
+    function isLegalRepositoryManager() {
+      return isEmailVerified() && (
+        isAdmin() ||
+        request.auth.token.legalContentManager == true ||
+        effectiveCourtRole() in ['judge', 'legal_expert', 'court_admin']
+      );
+    }
+
+    function hasInstitution() {
+      return isEmailVerified() &&
+        request.auth.token.institutionId is string &&
+        request.auth.token.institutionId.size() > 0 &&
+        request.auth.token.institutionId.size() <= 128;
+    }
+
+    function belongsToInstitution(institutionId) {
+      return hasInstitution() && request.auth.token.institutionId == institutionId;
+    }
+
+    function hasCourtRole() {
+      return isEmailVerified() && (
+        isAdmin() ||
+        (hasInstitution() && effectiveCourtRole() in [
+          'judge', 'assistant_judge', 'registrar', 'legal_expert', 'auditor', 'court_admin', 'clerk'
+        ])
+      );
+    }
+
+    function isInstitutionStaff(institutionId) {
+      return isAdmin() || (
+        belongsToInstitution(institutionId) &&
+        effectiveCourtRole() in [
+          'judge', 'assistant_judge', 'registrar', 'legal_expert', 'auditor', 'court_admin', 'clerk'
+        ]
+      );
+    }
+
+    function isCourtAdminOf(institutionId) {
+      return isAdmin() || (
+        belongsToInstitution(institutionId) &&
+        effectiveCourtRole() == 'court_admin'
+      );
+    }
+
+    function canEditCasesIn(institutionId) {
+      return isAdmin() || (
+        belongsToInstitution(institutionId) &&
+        effectiveCourtRole() in ['judge', 'assistant_judge', 'registrar', 'court_admin']
+      );
+    }
+
+    function canEditCases() {
+      return hasCourtRole() && effectiveCourtRole() in ['judge', 'assistant_judge', 'registrar', 'court_admin'];
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Username Registry Protection
+    match /usernameIndex/{username} {
+      allow read: if isNonAnonymous();
+      allow write: if false;
+    }
+
+    // Entity Validators
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'visitorName', 'courtId']) &&
+             data.keys().hasOnly(['uid', 'email', 'visitorName', 'courtId', 'createdAt', 'updatedAt', 'phone', 'photoURL', 'role', 'subscriptionTier', 'languagePreference']) &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.visitorName is string && data.visitorName.size() <= 100 &&
+             data.courtId is string && data.courtId.size() <= 64;
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll(['userId', 'planId', 'amountETB', 'transactionReference', 'status', 'createdAt']) &&
+             data.keys().hasOnly(['userId', 'planId', 'amountETB', 'transactionReference', 'status', 'createdAt', 'payerPhone', 'payerName', 'notes', 'updatedAt']) &&
+             data.userId == request.auth.uid &&
+             data.status in ['pending', 'completed', 'rejected'] &&
+             data.amountETB is number;
+    }
+
+    // Collection Matches
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && incoming().uid == userId &&
+        !incoming().keys().hasAny(['role', 'admin', 'courtRole', 'institutionId']);
+      allow update: if (isOwner(userId) &&
+        !incoming().diff(existing()).affectedKeys().hasAny(['role', 'admin', 'courtRole', 'institutionId'])) ||
+        isAdmin();
+      
+      match /webauthn_credentials/{credId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    match /legislation_repository/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /legalEnactments/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /cassationDecisions/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /legalAuditLogs/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // ==========================================
+    // TIGHTENED TELEGRAM COLLECTIONS (Phase 8B.5.3)
+    // ==========================================
+    match /telegram_legal_documents/{docId} {
+      allow get, list: if true;
+      allow create, update, delete: if isLegalRepositoryManager();
+    }
+    match /telegram_posts/{docId} {
+      allow get, list: if true;
+      allow create, update, delete: if isLegalRepositoryManager();
+    }
+    match /telegram_archive/{docId} {
+      allow get, list: if true;
+      allow create, update, delete: if isLegalRepositoryManager();
+    }
+    match /telegram_channel_feed/{docId} {
+      allow get, list: if true;
+      allow create, update, delete: if isLegalRepositoryManager();
+    }
+    match /telegram_polls/{docId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /telegram_channels/{docId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /telegram_messages/{docId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /telegram_subscribers/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /telegram_user_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /telegram_poll_results/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /telegram_briefing_logs/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /telegram_logs/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /site_analytics/{docId} {
+      allow create: if true;
+      allow read: if isAdmin();
+    }
+    match /legal_ai_audit/{docId} {
+      allow create: if true;
+      allow read: if isAdmin();
+    }
+
+    match /quality_audits/{auditId} {
+      allow read: if isEmailVerified();
+      allow create: if isEmailVerified() && (isAdmin() || effectiveCourtRole() in ['chief_judge', 'it_auditor', 'legal_expert', 'auditor']);
+      allow update: if isEmailVerified() && (isAdmin() || effectiveCourtRole() in ['chief_judge', 'it_auditor', 'legal_expert', 'auditor']);
+      allow delete: if isAdmin();
+      
+      match /{allPaths=**} {
+        allow read, write: if isEmailVerified() && (isAdmin() || effectiveCourtRole() in ['chief_judge', 'it_auditor', 'legal_expert', 'auditor']);
+      }
+    }
+
+    match /legal_sources/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /legalDocuments/{id} {
+      allow read: if true;
+      allow write: if isAdmin() || hasCourtRole();
+      
+      match /textChunks/{chunkId} {
+        allow read: if true;
+        allow write: if isAdmin() || hasCourtRole();
+      }
+      
+      match /versions/{versionId} {
+        allow read: if true;
+        allow write: if isAdmin() || hasCourtRole();
+      }
+
+      match /reviewHistory/{reviewId} {
+        allow read: if true;
+        allow write: if isAdmin() || hasCourtRole();
+      }
+    }
+
+    match /cassation_decisions/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /witness_schedules/{id} {
+      allow read: if isEmailVerified() && (resource.data.userId == request.auth.uid || hasCourtRole() || isAdmin());
+      allow create, update, delete: if hasCourtRole() || isAdmin();
+    }
+
+    match /vector_chunks/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /legal_qna_repository/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /social_legal_repository/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /objection_templates/{id} {
+      allow read: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && incoming().userId == request.auth.uid;
+      allow update: if isEmailVerified() && existing().userId == request.auth.uid && incoming().userId == existing().userId;
+      allow delete: if isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    match /court_sessions/{id} {
+      allow read: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && incoming().userId == request.auth.uid;
+      allow update: if isEmailVerified() && existing().userId == request.auth.uid && incoming().userId == existing().userId;
+      allow delete: if isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    match /annotations/{id} {
+      allow read: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && incoming().userId == request.auth.uid;
+      allow update, delete: if isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    match /document_drafts/{id} {
+      allow read: if resource.data.isPublic == true || (isEmailVerified() && (resource.data.userId == request.auth.uid || resource.data.ownerId == request.auth.uid || isAdmin()));
+      allow create: if isEmailVerified() && (incoming().userId == request.auth.uid || incoming().ownerId == request.auth.uid || isAdmin());
+      allow update, delete: if isEmailVerified() && (existing().userId == request.auth.uid || existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /user_documents/{id} {
+      allow get, list: if isEmailVerified() && (resource.data.userId == request.auth.uid || resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && (incoming().userId == request.auth.uid || incoming().ownerId == request.auth.uid);
+      allow update: if isEmailVerified() && (existing().userId == request.auth.uid || existing().ownerId == request.auth.uid) && (incoming().userId == existing().userId || incoming().ownerId == existing().ownerId);
+      allow delete: if isEmailVerified() && (existing().userId == request.auth.uid || existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /shared_drafts/{id} {
+      allow read: if isEmailVerified() && (resource.data.ownerId == request.auth.uid || (resource.data.sharedWith != null && request.auth.uid in resource.data.sharedWith) || isAdmin());
+      allow create: if isEmailVerified() && incoming().ownerId == request.auth.uid;
+      allow update, delete: if isEmailVerified() && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /shared_folders/{id} {
+      allow read: if isEmailVerified() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && incoming().ownerId == request.auth.uid;
+      allow update, delete: if isEmailVerified() && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /discussions/{id} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isNonAnonymous() && (
+        existing().authorId == request.auth.uid || 
+        existing().userId == request.auth.uid || 
+        existing().ownerId == request.auth.uid || 
+        isAdmin()
+      );
+    }
+
+    match /dossier_audits/{id} {
+      allow read: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && incoming().userId == request.auth.uid;
+    }
+
+    match /feedback_messages/{id} {
+      allow create: if true;
+      allow read, write: if isAdmin();
+    }
+
+    match /analytics_events/{id} {
+      allow create: if true;
+      allow read, write: if isAdmin();
+    }
+
+    match /payment_transactions/{id} {
+      allow read: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && isValidPayment(incoming()) && incoming().status == 'pending';
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /airtime_requests/{id} {
+      allow read: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && incoming().userId == request.auth.uid;
+    }
+
+    match /audit_logs/{id} {
+      allow read: if isAdmin() || (isNonAnonymous() && resource.data.userId == request.auth.uid);
+      allow create: if isNonAnonymous() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /admin_activity_logs/{id} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /admin_activity_logs_archived/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /auth_logs/{id} {
+      allow read: if isAdmin() || (isNonAnonymous() && resource.data.userId == request.auth.uid);
+      allow create: if isNonAnonymous() && incoming().userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /system_config/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /courtroom_sessions/{id} {
+      allow read: if true;
+      allow write: if hasCourtRole() || isAdmin();
+    }
+
+    match /court_institutions/{id} {
+      allow read: if true;
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (isEmailVerified() && request.auth.uid == resource.data.adminUid);
+      allow delete: if isAdmin();
+    }
+
+    match /court_users/{id} {
+      allow read: if isEmailVerified() && (
+        request.auth.uid == id || 
+        isAdmin() || 
+        (resource.data.institutionId is string && isCourtAdminOf(resource.data.institutionId))
+      );
+      
+      allow create: if isAdmin() || (
+        incoming().institutionId is string &&
+        isCourtAdminOf(incoming().institutionId) &&
+        incoming().role != 'superadmin' &&
+        incoming().courtRole != 'superadmin'
+      );
+      
+      allow update: if isAdmin() || (
+        existing().institutionId is string &&
+        isCourtAdminOf(existing().institutionId) &&
+        incoming().institutionId == existing().institutionId &&
+        incoming().role == existing().role &&
+        incoming().courtRole == existing().courtRole
+      );
+      
+      allow delete: if isAdmin();
+    }
+
+    match /court_access_requests/{id} {
+      allow create: if isEmailVerified() && incoming().userId == request.auth.uid;
+      allow read, write: if isAdmin();
+    }
+
+    match /test/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /verifications/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /cases/{id} {
+      allow get, list: if hasCourtRole() && (
+        resource.data.isPublic == true ||
+        (resource.data.institutionId is string && belongsToInstitution(resource.data.institutionId))
+      );
+      allow create: if canEditCasesIn(incoming().institutionId) &&
+                       incoming().institutionId is string && incoming().institutionId.size() > 0;
+      allow update: if canEditCasesIn(existing().institutionId) &&
+                       incoming().institutionId == existing().institutionId;
+      allow delete: if isCourtAdminOf(existing().institutionId);
+
+      match /activity_logs/{logId} {
+        allow read: if isInstitutionStaff(resource.data.institutionId);
+        allow create: if isInstitutionStaff(incoming().institutionId);
+        allow update, delete: if false;
+      }
+
+      match /audio_recordings/{recId} {
+        allow read: if isInstitutionStaff(resource.data.institutionId);
+        allow create: if canEditCasesIn(incoming().institutionId);
+        allow update: if canEditCasesIn(existing().institutionId) && incoming().institutionId == existing().institutionId;
+        allow delete: if isCourtAdminOf(existing().institutionId);
+      }
+
+      match /physical_evidence/{evidenceId} {
+        allow read: if isInstitutionStaff(resource.data.institutionId);
+        allow create, update: if canEditCasesIn(incoming().institutionId);
+        allow delete: if isCourtAdminOf(existing().institutionId);
+      }
+
+      match /witness_statements/{stmtId} {
+        allow read: if isInstitutionStaff(resource.data.institutionId);
+        allow create: if canEditCasesIn(incoming().institutionId);
+        allow update: if canEditCasesIn(existing().institutionId) && incoming().institutionId == existing().institutionId;
+        allow delete: if isCourtAdminOf(existing().institutionId);
+      }
+
+      match /courtroom_layout/{layoutId} {
+        allow read: if isInstitutionStaff(resource.data.institutionId);
+        allow create, update: if canEditCasesIn(incoming().institutionId);
+        allow delete: if isCourtAdminOf(existing().institutionId);
+      }
+    }
+
+    match /witness_statements/{stmtId} {
+      allow read: if isInstitutionStaff(resource.data.institutionId);
+      allow create: if canEditCasesIn(incoming().institutionId) && incoming().institutionId is string && incoming().institutionId.size() > 0;
+      allow update: if canEditCasesIn(existing().institutionId) && incoming().institutionId == existing().institutionId;
+      allow delete: if isCourtAdminOf(existing().institutionId);
+    }
+
+    match /court_audio_recordings/{recId} {
+      allow read: if isInstitutionStaff(resource.data.institutionId);
+      allow create: if canEditCasesIn(incoming().institutionId) && incoming().institutionId is string && incoming().institutionId.size() > 0;
+      allow update: if canEditCasesIn(existing().institutionId) && incoming().institutionId == existing().institutionId;
+      allow delete: if isCourtAdminOf(existing().institutionId);
+    }
+
+    match /admin_logs/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /court_notifications/{id} {
+      allow read: if isEmailVerified() && (resource.data.recipientUid == request.auth.uid || hasCourtRole());
+      allow create: if isEmailVerified() && (incoming().recipientUid == request.auth.uid || hasCourtRole());
+      allow update: if isEmailVerified() && (existing().recipientUid == request.auth.uid || hasCourtRole());
+      allow delete: if isAdmin();
+    }
+
+    match /court_templates/{id} {
+      allow read: if true;
+      allow write: if hasCourtRole();
+    }
+
+    match /practice_cases/{caseId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || hasCourtRole());
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || hasCourtRole());
+      allow update, delete: if isSignedIn() && (existing().userId == request.auth.uid || hasCourtRole());
+    }
+
+    match /collaboration_invites/{id} {
+      allow read: if isEmailVerified() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.createdBy == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isEmailVerified() && (
+        incoming().ownerId == request.auth.uid ||
+        incoming().createdBy == request.auth.uid ||
+        isAdmin()
+      );
+      allow update, delete: if isEmailVerified() && (
+        existing().ownerId == request.auth.uid ||
+        existing().createdBy == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    match /vector_feedback/{id} {
+      allow create: if isSignedIn();
+      allow read, write: if isAdmin();
+    }
+
+    match /user_feedback/{id} {
+      allow create: if true;
+      allow read: if isNonAnonymous() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    match /court_branding/{institutionId} {
+      allow read: if true;
+      allow write: if isCourtAdminOf(institutionId);
+    }
+
+    match /court_staff_requests/{requestId} {
+      allow read: if isInstitutionStaff(resource.data.institutionId) || (isEmailVerified() && request.auth.uid == resource.data.userId);
+      allow create: if isEmailVerified() && incoming().userId == request.auth.uid;
+      allow update, delete: if isCourtAdminOf(existing().institutionId);
+    }
+
+    match /court_personnel_mappings/{mappingId} {
+      allow read: if isInstitutionStaff(resource.data.institutionId);
+      allow write: if isCourtAdminOf(existing().institutionId);
+    }
+
+    match /case_milestones/{milestoneId} {
+      allow read: if isInstitutionStaff(resource.data.institutionId);
+      allow create, update: if canEditCasesIn(incoming().institutionId);
+      allow delete: if isCourtAdminOf(existing().institutionId);
+    }
+
+    match /institutions/{institutionId} {
+      allow read: if true;
+      allow write: if isCourtAdminOf(institutionId);
+      
+      match /courtDocuments/{docId} {
+        allow read: if isInstitutionStaff(institutionId);
+        allow create, update: if canEditCasesIn(institutionId) && (
+          incoming().dataUrl == null || (incoming().dataUrl is string && incoming().dataUrl.size() <= 65536)
+        );
+        allow delete: if isCourtAdminOf(institutionId);
+      }
+
+      match /auditLogs/{logId} {
+        allow read: if isInstitutionStaff(institutionId);
+        allow create: if isInstitutionStaff(institutionId);
+        allow update, delete: if false;
+      }
+    }
+
+    match /court_documents/{docId} {
+      allow read: if resource.data.isPublic == true ||
+                     isInstitutionStaff(resource.data.institutionId);
+      allow create: if canEditCasesIn(incoming().institutionId) &&
+                       incoming().institutionId is string && incoming().institutionId.size() > 0 &&
+                       (incoming().dataUrl == null || (incoming().dataUrl is string && incoming().dataUrl.size() <= 65536));
+      allow update: if canEditCasesIn(existing().institutionId) &&
+                       incoming().institutionId == existing().institutionId &&
+                       (incoming().dataUrl == null || (incoming().dataUrl is string && incoming().dataUrl.size() <= 65536));
+      allow delete: if isCourtAdminOf(existing().institutionId);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

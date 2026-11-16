@@ -7,7 +7,8 @@ import { ShareableAppState } from '../services/shareUrl';
 import { ShareButton } from './ShareButton';
 import { PWAInstallButton } from './PWAInstallButton';
 import { checkForAppUpdate, applyAppUpdate, onAppUpdateAvailable } from '../services/appUpdateService';
-const PlayStorePublishGuideModal = lazy(() => import('./PlayStorePublishGuideModal').then(m => ({ default: m.PlayStorePublishGuideModal })));
+import { safeLazy } from '../utils/lazy';
+const PlayStorePublishGuideModal = safeLazy(() => import('./PlayStorePublishGuideModal'), 'PlayStorePublishGuideModal');
 import { SeeraAILogo } from './SeeraAILogo';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
 import { TtsConfigModal } from './TtsConfigModal';
@@ -26,6 +27,8 @@ import { KioskQuickAccessModal } from './KioskQuickAccessModal';
 import { QRScannerModal } from './QRScannerModal';
 import { ConfidentialityShieldModal } from './ConfidentialityShieldModal';
 import { isPrivacyShieldActive } from '../services/confidentialityService';
+import { MMurtiiShortLinkModal } from './MMurtiiShortLinkModal';
+import { useOfflineMode } from '../hooks/useOfflineMode';
 
 
 interface NavbarProps {
@@ -50,9 +53,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenFilingReminder,
 }) => {
   const t = translations[currentLang];
-  const { user, profile, logout } = useAuth();
+  const { user, profile, authClaims, requestLogout } = useAuth();
   const branding = useCourtBranding();
-  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+  const { isManualOffline, isNetworkOnline, isEffectiveOffline, setOfflineMode } = useOfflineMode();
   const [showPlayStoreModal, setShowPlayStoreModal] = useState<boolean>(false);
   const [isVoiceCommandOpen, setIsVoiceCommandOpen] = useState<boolean>(false);
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState<boolean>(false);
@@ -61,6 +64,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [showKioskModal, setShowKioskModal] = useState<boolean>(false);
   const [showQrScanner, setShowQrScanner] = useState<boolean>(false);
   const [showConfidentialityModal, setShowConfidentialityModal] = useState<boolean>(false);
+  const [showShortLinkModal, setShowShortLinkModal] = useState<boolean>(false);
   const [isShieldActiveState, setIsShieldActiveState] = useState<boolean>(isPrivacyShieldActive());
 
   useEffect(() => {
@@ -69,57 +73,48 @@ export const Navbar: React.FC<NavbarProps> = ({
     return () => window.removeEventListener('seera_confidentiality_settings_changed', handleShieldUpdate);
   }, []);
 
-  // Exclusively verify if the logged in user email or link identity is the platform owner (Ayele)
-  const currentUserEmail = (
-    user?.email ||
-    (profile as any)?.email ||
-    localStorage.getItem('seera_owner_email') ||
-    localStorage.getItem('seera_cached_email') ||
-    ''
-  ).toLowerCase().trim();
+  // Strictly derive owner and court staff authority from verified server-issued Firebase custom claims
+  const currentUserEmail = (user?.email || '').toLowerCase().trim();
 
-  const isOwner = isOwnerAccount(
+  const isOwner = authClaims.isTrustedAdmin && isOwnerAccount(
     user?.email || (profile as any)?.email,
     profile?.visitorName || profile?.appUsername,
     getStoredOwnerKey()
   );
 
-  const isExplicitOwner =
-    isOwner ||
-    isOwnerEmail(currentUserEmail) ||
-    currentUserEmail === 'ayeledha@gmail.com' ||
-    currentUserEmail === 'ayele@saiethio.com' ||
-    currentUserEmail === 'ayeledha@saiethio.com';
+  const isExplicitOwner = authClaims.isTrustedAdmin;
 
   // Real-time tracking of Premium subscription status
   const [hasPremiumLicense, setHasPremiumLicense] = useState<boolean>(() => {
     return localStorage.getItem('seera_is_premium') === 'true';
   });
 
-  const [isCourtAuth, setIsCourtAuth] = useState<boolean>(isCourtAccessAuthorized());
+  const [isCourtAuth, setIsCourtAuth] = useState<boolean>(
+    () => Boolean((authClaims.isCourtStaff || authClaims.isTrustedAdmin) && isCourtAccessAuthorized())
+  );
   const [activeCourtSession, setActiveCourtSessionState] = useState<ActiveCourtSession | null>(getActiveCourtSession());
 
-  // Strictly enforce: Gurbicha court staff identity ONLY appears when logged in with email gurbicha@gmail.com
+  const isPracticeUser = authClaims.isGuest && authClaims.guestMode === 'gurbicha_practice';
+  const isVerifiedStaff = authClaims.isEmailVerified && (authClaims.isCourtStaff || authClaims.isTrustedAdmin);
   const isGurbichaUser =
     !isExplicitOwner &&
-    currentUserEmail === 'gurbicha@gmail.com';
+    isVerifiedStaff &&
+    (authClaims.institutionId === 'inst_gurbicha_woreda_first' || currentUserEmail === 'gurbicha@gmail.com');
 
   useEffect(() => {
     const handleCourtAuthUpdate = () => {
-      setIsCourtAuth(isCourtAccessAuthorized());
+      setIsCourtAuth(Boolean((authClaims.isCourtStaff || authClaims.isTrustedAdmin) && isCourtAccessAuthorized()));
       setActiveCourtSessionState(getActiveCourtSession());
     };
     window.addEventListener('seera_court_session_changed', handleCourtAuthUpdate);
     return () => window.removeEventListener('seera_court_session_changed', handleCourtAuthUpdate);
-  }, []);
+  }, [authClaims.isCourtStaff, authClaims.isTrustedAdmin]);
 
-  // Filter out any stale court session if the current user is not logged in with matching court/staff credentials.
-  // Unauthenticated link visitors will see a clean Public/Court Services header without any pre-selected court badge.
   const sessionUserEmail = activeCourtSession?.user?.emailOrUsername?.toLowerCase().trim();
-  const isSessionOwnerOrStaffMatch = 
+  const isSessionOwnerOrStaffMatch =
     isExplicitOwner ||
-    (currentUserEmail && sessionUserEmail && currentUserEmail === sessionUserEmail) ||
-    (isGurbichaUser && sessionUserEmail?.includes('gurbicha'));
+    (isVerifiedStaff && currentUserEmail && sessionUserEmail && currentUserEmail === sessionUserEmail) ||
+    isGurbichaUser;
 
   const validCourtSession = activeCourtSession && isSessionOwnerOrStaffMatch
     ? activeCourtSession
@@ -131,11 +126,16 @@ export const Navbar: React.FC<NavbarProps> = ({
     ? allInstitutions.find((i) => i.id === validCourtSession.institutionId)
     : allInstitutions[0];
 
+  const gurbichaStoredLogo = typeof window !== 'undefined'
+    ? (localStorage.getItem('court_logo_inst_gurbicha_woreda_first') || localStorage.getItem('court_logo_gurbicha'))
+    : null;
+
   const courtLogoUrl =
     branding.logoUrl ||
+    (isGurbichaUser ? (gurbichaStoredLogo || currentInstitution?.logoUrl) : null) ||
+    (validCourtSession ? localStorage.getItem(`court_logo_${validCourtSession.institutionId}`) : null) ||
     currentInstitution?.logoUrl ||
-    (profile as any)?.courtLogoUrl ||
-    (validCourtSession ? localStorage.getItem(`court_logo_${validCourtSession.institutionId}`) : null);
+    (profile as any)?.courtLogoUrl;
 
   const activeCourtName = isExplicitOwner
     ? (currentLang === 'am' ? 'የሴራአይ ማስተር ኮንትሮል' : currentLang === 'en' ? 'SeeraAI Master Control' : 'Sirna Bulchiinsa SeeraAI')
@@ -146,13 +146,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   const activeUserFullName = isExplicitOwner
     ? (profile?.visitorName || 'Ayele Be Dha')
     : isGurbichaUser
-    ? (validCourtSession?.user.fullName || 'Admin Mana Murtii Aanaa Gurbicha')
+    ? (validCourtSession?.user.fullName || profile?.visitorName || 'Admin Mana Murtii Aanaa Gurbicha')
     : validCourtSession?.user.fullName || profile?.visitorName || user?.displayName || user?.email || 'User';
 
   const activeUserCourtRole = isExplicitOwner
     ? 'superadmin'
     : isGurbichaUser
-    ? (validCourtSession?.user.role || 'court_admin')
+    ? (validCourtSession?.user.role || profile?.legalRole || 'court_practice')
     : validCourtSession?.user.role || (profile as any)?.courtRole || profile?.role || 'court_personnel';
 
   const getFormattedCourtRoleLabel = (roleStr?: string | null, lang: Language = 'om') => {
@@ -179,6 +179,9 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
     if (norm.includes('admin') || norm === 'court_admin') {
       return lang === 'am' ? '🏛️ የፍርድ ቤት አስተዳዳሪ' : lang === 'en' ? '🏛️ Court Admin' : '🏛️ Bulchaa Mana Murtii';
+    }
+    if (norm.includes('practice') || norm === 'court_practice') {
+      return lang === 'am' ? '⚖️ ልምምድ (Practice)' : lang === 'en' ? '⚖️ Practice Mode' : '⚖️ Shaakala (Practice)';
     }
     if (norm.includes('personnel') || norm === 'court_personnel') {
       return lang === 'am' ? '⚖️ የፍርድ ቤት ሠራተኛ' : lang === 'en' ? '⚖️ Court Staff' : '⚖️ Hojjetaa Mana Murtii';
@@ -235,25 +238,12 @@ export const Navbar: React.FC<NavbarProps> = ({
     profile?.visitorName ? profile.visitorName :
     'User';
 
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-
   const baseNavItems = [
     { id: 'home', label: t.nav.home, emoji: '🏠' },
     { 
       id: 'courtWork', 
       label: currentLang === 'om' ? '📁 Fooldara Mana Murtii (Court Folder)' : currentLang === 'am' ? '📁 የፍርድ ቤት ማህደር' : '📁 Court Personnel Folder', 
-      emoji: isCourtAuth ? '🏛️' : '🔒' 
+      emoji: (isCourtAuth || isPracticeUser) ? '🏛️' : '🔒' 
     },
     { id: 'create', label: t.nav.create, emoji: '✍️' },
     { 
@@ -262,6 +252,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       emoji: '🔍' 
     },
     { id: 'templates', label: t.nav.templates, emoji: '📝' },
+    { id: 'faq', label: currentLang === 'om' ? 'Gargaarsa & FAQ' : currentLang === 'am' ? 'እርዳታና FAQ' : 'Help & FAQ', emoji: '❓' },
     { id: 'explainLaw', label: t.nav.explainLaw, emoji: '⚖️' },
     { id: 'documentAnalysis', label: t.nav.docAnalysis, emoji: '📄' },
     { id: 'translate', label: t.nav.translate, emoji: '🌐' },
@@ -289,6 +280,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   // Only append Admin Dashboard & Hordoffii if the logged in user is owner Ayele
+  // For practice users, strictly only show the Court Folder and Profile/Settings
   const navItems = isOwner
     ? [
         ...baseNavItems,
@@ -298,32 +290,59 @@ export const Navbar: React.FC<NavbarProps> = ({
         { id: 'analyticsFeedback', label: t.nav.analyticsFeedback || 'Hordoffii & Inbox', emoji: '📊' },
         { id: 'settings', label: t.nav.settings, emoji: '⚙️' }
       ]
+    : isPracticeUser
+    ? [
+        { id: 'courtPractice', label: currentLang === 'om' ? '📁 Shaakala Mana Murtii' : '📁 የፍርድ ቤት ልምምድ', emoji: '🏛️' },
+        { id: 'meeting', label: currentLang === 'om' ? '📹 Viidiyoo Konfiraansii' : currentLang === 'am' ? '📹 ቪዲዮ ኮንፈረንስ' : '📹 Video Conference', emoji: '📹' },
+        { id: 'profile', label: currentLang === 'om' ? 'Profaayilii' : 'መገለጫ', emoji: '👤' },
+        { id: 'settings', label: t.nav.settings, emoji: '⚙️' }
+      ]
     : [...baseNavItems, { id: 'settings', label: t.nav.settings, emoji: '⚙️' }];
 
   return (
     <>
       <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-slate-100 pb-1.5 md:pb-0">
-        {/* Offline Status Banner */}
-        {!isOnline && (
-          <div className="bg-amber-950 border-b border-amber-500/40 px-4 py-2 text-center text-xs text-amber-200 font-medium flex flex-col items-center justify-center gap-1">
-            <div className="flex items-center justify-center gap-2">
-              <WifiOff className="w-4 h-4 text-amber-400" />
-              <span className="font-bold uppercase tracking-wider">Offline Mode Active</span>
-            </div>
-            <p className="max-w-3xl">
-              {currentLang === 'om' 
-                ? 'Isin neetworkii irraa ala jirtu. Garuu, Heerota, Labsiiwwan, Murtiilee Ijibbaataa fi Sanadoota ol-kaawwattan hunda kutaalee "Library" fi "My Content" keessaa dubbisuu ni dandeessu.'
-                : currentLang === 'am'
-                ? 'ከኢንተርኔት ውጭ ነዎት። ነገር ግን፣ የተቀመጡ ሕጎችን፣ አዋጆችን፣ የሰበር ውሳኔዎችን እና ፋይሎችን በ"ቤተ-መጻሕፍት" እና "የእኔ ይዘቶች" ክፍል ውስጥ ማየት ይችላሉ።'
-                : 'You are currently offline. However, all cached Statutes, Proclamations, Cassation Precedents, and Saved Documents remain available for viewing in the Library and My Content sections.'
-              }
-            </p>
-            <div className="flex items-center gap-2 mt-1">
-              <SyncStatusIndicator currentLang={currentLang} variant="compact" />
-              <span className="text-[10px] opacity-70">
-                {currentLang === 'om' ? '(Kuusaa keessan irraa)' : currentLang === 'am' ? '(ከአካባቢያዊ መሸጎጫ)' : '(From local cache)'}
+        {/* Offline Status Banner (manual offline mode or network loss) */}
+        {isEffectiveOffline && (
+          <div className="bg-amber-950/90 border-b border-amber-500/40 px-4 py-1.5 text-xs text-amber-200 font-medium flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+            <div className="flex items-center gap-1.5">
+              <WifiOff className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="font-bold">
+                {isManualOffline
+                  ? currentLang === 'om'
+                    ? 'Haalli Offline Banaadha'
+                    : currentLang === 'am'
+                    ? 'ከመስመር ውጭ ሁነታ በርቷል'
+                    : 'Offline Mode Active'
+                  : currentLang === 'om'
+                  ? 'Neetworkiin Citaadha'
+                  : currentLang === 'am'
+                  ? 'ኢንተርኔት ተቋርጧል'
+                  : 'No Internet Connection'}
               </span>
             </div>
+            <span className="hidden md:inline text-amber-200/80">
+              {currentLang === 'om'
+                ? 'Heerota, Murtiilee Ijibbaataa fi Sanadoonni kuusaa naannoo irraa ni dubbifamu.'
+                : currentLang === 'am'
+                ? 'የተሸጎጡ ሕጎች፣ የሰበር ውሳኔዎች እና ሰነዶች ያለኢንተርኔት ይሰራሉ።'
+                : 'Cached statutes, Cassation precedents, and saved documents remain available locally.'}
+            </span>
+            {isManualOffline && isNetworkOnline && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOfflineMode(false);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                {currentLang === 'om'
+                  ? 'Gara Online Deebisi'
+                  : currentLang === 'am'
+                  ? 'ወደ ኦንላይን ይመለሱ'
+                  : 'Go Online'}
+              </button>
+            )}
           </div>
         )}
 
@@ -338,6 +357,43 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <SeeraAILogo size="md" currentLang={currentLang} />
               </button>
+
+              {/* Dynamic Session Branding Indicator Badge (SAI Ethio Public / Guest vs Mana Murtii Restricted) */}
+              <div className="hidden lg:flex items-center">
+                {authClaims.isGuest ? (
+                  <button
+                    type="button"
+                    onClick={() => onTabChange(isPracticeUser ? 'courtPractice' : 'home')}
+                    className="px-3 py-1 rounded-full text-[11px] font-bold font-mono bg-amber-500/15 text-amber-300 border border-amber-500/40 shadow-sm flex items-center gap-1.5 cursor-pointer hover:border-amber-400 transition-all shrink-0"
+                    title="Guest Access Only (Public Content & Guest Practice)"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                    <span className="truncate">
+                      {isPracticeUser ? '👤 Guest Practice Mode (No Staff Claims)' : '👤 Guest Access (Public Mode)'}
+                    </span>
+                  </button>
+                ) : (validCourtSession || (isVerifiedStaff && (activeTab === 'courtWork' || activeTab === 'courtroomControl' || isCourtAuth))) ? (
+                  <button
+                    type="button"
+                    onClick={() => onTabChange('courtWork')}
+                    className="px-3 py-1 rounded-full text-[11px] font-bold font-mono bg-gradient-to-r from-amber-500/20 via-emerald-500/20 to-amber-500/20 text-amber-300 border border-amber-500/50 shadow-md flex items-center gap-1.5 cursor-pointer hover:border-amber-400 transition-all shrink-0"
+                    title="Restricted Court Folder Active (Mana Murtii Mode)"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                    <span className="truncate">🏛️ Mana Murtii (Verified Court Staff)</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onTabChange('home')}
+                    className="px-3 py-1 rounded-full text-[11px] font-bold font-mono bg-sky-500/15 text-sky-300 border border-sky-500/30 shadow-sm flex items-center gap-1.5 cursor-pointer hover:border-sky-400 transition-all shrink-0"
+                    title="Public Platform Active (SAI Ethio Mode)"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0" />
+                    <span className="truncate">⚖️ SAI Ethio (Public Platform)</span>
+                  </button>
+                )}
+              </div>
 
               {/* Header Identity Badge (Red Circled Top Bar Region in Screenshot):
                   - If App Owner: Displays 👑 Ayele Be Dha | 👑 Abbaa Appichaa & Master Control
@@ -708,7 +764,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               {user ? (
                 <button
                   type="button"
-                  onClick={() => logout()}
+                  onClick={() => requestLogout()}
                   className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 text-xs font-bold transition-all cursor-pointer shadow-sm shrink-0"
                   title={currentLang === 'om' ? 'Kaawuntii keessaa ba\'i (Log Out)' : currentLang === 'am' ? 'ከአካውንት ይውጡ (Log Out)' : 'Log Out'}
                 >
@@ -765,6 +821,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Volume2 className="w-4 h-4 text-amber-400" />
                 <span className="hidden xl:inline">Voice</span>
               </button>
+
+              {/* MMurtii Court Short Link & Alias Quick Access */}
+              <button
+                type="button"
+                onClick={() => setShowShortLinkModal(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 via-sky-500/20 to-amber-500/20 hover:from-amber-500/30 hover:to-sky-500/30 border border-amber-500/50 text-amber-300 text-xs font-bold transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+                title="Linkii Gabaabaa: mmurtii (Short Link & QR)"
+              >
+                <span className="text-amber-400">🔗</span>
+                <span className="font-mono text-amber-200">mmurtii</span>
+              </button>
+
+              <MMurtiiShortLinkModal
+                isOpen={showShortLinkModal}
+                onClose={() => setShowShortLinkModal(false)}
+                currentLang={currentLang}
+              />
 
               {/* Copy Shareable Link Button */}
               <ShareButton
@@ -844,10 +917,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               const isActive = activeTab === item.id;
               const isCourtBenchItem = ['courtWork'].includes(item.id);
               
-              // Strict Enforce: authenticated users with 'court_personnel' role or isOwner
-              const firestoreRole = profile?.role || profile?.legalRole;
-              const hasStrictPersonnelRole = isOwner || firestoreRole === 'court_personnel' || firestoreRole === 'admin' || firestoreRole === 'judge';
-              const isLocked = isCourtBenchItem && !isCourtAuth && !hasStrictPersonnelRole;
+              // Strict Enforce: verified Firebase court staff or superadmin claims required
+              const hasStrictPersonnelRole = authClaims.isTrustedAdmin || authClaims.isCourtStaff;
+              const isLocked = isCourtBenchItem && !hasStrictPersonnelRole;
 
               return (
                 <button
@@ -902,6 +974,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       {showTtsModal && (
         <TtsConfigModal currentLang={currentLang} onClose={() => setShowTtsModal(false)} />
       )}
+
     </>
   );
 };

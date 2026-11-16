@@ -1,161 +1,48 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { Navbar } from './components/Navbar';
-import { BottomNavbar } from './components/BottomNavbar';
-
-import { CassationLibraryView } from './views/CassationLibraryView';
-import { Language, translations, loadLanguage } from './i18n/translations';
-import { getUserSettings, saveUserSettings, UserSettings, SavedLegalDocument } from './services/storage';
-import { readShareableStateFromUrl, syncBrowserUrlWithState, ShareableAppState, isRestrictedTab } from './services/shareUrl';
-import { ReadingProgressBar } from './components/ReadingProgressBar';
-import { Scale, Globe, Shield, WifiOff, Lock, RefreshCw } from 'lucide-react';
-import { trackReferralVisit, getStoredOwnerKey } from './services/referralTracking';
-import { isOwnerAccount, isOwnerEmail, unlockOwnerPrivileges } from './services/ownerAuth';
-import { logRealtimeEvent } from './services/realtimeTracker';
-import { AntiCloningProtectionBadge } from './components/AntiCloningProtectionBadge';
-import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import React, { useState, useEffect, Suspense, Fragment } from 'react';
+import { safeLazy } from './utils/lazy';
 import { useAuth } from './context/AuthContext';
-import { LandingView } from './views/LandingView';
+import { Language, loadLanguage } from './i18n/translations';
+import { getUserSettings, saveUserSettings, UserSettings, SavedLegalDocument } from './services/storage';
+import { initAppUpdateEngine, onAppUpdateAvailable, AppUpdateInfo, applyAppUpdate } from './services/appUpdateService';
+import { syncStatusService } from './services/syncStatusService';
+import { getStoredOfflineMode, OFFLINE_MODE_STORAGE_KEY } from './services/syncUtils';
+import './services/offlineModeService';
+import { useInactivityLock } from './hooks/useInactivityLock';
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import { isOwnerAccount, isOwnerEmail } from './services/ownerAuth';
+import { getStoredOwnerKey, trackReferralVisit } from './services/referralTracking';
+import { logRealtimeEvent } from './services/realtimeTracker';
 import { analyticsService } from './services/analytics';
-import { applyTheme } from './utils/theme';
-import { startDraftAmendmentBackgroundWorker, OutdatedDraftAlert } from './services/draftAmendmentWorker';
-import { initAppUpdateEngine, onAppUpdateAvailable, AppUpdateInfo } from './services/appUpdateService';
-import { TopUpdateStickyBanner } from './components/TopUpdateStickyBanner';
-import { MobileInstallBanner } from './components/MobileInstallBanner';
-import { ExternalDatasetNoticeBanner } from './components/ExternalDatasetNoticeBanner';
-import { initFilingReminderWorker } from './services/filingReminderService';
+import { readShareableStateFromUrl, syncBrowserUrlWithState, isRestrictedTab } from './services/shareUrl';
 import { resolveCourtLink } from './utils/courtLinkUtils';
 
+// Non-lazy essential layout components
+import { TopUpdateStickyBanner } from './components/TopUpdateStickyBanner';
+import { LandingView } from './views/LandingView';
+import { Navbar } from './components/Navbar';
+import { BottomNavbar } from './components/BottomNavbar';
+import { ReadingProgressBar } from './components/ReadingProgressBar';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { useInactivityLock } from './hooks/useInactivityLock';
+import { SystemWarningModal } from './components/SystemWarningModal';
 import { LinkEnforcementOverlay } from './components/LinkEnforcementOverlay';
-import ethiopianJusticeLadyBg from './assets/images/legal_lady_justice_1791027652497.jpg';
+import ladyJusticeBg from './assets/images/legal_lady_justice_1791027652497.jpg';
+import { ShieldAlert } from 'lucide-react';
+import { CitationLinkedInstancesPanel } from './components/CitationLinkedInstancesPanel';
 
-function safeLazy<T extends React.ComponentType<any>>(
-  importFn: () => Promise<any>,
-  exportName?: string
-) {
-  return lazy(async () => {
-    try {
-      const module = await importFn();
-      if (exportName && module[exportName]) {
-        return { default: module[exportName] };
-      }
-      return module.default ? module : { default: module };
-    } catch (error: any) {
-      console.warn(`[safeLazy] Dynamic import failed for ${exportName || 'module'}:`, error);
-
-      // Check if this error is chunk load failure (stale deployment, network drop, MIME type mismatch)
-      const errorMsg = String(error?.message || error || '');
-      const isChunkError = 
-        errorMsg.includes('Failed to fetch dynamically imported module') ||
-        errorMsg.includes('Importing a module script failed') ||
-        errorMsg.includes('error loading dynamically imported module') ||
-        errorMsg.includes('text/html') ||
-        errorMsg.includes('is not a valid JavaScript MIME type') ||
-        error?.name === 'TypeError';
-
-      if (typeof window !== 'undefined' && isChunkError) {
-        const reloadKey = `seera_chunk_reload_${exportName || 'app'}`;
-        const lastReload = Number(sessionStorage.getItem(reloadKey) || '0');
-        const now = Date.now();
-
-        // If not reloaded in the last 20 seconds, attempt a single clean reload
-        if (now - lastReload > 20000) {
-          sessionStorage.setItem(reloadKey, String(now));
-          console.info(`[safeLazy] Auto-recovering stale chunk for ${exportName || 'module'}. Refreshing view...`);
-          if ('caches' in window) {
-            try {
-              const keys = await caches.keys();
-              await Promise.all(keys.map((k) => caches.delete(k)));
-            } catch {}
-          }
-          window.location.reload();
-          // Return pending promise during reload
-          return new Promise(() => {});
-        }
-      }
-
-      // Safe, non-crashing fallback view with retry button
-      return {
-        default: (props: any) => {
-          const lang: Language = props?.currentLang || 'om';
-          const isOm = lang === 'om';
-          const isAm = lang === 'am';
-
-          return (
-            <div className="min-h-[45vh] flex flex-col items-center justify-center p-6 my-8 text-center bg-slate-900/90 border border-amber-500/30 rounded-3xl max-w-xl mx-auto shadow-2xl backdrop-blur-md animate-in fade-in duration-200">
-              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mb-4">
-                <RefreshCw className="w-6 h-6 animate-spin text-amber-400" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-100 mb-2 font-serif-legal">
-                {isOm
-                  ? 'Kutaa Seeraa Haaromsuun Barbaachisa'
-                  : isAm
-                  ? 'ይህ የሕግ ክፍል እንደገና መጫን ይፈልጋል'
-                  : 'Module Update Required'}
-              </h3>
-              <p className="text-xs text-slate-300 max-w-md mb-6 leading-relaxed">
-                {isOm
-                  ? `Kutaan (${exportName || 'Mana Murtii'}) haaromsa haaraa qaba. Yeroo networkiin tasgabbaa'u irra deebi'aanii fe'uuf as tuqaa.`
-                  : isAm
-                  ? `ይህ ክፍል (${exportName || 'የፍርድ ቤት ስራ'}) አዲስ ማሻሻያ አለው። እባክዎ እንደገና ለመጫን ከታች ያለውን አዝራር ይጫኑ።`
-                  : `This module (${exportName || 'Court Work'}) has been updated on the server. Please reload to sync the latest version.`}
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-3">
-                <button
-                  onClick={() => {
-                    if (typeof window !== 'undefined') {
-                      sessionStorage.clear();
-                      const win = window as any;
-                      if (win.caches) {
-                        win.caches.keys().then((ks: string[]) => Promise.all(ks.map((k: string) => win.caches.delete(k)))).finally(() => {
-                          win.location.reload();
-                        });
-                      } else {
-                        win.location.reload();
-                      }
-                    }
-                  }}
-                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-2 cursor-pointer shadow-lg transition-all"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>
-                    {isOm ? 'Amma Haaromsi (Reload)' : isAm ? 'አሁን አድስ (Reload)' : 'Reload Now'}
-                  </span>
-                </button>
-                <button
-                  onClick={() => {
-                    if (typeof window !== 'undefined') {
-                      window.location.href = window.location.origin + window.location.pathname + '?tab=home';
-                    }
-                  }}
-                  className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 cursor-pointer transition-all"
-                >
-                  {isOm ? 'Gara Fuula Duraa' : isAm ? 'ወደ ዋና ገጽ' : 'Go Home'}
-                </button>
-              </div>
-            </div>
-          );
-        },
-      };
-    }
-  });
-}
-
-
+// Safe Lazy-loaded Views (auto-recovers on dynamic import / stale chunk failures)
 const HomeView = safeLazy(() => import('./views/HomeView'), 'HomeView');
+const CourtModulesView = safeLazy(() => import('./views/CourtModulesView'), 'CourtModulesView');
 const CreateView = safeLazy(() => import('./views/CreateView'), 'CreateView');
 const ExplainLawView = safeLazy(() => import('./views/ExplainLawView'), 'ExplainLawView');
+const CassationLibraryView = safeLazy(() => import('./views/CassationLibraryView'), 'CassationLibraryView');
+const CourtPersonnelFolderView = safeLazy(() => import('./views/CourtPersonnelFolderView'), 'CourtPersonnelFolderView');
+const CourtAIDashboardView = safeLazy(() => import('./views/CourtAIDashboardView'), 'CourtAIDashboardView');
+const AdminDashboardView = safeLazy(() => import('./views/AdminDashboardView'), 'AdminDashboardView');
+const SettingsView = safeLazy(() => import('./views/SettingsView'), 'SettingsView');
 const TranslateView = safeLazy(() => import('./views/TranslateView'), 'TranslateView');
 const SocialMediaView = safeLazy(() => import('./views/SocialMediaView'), 'SocialMediaView');
 const GlossaryView = safeLazy(() => import('./views/GlossaryView'), 'GlossaryView');
 const MyContentView = safeLazy(() => import('./views/MyContentView'), 'MyContentView');
-const SettingsView = safeLazy(() => import('./views/SettingsView'), 'SettingsView');
 const DocumentAnalysisView = safeLazy(() => import('./views/DocumentAnalysisView'), 'DocumentAnalysisView');
 const PrecedentSimulatorView = safeLazy(() => import('./views/PrecedentSimulatorView'), 'PrecedentSimulatorView');
 const AirtimeRechargeView = safeLazy(() => import('./views/AirtimeRechargeView'), 'AirtimeRechargeView');
@@ -166,10 +53,10 @@ const WitnessTestimonyView = safeLazy(() => import('./views/WitnessTestimonyView
 const DocumentTemplatesView = safeLazy(() => import('./views/DocumentTemplatesView'), 'DocumentTemplatesView');
 const AnalyticsFeedbackView = safeLazy(() => import('./views/AnalyticsFeedbackView'), 'AnalyticsFeedbackView');
 const CourtroomAssistantView = safeLazy(() => import('./views/CourtroomAssistantView'), 'CourtroomAssistantView');
-const CourtWorkView = safeLazy(() => import('./views/CourtWorkView'), 'CourtWorkView');
 const InstitutionManagementView = safeLazy(() => import('./views/InstitutionManagementView'), 'InstitutionManagementView');
-const AdminDashboardView = safeLazy(() => import('./views/AdminDashboardView'), 'AdminDashboardView');
-
+const LegalMeetingRoomView = safeLazy(() => import('./views/LegalMeetingRoomView'), 'LegalMeetingRoomView');
+const KioskView = safeLazy(() => import('./views/KioskView'), 'KioskView');
+const VoiceAndDocumentConverterView = safeLazy(() => import('./views/VoiceAndDocumentConverterView'), 'VoiceAndDocumentConverterView');
 const PremiumSubscriberDashboardView = safeLazy(() => import('./views/PremiumSubscriberDashboardView'), 'PremiumSubscriberDashboardView');
 const LegalComparisonView = safeLazy(() => import('./views/LegalComparisonView'), 'LegalComparisonView');
 const WorldBizarreLawsView = safeLazy(() => import('./views/WorldBizarreLawsView'), 'WorldBizarreLawsView');
@@ -177,166 +64,236 @@ const ProfileView = safeLazy(() => import('./views/ProfileView'), 'ProfileView')
 const IntegrationView = safeLazy(() => import('./views/IntegrationView'), 'IntegrationView');
 const JudicialExpertToolsView = safeLazy(() => import('./views/JudicialExpertToolsView'), 'JudicialExpertToolsView');
 const ExpertLegalReviewView = safeLazy(() => import('./views/ExpertLegalReviewView'), 'ExpertLegalReviewView');
-const VoiceAndDocumentConverterView = safeLazy(() => import('./views/VoiceAndDocumentConverterView'), 'VoiceAndDocumentConverterView');
-const LegalFAQSupportView = safeLazy(() => import('./components/LegalFAQSupportView'), 'LegalFAQSupportView');
-const LegalQnARepositoryView = safeLazy(() => import('./components/LegalQnARepositoryView'), 'LegalQnARepositoryView');
-const TelegramArchiveSearch = safeLazy(() => import('./components/TelegramArchiveSearch'), 'TelegramArchiveSearch');
-const SharedDraftWorkspace = safeLazy(() => import('./components/SharedDraftWorkspace'), 'SharedDraftWorkspace');
 const CaseRulingAnalysisView = safeLazy(() => import('./views/CaseRulingAnalysisView'), 'CaseRulingAnalysisView');
 const CourtScheduleView = safeLazy(() => import('./views/CourtScheduleView'), 'CourtScheduleView');
-const VisitorIdentityModal = safeLazy(() => import('./components/VisitorIdentityModal'), 'VisitorIdentityModal');
+const LegalCitationFinderView = safeLazy(() => import('./views/LegalCitationFinderView'), 'LegalCitationFinderView');
+const DigitalJusticeHubView = safeLazy(() => import('./views/DigitalJusticeHubView'), 'DigitalJusticeHubView');
+const ControlDashboardView = safeLazy(() => import('./views/ControlDashboardView'), 'ControlDashboardView');
+const GurbichaCourtPractice = safeLazy(() => import('./views/GurbichaCourtPractice'), 'GurbichaCourtPractice');
+const CasePublicStatusView = safeLazy(() => import('./views/CasePublicStatusView'), 'CasePublicStatusView');
+
+// Safe Lazy-loaded Modals and Widgets
+const TelegramArchiveSearch = safeLazy(() => import('./components/TelegramArchiveSearch'), 'TelegramArchiveSearch');
+const TelegramStatusDashboard = safeLazy(() => import('./components/TelegramStatusDashboard'), 'TelegramStatusDashboard');
+const LegalHelpFaq = safeLazy(() => import('./components/LegalHelpFaq'), 'LegalHelpFaq');
 const GlobalCommandPalette = safeLazy(() => import('./components/GlobalCommandPalette'), 'GlobalCommandPalette');
 const KeyboardShortcutsModal = safeLazy(() => import('./components/KeyboardShortcutsModal'), 'KeyboardShortcutsModal');
 const AlwaysAvailableGlossaryPopover = safeLazy(() => import('./components/AlwaysAvailableGlossaryPopover'), 'AlwaysAvailableGlossaryPopover');
-const PlayStorePublishGuideModal = safeLazy(() => import('./components/PlayStorePublishGuideModal'), 'PlayStorePublishGuideModal');
 const AppUpdateNotificationModal = safeLazy(() => import('./components/AppUpdateNotificationModal'), 'AppUpdateNotificationModal');
-const FilingReminderModal = safeLazy(() => import('./components/FilingReminderModal'), 'FilingReminderModal');
-const LegalMeetingRoomView = safeLazy(() => import('./views/LegalMeetingRoomView'), 'LegalMeetingRoomView');
-const LegalCitationFinderView = safeLazy(() => import('./views/LegalCitationFinderView'), 'LegalCitationFinderView');
-const CourtroomControlView = safeLazy(() => import('./views/ControlDashboardView'), 'ControlDashboardView');
-const CourtroomKioskView = safeLazy(() => import('./views/KioskView'), 'KioskView');
-const DigitalJusticeHubView = safeLazy(() => import('./views/DigitalJusticeHubView'), 'DigitalJusticeHubView');
-const CourtPersonnelFolderView = safeLazy(() => import('./views/CourtPersonnelFolderView'), 'CourtPersonnelFolderView');
-const CasePublicStatusView = safeLazy(() => import('./views/CasePublicStatusView'), 'CasePublicStatusView');
+const AIFeedbackFloatingButton = safeLazy(() => import('./components/AIFeedbackFloatingButton'), 'AIFeedbackFloatingButton');
 
-const OFFICIAL_URL = 'https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app';
-const ALLOWED_ORIGINS = [
-  OFFICIAL_URL,
+const OFFICIAL_BASE_URL = typeof window !== 'undefined' ? window.location.origin : 'https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app';
+const ALLOWED_ORIGIN_PREFIXES = [
+  'https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app',
   'https://ais-dev-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app',
   'http://localhost:3000',
+  'http://localhost:5173',
+  'https://mmurtii.com',
+  'https://mmurtii.oro',
 ];
 
-const AppViewLoadingFallback: React.FC<{ currentLang?: Language }> = ({ currentLang = 'om' }) => (
+const LoadingFallback: React.FC<{ currentLang?: Language }> = ({ currentLang = 'om' }) => (
   <div className="flex flex-col items-center justify-center p-12 my-10 space-y-4 text-center">
     <div className="relative flex items-center justify-center">
       <div className="w-14 h-14 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin" />
       <span className="absolute text-xl">⚖️</span>
     </div>
     <p className="text-amber-400 font-mono text-xs tracking-wider animate-pulse font-semibold">
-      {currentLang === 'om'
-        ? 'Kutaa Seeraa Fe\'aa Jira...'
-        : currentLang === 'am'
-        ? 'የሕግ መዝገብ በመጫን ላይ...'
-        : 'Loading Legal Module...'}
+      {currentLang === 'om' ? "Kutaa Seeraa Fe'aa Jira..." : currentLang === 'am' ? 'የሕግ መዝገብ በመጫን ላይ...' : 'Loading Legal Module...'}
     </p>
   </div>
 );
 
 export default function App() {
-  const { user, profile, loading, updateProfile, verificationSuccessMsg, signInWithBiometrics, signInByEmailOnly } = useAuth();
-  const isOwner = isOwnerAccount(
+  const { 
+    user, 
+    profile, 
+    authClaims,
+    loading, 
+    updateProfile, 
+    signInWithBiometrics, 
+    signInAsGuest,
+    resendEmailVerification,
+    refreshAuthClaims,
+    logout,
+  } = useAuth();
+
+  const isOwner = authClaims.isTrustedAdmin && isOwnerAccount(
     user?.email || (profile as any)?.email,
     profile?.visitorName || profile?.appUsername,
     getStoredOwnerKey()
   );
-  const isOwnerAcc = isOwner;
+
   const [settings, setSettings] = useState<UserSettings>(getUserSettings());
   const [currentLang, setCurrentLang] = useState<Language>(settings.appLanguage || 'om');
   const [activeTab, setActiveTab] = useState<string>('home');
-  const [isLocked, setIsLocked] = useState(false);
-  const [activeDocForView, setActiveDocForView] = useState<SavedLegalDocument | null>(null);
-  const [currentQuery, setCurrentQuery] = useState<string>('');
-  const [currentCaseId, setCurrentCaseId] = useState<string | null>(null);
-  const [preloadedExplainQuery, setPreloadedExplainQuery] = useState<string>('');
-  const [preloadedDocAnalysisQuery, setPreloadedDocAnalysisQuery] = useState<string>('');
-  const [preloadedCassationQuery, setPreloadedCassationQuery] = useState<string>('');
-  const [preloadedGlossaryQuery, setPreloadedGlossaryQuery] = useState<string>('');
-  const [preloadedLegislationQuery, setPreloadedLegislationQuery] = useState<string>('');
-  const [referralCreator, setReferralCreator] = useState<string | null>(null);
-  const [sharedDraftToken, setSharedDraftToken] = useState<string | null>(() => {
+  const [isLocked, setIsLocked] = useState<boolean>(false);
+  const [activeDoc, setActiveDoc] = useState<SavedLegalDocument | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [caseId, setCaseId] = useState<string | null>(null);
+  const [hideHeader, setHideHeader] = useState<boolean>(false);
+
+  // Tab-specific initial queries
+  const [explainQuery, setExplainQuery] = useState<string>('');
+  const [docAnalysisQuery, setDocAnalysisQuery] = useState<string>('');
+  const [cassationQuery, setCassationQuery] = useState<string>('');
+  const [glossaryQuery, setGlossaryQuery] = useState<string>('');
+  const [legislationQuery, setLegislationQuery] = useState<string>('');
+  const [_creatorName, setCreatorNameState] = useState<string | null>(null);
+
+  // Draft Token
+  const [_draftToken, _setDraftToken] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      return params.get('draftToken') || params.get('sharedDraft') || null;
+      const sp = new URLSearchParams(window.location.search);
+      return sp.get('draftToken') || sp.get('sharedDraft') || null;
     }
     return null;
   });
-  const [isOffline, setIsOffline] = useState<boolean>(
-    typeof navigator !== 'undefined' ? !navigator.onLine : false
-  );
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-  const [isShortcutsHelpOpen, setIsShortcutsHelpOpen] = useState(false);
-  const [showGlobalStoreModal, setShowGlobalStoreModal] = useState(false);
-  const [shortcutToast, setShortcutToast] = useState<{ message: string; emoji: string } | null>(null);
-  const [bgSyncToast, setBgSyncToast] = useState<{ message: string; emoji: string } | null>(null);
-  const [outdatedDraftAlerts, setOutdatedDraftAlerts] = useState<OutdatedDraftAlert[]>([]);
+
+  const [_isOffline, setIsOffline] = useState<boolean>(typeof navigator !== 'undefined' && !navigator.onLine);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState<boolean>(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
+  const [_isFilingReminderOpen, setIsFilingReminderOpen] = useState<boolean>(false);
+  const [toast, setToast] = useState<{ message: string; emoji: string } | null>(null);
+  const [_outdatedDraftAlerts, setOutdatedDraftAlerts] = useState<any[]>([]);
   const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState<boolean>(false);
-  const [showFilingReminderModal, setShowFilingReminderModal] = useState<boolean>(false);
   const [meetingRoomId, setMeetingRoomId] = useState<string>('seera-collab-room-01');
   const [meetingTopic, setMeetingTopic] = useState<string>('Marii Falmii Seeraa & Qophii Sanadaa');
+  const [showWarningModal, setShowWarningModal] = useState<boolean>(!localStorage.getItem('seera_warning_shown'));
 
-  // Initialize auto-update engine and filing reminder worker
+  // Initialize App Update Engine
   useEffect(() => {
-    const cleanupUpdate = initAppUpdateEngine();
-    const cleanupReminder = initFilingReminderWorker();
-    const unsub = onAppUpdateAvailable((info) => {
+    const unsubEngine = initAppUpdateEngine();
+    const unsubListener = onAppUpdateAvailable((info) => {
       setAppUpdateInfo(info);
       if (info.isUpdateAvailable) {
         setShowUpdateModal(true);
       }
     });
-
     return () => {
-      cleanupUpdate();
-      if (cleanupReminder) cleanupReminder();
-      unsub();
+      unsubEngine();
+      unsubListener();
     };
   }, []);
 
-  // Sync local settings with profile
+  // Sync profile settings while preserving explicit device-level offline mode in localStorage
   useEffect(() => {
     if (profile) {
-      setSettings(prev => ({ ...prev, ...profile }));
+      const hasExplicitOffline =
+        typeof window !== 'undefined' && localStorage.getItem(OFFLINE_MODE_STORAGE_KEY) !== null;
+      setSettings((prev) => ({
+        ...prev,
+        ...(profile as any),
+        offlineModeEnabled: hasExplicitOffline
+          ? getStoredOfflineMode()
+          : (profile as any).offlineModeEnabled ?? prev.offlineModeEnabled,
+      }));
       if (profile.appLanguage) {
-        setCurrentLang(profile.appLanguage);
+        setCurrentLang(profile.appLanguage as Language);
       }
     }
   }, [profile]);
 
-  // Handle dynamic language loading
+  // Keep React settings synced when offline mode or settings change from Navbar / SyncStatusIndicator / another tab
+  useEffect(() => {
+    const handleSettingsUpdated = (e: Event) => {
+      const custom = e as CustomEvent<UserSettings>;
+      if (custom.detail) {
+        setSettings(custom.detail);
+      } else {
+        setSettings(getUserSettings());
+      }
+    };
+    const handleOfflineChanged = (e: Event) => {
+      const custom = e as CustomEvent<{ offlineModeEnabled?: boolean }>;
+      const offlineEnabled =
+        typeof custom.detail?.offlineModeEnabled === 'boolean'
+          ? custom.detail.offlineModeEnabled
+          : getStoredOfflineMode();
+      setSettings((prev) => ({ ...prev, offlineModeEnabled: offlineEnabled }));
+      setIsOffline(!navigator.onLine || offlineEnabled);
+    };
+
+    window.addEventListener('seera_user_settings_updated', handleSettingsUpdated);
+    window.addEventListener('seera_offline_mode_changed', handleOfflineChanged);
+    return () => {
+      window.removeEventListener('seera_user_settings_updated', handleSettingsUpdated);
+      window.removeEventListener('seera_offline_mode_changed', handleOfflineChanged);
+    };
+  }, []);
+
+  // Load language dictionaries dynamically
   useEffect(() => {
     if (currentLang !== 'om') {
       loadLanguage(currentLang).then(() => {
-        setSettings(prev => ({ ...prev }));
+        setSettings((prev) => ({ ...prev }));
       });
     }
   }, [currentLang]);
 
-  // Inactivity auto-lock
+  // Check Kiosk Mode (Guest public display only)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    const path = window.location.pathname.toLowerCase();
+    if (
+      path.includes('/kiosk') ||
+      path.endsWith('kiosk') ||
+      sp.has('kiosk') ||
+      sp.get('mode') === 'kiosk' ||
+      sp.get('view') === 'kiosk' ||
+      sp.get('tab') === 'kiosk'
+    ) {
+      if (activeTab !== 'kiosk') setActiveTab('kiosk');
+      if (!user) {
+        signInAsGuest('Courtroom Kiosk Display (Guest)', 'kiosk').catch(() => {});
+      }
+    }
+  }, [user, activeTab, signInAsGuest]);
+
+  // Auto lock inactivity timeout
   useInactivityLock(settings.autoLockTimeout || 0, () => setIsLocked(true));
 
-  const handleGlobalBiometricUnlock = async () => {
-    const result = await signInWithBiometrics();
-    if (result.success) {
-      setIsLocked(false);
-    }
+  const handleUnlock = async () => {
+    const res = await signInWithBiometrics();
+    if (res.success) setIsLocked(false);
   };
 
-  // Background Sync status notifications
+  // Connectivity and sync listeners
   useEffect(() => {
     const handleOnline = () => {
       setIsOffline(false);
-      setBgSyncToast({
-        message: currentLang === 'om' ? "⚡ Intarneetiin waan deebi'eef kuusaan seeraa fi murtiiwwan ijibbaataa Sinkii ta'aniiru!" : "⚡ Connection restored! Background sync active.",
+      setToast({
+        message: currentLang === 'om' ? "⚡ Intarneetiin waan deebi'eef kuusaan seeraa fi murtiiwwan ijibbaataa Sinkii ta'aniiru!" : '⚡ Connection restored! Background sync active.',
         emoji: '🌐',
       });
-      setTimeout(() => setBgSyncToast(null), 5000);
+      setTimeout(() => setToast(null), 5000);
     };
+
     const handleOffline = () => setIsOffline(true);
-    const handleSyncStatus = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
+
+    const handleSyncStatus = (e: any) => {
+      const detail = e.detail;
       if (detail && detail.syncedDocsCount > 0) {
-        setBgSyncToast({
+        if (typeof sessionStorage !== 'undefined') {
+          if (sessionStorage.getItem('seera_sync_notification_dispatched') === 'true') {
+            return; // Once synced, do not repeat redundantly
+          }
+          sessionStorage.setItem('seera_sync_notification_dispatched', 'true');
+        }
+        setToast({
           message: currentLang === 'om' ? `🔄 Kuusaan seeraa background'n Sinkii ta'eera (${detail.syncedDocsCount} docs).` : `🔄 Background sync complete (${detail.syncedDocsCount} docs).`,
           emoji: '🔄',
         });
-        setTimeout(() => setBgSyncToast(null), 4000);
+        setTimeout(() => setToast(null), 4000);
       }
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('seera_sync_status_updated', handleSyncStatus);
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -344,205 +301,217 @@ export default function App() {
     };
   }, [currentLang]);
 
-  // Draft amendment worker
+  // Periodic Court Deadline Monitor
   useEffect(() => {
-    startDraftAmendmentBackgroundWorker((alerts) => setOutdatedDraftAlerts(alerts));
-    const handleAlert = (e: Event) => setOutdatedDraftAlerts((e as CustomEvent).detail);
+    if (!user) return;
+
+    const runDeadlineCheck = async () => {
+      try {
+        const { checkAndNotifyDeadlines } = await import('./services/courtCaseService');
+        await checkAndNotifyDeadlines(user.uid);
+      } catch (err) {
+        console.warn('Deadline check failed:', err);
+      }
+    };
+
+    // Initial check
+    runDeadlineCheck();
+
+    // Re-check every 15 minutes
+    const interval = setInterval(runDeadlineCheck, 15 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  // Outdated draft listener
+  useEffect(() => {
+    const handleAlert = (e: any) => setOutdatedDraftAlerts(e.detail);
     window.addEventListener('seera:outdated_draft_alert', handleAlert);
     return () => window.removeEventListener('seera:outdated_draft_alert', handleAlert);
   }, []);
 
-  // URL State Sync & Initialization
+  // Parse state from URL on initial load (no URL-based admin/staff elevation)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    
-    // Auto-authorize courtWork tab and handle gurbicha@gmail.com
-    const tabParam = params.get('tab');
-    if (tabParam === 'courtWork' || tabParam === 'control') {
-      localStorage.setItem('seera_court_access_authorized', 'true');
-      setActiveTab(tabParam);
+    const sp = new URLSearchParams(window.location.search);
+    const path = window.location.pathname.toLowerCase().replace(/^\//, '');
+    const tabParam = sp.get('tab');
+
+    if (tabParam === 'courtWork' && (authClaims.isCourtStaff || authClaims.isTrustedAdmin)) {
+      setActiveTab('courtWork');
+    } else if (tabParam === 'control' && authClaims.isTrustedAdmin) {
+      setActiveTab('control');
     }
 
-    const urlEmail = params.get('email') || params.get('user') || params.get('u') || params.get('owner');
-    if (urlEmail && (isOwnerEmail(urlEmail) || urlEmail === 'gurbicha@gmail.com')) {
-      unlockOwnerPrivileges(urlEmail);
-      if (urlEmail === 'gurbicha@gmail.com') {
-        localStorage.setItem('seera_court_access_authorized', 'true');
-        const gurbichaSession = {
-          type: 'admin',
-          institutionId: 'inst_gurbicha_aana',
-          courtName: 'Mana Murtii Aanaa Gurbicha',
-          courtLevel: 'first_instance',
-          user: {
-            id: 'gurbicha_admin',
-            fullName: 'Admin Mana Murtii Aanaa Gurbicha',
-            emailOrUsername: 'gurbicha@gmail.com',
-            role: 'court_admin',
-            bench: 'Dhaddacha Aanaa Gurbicha',
-          },
-          sessionStartedAt: new Date().toISOString(),
-        };
-        localStorage.setItem('seera_active_court_session', JSON.stringify(gurbichaSession));
-      } else {
-        // App owner (e.g. ayeledha@gmail.com): clear any stale Gurbicha court session
-        const existingSessionRaw = localStorage.getItem('seera_active_court_session');
-        if (existingSessionRaw && existingSessionRaw.toLowerCase().includes('gurbicha')) {
-          localStorage.removeItem('seera_active_court_session');
-          sessionStorage.removeItem('seera_active_court_session');
-          window.dispatchEvent(new CustomEvent('seera_court_session_changed', { detail: null }));
-        }
+    const langParam = sp.get('lang');
+    if (langParam && (langParam === 'om' || langParam === 'am' || langParam === 'en')) {
+      setCurrentLang(langParam as Language);
+      saveUserSettings({ appLanguage: langParam as Language });
+    }
+
+    if (
+      path.includes('kiosk') ||
+      sp.has('kiosk') ||
+      sp.get('mode') === 'kiosk' ||
+      sp.get('view') === 'kiosk' ||
+      sp.get('tab') === 'kiosk'
+    ) {
+      setActiveTab('kiosk');
+      if (!user) {
+        signInAsGuest('Courtroom Kiosk Display (Guest)', 'kiosk').catch(() => {});
       }
     }
 
-    // Handle language parameter e.g. &lang=om
-    const langParam = params.get('lang') as Language;
-    if (langParam && (langParam === 'om' || langParam === 'am' || langParam === 'en')) {
-      setCurrentLang(langParam);
-      saveUserSettings({ appLanguage: langParam });
-    }
-
-    // Handle meeting/discussion links
-    const room = params.get('room') || params.get('meeting') || params.get('meet');
-    if (room || tabParam === 'meeting') {
-      setMeetingRoomId(room || 'seera-collab-room-01');
-      if (params.get('topic')) setMeetingTopic(params.get('topic')!);
+    const meetParam = sp.get('room') || sp.get('meeting') || sp.get('meet');
+    if (meetParam || tabParam === 'meeting') {
+      setMeetingRoomId(meetParam || 'seera-collab-room-01');
+      if (sp.get('topic')) setMeetingTopic(sp.get('topic')!);
       setActiveTab('meeting');
-      if (!user) signInByEmailOnly(`guest.${Math.random().toString(36).substring(2, 7)}@saiethio.com`, 'Legal Guest Jurist', false).catch(() => {});
+      if (!user) {
+        signInAsGuest('Legal Guest Jurist (Guest)', 'meeting').catch(() => {});
+      }
     }
 
-    // Handle direct court links (from query params or pathname)
-    const courtLinkParam = params.get('courtLink') || params.get('court') || params.get('domain');
-    const path = window.location.pathname.replace(/^\//, '');
-    const courtLinkToResolve = courtLinkParam || (path.includes('.') || path.startsWith('mma') ? path : null);
-    
-    if (courtLinkToResolve) {
-      const resolved = resolveCourtLink(courtLinkToResolve);
-      if (resolved) {
-        localStorage.setItem('seera_court_access_authorized', 'true');
-        if (resolved.slug === 'mmagurbicha') {
-          setActiveTab('control');
-        } else {
+    const courtParam = sp.get('courtLink') || sp.get('court') || sp.get('domain') || (path.includes('.') || path.startsWith('mma') ? path : null);
+    if (courtParam) {
+      const courtDetails = resolveCourtLink(courtParam);
+      if (courtDetails) {
+        if (courtDetails.slug === 'mmagurbicha') {
+          setActiveTab('courtPractice');
+          setHideHeader(true);
+        } else if (authClaims.isCourtStaff || authClaims.isTrustedAdmin) {
           setActiveTab('courtWork');
         }
       }
     }
 
-    // Read full shareable state
-    const shared = readShareableStateFromUrl();
-    if (shared) {
-      if (shared.creator) setReferralCreator(shared.creator);
-      if (shared.tab) {
-        const targetTab = shared.tab === 'hordoffii' ? 'analyticsFeedback' : shared.tab;
-        const isOwnerAcc = isOwnerAccount(user?.email || '', profile?.visitorName || '', getStoredOwnerKey());
-        if (!isRestrictedTab(targetTab) || isOwnerAcc || targetTab === 'courtWork' || targetTab === 'control') {
-          if (targetTab === 'courtWork' || targetTab === 'control') {
-            localStorage.setItem('seera_court_access_authorized', 'true');
-          }
+    const stateFromUrl = readShareableStateFromUrl();
+    if (stateFromUrl) {
+      if (stateFromUrl.creator) setCreatorNameState(stateFromUrl.creator);
+      if (stateFromUrl.tab) {
+        const targetTab = stateFromUrl.tab === 'hordoffii' ? 'analyticsFeedback' : stateFromUrl.tab;
+        const hasAdminAccess = authClaims.isTrustedAdmin;
+        const hasStaffAccess = authClaims.isCourtStaff || hasAdminAccess;
+        if (!isRestrictedTab(targetTab) || hasAdminAccess || (targetTab === 'courtWork' && hasStaffAccess)) {
           setActiveTab(targetTab);
         }
       }
-      if (shared.lang) {
-        setCurrentLang(shared.lang);
-        saveUserSettings({ appLanguage: shared.lang });
+      if (stateFromUrl.lang) {
+        setCurrentLang(stateFromUrl.lang);
+        saveUserSettings({ appLanguage: stateFromUrl.lang });
       }
-      if (shared.query) {
-        setCurrentQuery(shared.query);
-        if (shared.tab === 'explainLaw') setPreloadedExplainQuery(shared.query);
-        if (shared.tab === 'cassation') setPreloadedCassationQuery(shared.query);
+      if (stateFromUrl.query) {
+        setSearchQuery(stateFromUrl.query);
+        if (stateFromUrl.tab === 'explainLaw') setExplainQuery(stateFromUrl.query);
+        if (stateFromUrl.tab === 'cassation') setCassationQuery(stateFromUrl.query);
       }
-      if (shared.caseId) setCurrentCaseId(shared.caseId);
+      if (stateFromUrl.caseId) setCaseId(stateFromUrl.caseId);
     }
-  }, []);
+  }, [user, authClaims.isTrustedAdmin, authClaims.isCourtStaff, signInAsGuest]);
 
-  // Auto-route gurbicha@gmail.com directly to Mana Murtii Aanaa Gurbicha Dashboard ('control' tab)
-  // and ensure App Owner (ayeledha@gmail.com) never retains a Gurbicha court worker session
+  // Route guest practice sessions safely to the practice sandbox only
   useEffect(() => {
-    const userEmail = (
-      user?.email ||
-      localStorage.getItem('seera_cached_email') ||
-      localStorage.getItem('seera_owner_email') ||
-      ''
-    ).toLowerCase().trim();
-
-    if (userEmail === 'gurbicha@gmail.com') {
-      setActiveTab('control');
-    } else if (
-      isOwner ||
-      isOwnerEmail(userEmail) ||
-      userEmail === 'ayeledha@gmail.com' ||
-      userEmail === 'ayele@saiethio.com' ||
-      userEmail === 'ayeledha@saiethio.com'
-    ) {
-      const activeRaw = localStorage.getItem('seera_court_active_session');
-      if (activeRaw && activeRaw.toLowerCase().includes('gurbicha')) {
-        localStorage.removeItem('seera_court_active_session');
-        sessionStorage.removeItem('seera_court_active_session');
-        window.dispatchEvent(new CustomEvent('seera_court_session_changed', { detail: null }));
-      }
+    if (authClaims.isGuest && authClaims.guestMode === 'gurbicha_practice') {
+      setActiveTab('courtPractice');
     }
-  }, [user, isOwner]);
+  }, [authClaims.isGuest, authClaims.guestMode]);
 
-  // Sync browser URL with state
+  // Sync state to URL and document language
   useEffect(() => {
     syncBrowserUrlWithState({
       tab: activeTab,
       lang: currentLang,
-      query: currentQuery || undefined,
-      caseId: currentCaseId || undefined,
+      query: searchQuery || undefined,
+      caseId: caseId || undefined,
     }, true);
     document.documentElement.lang = currentLang;
-  }, [activeTab, currentLang, currentQuery]);
+  }, [activeTab, currentLang, searchQuery, caseId]);
 
-  // Analytics
+  // Track page views
   useEffect(() => {
-    if (user && activeTab) analyticsService.trackPageView(activeTab);
+    if (user && activeTab) {
+      analyticsService.trackPageView(activeTab);
+    }
   }, [activeTab, user]);
 
-  // Profile-based tracking
+  // Track initial visit
   useEffect(() => {
     if (profile && !sessionStorage.getItem('seera_visit_logged')) {
-      const params = new URLSearchParams(window.location.search);
-      const ref = params.get('ref') || params.get('by') || 'direct';
-      trackReferralVisit(ref, 'direct', profile.visitorName);
-      logRealtimeEvent('visit', `User loaded platform: ${navigator.userAgent}`, 'Onboarding', ref, profile.visitorName);
+      const sp = new URLSearchParams(window.location.search);
+      const referrerId = sp.get('ref') || sp.get('by') || 'direct';
+      trackReferralVisit(referrerId, 'direct', profile.visitorName);
+      logRealtimeEvent(
+        'visit',
+        `User loaded platform: ${navigator.userAgent}`,
+        'Onboarding',
+        referrerId,
+        profile.visitorName
+      );
       sessionStorage.setItem('seera_visit_logged', 'true');
     }
   }, [profile]);
 
-  // Global Shortcuts
-  const handleGlobalSave = () => {
+  const handleTriggerSave = () => {
     window.dispatchEvent(new CustomEvent('seera:save_current_document'));
-    showShortcutFeedback(currentLang === 'om' ? "Sanadni milkaa'inaan kuufameera!" : "Document Saved!", '💾');
+    showToast(currentLang === 'om' ? "Sanadni milkaa'inaan kuufameera!" : 'Document Saved!', '💾');
   };
-  const handleGlobalPrint = () => {
+
+  const handleTriggerPrint = () => {
     window.dispatchEvent(new CustomEvent('seera:print_current_document'));
-    showShortcutFeedback(currentLang === 'om' ? 'Qophii Maxxansaa...' : 'Preparing Print...', '🖨️');
+    showToast(currentLang === 'om' ? 'Qophii Maxxansaa...' : 'Preparing Print...', '🖨️');
   };
-  const showShortcutFeedback = (message: string, emoji = '⚡') => {
-    setShortcutToast({ message, emoji });
-    setTimeout(() => setShortcutToast(null), 2800);
+
+  const showToast = (message: string, emoji: string = '⚡') => {
+    setToast({ message, emoji });
+    setTimeout(() => setToast(null), 2800);
   };
 
   useGlobalShortcuts({
     onOpenSearch: () => setIsCommandPaletteOpen(true),
-    onSave: handleGlobalSave,
-    onPrint: handleGlobalPrint,
-    onOpenHelp: () => setIsShortcutsHelpOpen(true),
-    onCloseModals: () => { setIsCommandPaletteOpen(false); setIsShortcutsHelpOpen(false); },
+    onSave: handleTriggerSave,
+    onPrint: handleTriggerPrint,
+    onOpenHelp: () => setIsShortcutsOpen(true),
+    onCloseModals: () => {
+      setIsCommandPaletteOpen(false);
+      setIsShortcutsOpen(false);
+    },
     onNavigateTab: (tab: string) => {
       setActiveTab(tab);
-      setCurrentQuery('');
+      setSearchQuery('');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
   });
 
-  const handleLanguageChange = (lang: Language) => {
-    setCurrentLang(lang);
-    const updated = saveUserSettings({ appLanguage: lang });
+  // Listen to custom global app events
+  useEffect(() => {
+    const handleToastEvent = (e: any) => {
+      if (e.detail?.message) {
+        showToast(e.detail.message, e.detail.emoji || '⚡');
+      }
+    };
+    const handleNavigateTabEvent = (e: any) => {
+      if (e.detail?.tab) {
+        setActiveTab(e.detail.tab);
+        if (e.detail.query) setSearchQuery(e.detail.query);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+
+    window.addEventListener('seera:show_toast', handleToastEvent);
+    window.addEventListener('seera:navigate_tab', handleNavigateTabEvent);
+
+    return () => {
+      window.removeEventListener('seera:show_toast', handleToastEvent);
+      window.removeEventListener('seera:navigate_tab', handleNavigateTabEvent);
+    };
+  }, []);
+
+  const handleLanguageChange = (newLang: Language) => {
+    setCurrentLang(newLang);
+    const updated = saveUserSettings({ appLanguage: newLang });
     setSettings(updated);
-    updateProfile({ appLanguage: lang });
+    updateProfile({ appLanguage: newLang });
   };
 
+  // Loading state
   if (loading && !user) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
@@ -552,17 +521,22 @@ export default function App() {
     );
   }
 
-  if (!user && activeTab !== 'caseStatus') {
+  // Not authenticated landing gate
+  if (!user && activeTab !== 'caseStatus' && activeTab !== 'kiosk') {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col relative">
-        <TopUpdateStickyBanner currentLang={currentLang} updateInfo={appUpdateInfo} onOpenDetails={() => setShowUpdateModal(true)} />
+        <TopUpdateStickyBanner
+          currentLang={currentLang}
+          updateInfo={appUpdateInfo}
+          onOpenDetails={() => setShowUpdateModal(true)}
+        />
         <LandingView
           currentLang={currentLang}
           onJoinMeetingDirectly={(room, topic) => {
             setMeetingRoomId(room || 'seera-collab-room-01');
             if (topic) setMeetingTopic(topic);
             setActiveTab('meeting');
-            signInByEmailOnly(`guest.${Math.random().toString(36).substring(2, 7)}@saiethio.com`, 'Legal Guest Jurist', false).catch(() => {});
+            signInAsGuest('Legal Guest Jurist (Guest)', 'meeting').catch(() => {});
           }}
           onForceUpdate={() => setShowUpdateModal(true)}
           appUpdateInfo={appUpdateInfo}
@@ -582,112 +556,328 @@ export default function App() {
     );
   }
 
+  // Domain verification for official deployment link
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-  const isAllowedOrigin = ALLOWED_ORIGINS.some(origin => origin.startsWith(currentOrigin) || currentOrigin.startsWith(origin));
-  if (!isAllowedOrigin && currentOrigin) return <LinkEnforcementOverlay currentLang={currentLang} targetUrl={OFFICIAL_URL} />;
+  const isAllowedOrigin =
+    !currentOrigin ||
+    ALLOWED_ORIGIN_PREFIXES.some((prefix) => currentOrigin.startsWith(prefix) || prefix.startsWith(currentOrigin)) ||
+    currentOrigin.includes('run.app') ||
+    currentOrigin.includes('aistudio') ||
+    currentOrigin.includes('localhost') ||
+    currentOrigin.includes('mmurtii');
+
+  if (!isAllowedOrigin && currentOrigin) {
+    return (
+      <LinkEnforcementOverlay
+        currentLang={currentLang}
+        targetUrl={currentOrigin || OFFICIAL_BASE_URL}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen overflow-x-hidden bg-slate-950 text-slate-100 font-sans relative">
+      {/* Background Watermark */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none">
-        <div 
+        <div
           className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.035] filter grayscale contrast-125"
-          style={{ backgroundImage: `url(${ethiopianJusticeLadyBg})` }}
+          style={{ backgroundImage: `url(${ladyJusticeBg})` }}
         />
       </div>
 
+      {/* System Warning Modal on First Launch */}
+      {showWarningModal && (
+        <SystemWarningModal
+          currentLang={currentLang}
+          onClose={() => {
+            localStorage.setItem('seera_warning_shown', 'true');
+            setShowWarningModal(false);
+          }}
+        />
+      )}
+
+      {/* Biometric App Lock Modal */}
       {isLocked && (
         <div className="fixed inset-0 bg-slate-950/95 z-[9999] flex items-center justify-center p-6">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 max-w-sm w-full text-center space-y-6 shadow-2xl">
-            <Lock className="w-16 h-16 text-amber-500 mx-auto" />
+            <ShieldAlert className="w-16 h-16 text-amber-500 mx-auto" />
             <h2 className="text-xl font-bold text-slate-100">App Locked</h2>
-            <button onClick={handleGlobalBiometricUnlock} className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl">
+            <button
+              onClick={handleUnlock}
+              className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl"
+            >
               Authenticate
             </button>
           </div>
         </div>
       )}
 
-      <TopUpdateStickyBanner currentLang={currentLang} updateInfo={appUpdateInfo} onOpenDetails={() => setShowUpdateModal(true)} />
-      <ExternalDatasetNoticeBanner currentLang={currentLang} />
-      <MobileInstallBanner currentLang={currentLang} onOpenStoreModal={() => setShowGlobalStoreModal(true)} />
-
-      {activeTab !== 'caseStatus' && (
+      {/* Navigation Header */}
+      {!hideHeader && activeTab !== 'caseStatus' && activeTab !== 'kiosk' && (
         <Navbar
           currentLang={currentLang}
           onLanguageChange={handleLanguageChange}
           activeTab={activeTab}
-          currentState={{ tab: activeTab, lang: currentLang, query: currentQuery || undefined, caseId: currentCaseId || undefined }}
-          onTabChange={(tab) => { setActiveTab(tab); setCurrentQuery(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+          currentState={{
+            tab: activeTab,
+            lang: currentLang,
+            query: searchQuery || undefined,
+            caseId: caseId || undefined,
+          }}
+          onTabChange={(tab) => {
+            setActiveTab(tab);
+            setSearchQuery('');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-          onOpenShortcutsHelp={() => setIsShortcutsHelpOpen(true)}
-          onOpenFilingReminder={() => setShowFilingReminderModal(true)}
+          onOpenShortcutsHelp={() => setIsShortcutsOpen(true)}
+          onOpenFilingReminder={() => setIsFilingReminderOpen(true)}
         />
       )}
 
+      {/* Scroll-based Reading Progress Indicator at top of content area */}
+      <ReadingProgressBar currentLang={currentLang} showPercent />
+
+      {/* Main Content Area */}
       <main className={activeTab === 'caseStatus' ? 'flex-1 w-full' : 'flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-24'}>
-        <ErrorBoundary currentLang={currentLang} key={activeTab} onReset={() => setActiveTab('home')}>
-          <Suspense fallback={<AppViewLoadingFallback currentLang={currentLang} />}>
+        {authClaims.isGuest && activeTab !== 'kiosk' && activeTab !== 'caseStatus' && (
+          <div className="mb-4 px-4 py-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200">
+            <div>
+              <span className="font-bold">👤 Guest Mode Active:</span>{' '}
+              <span className="text-slate-300">
+                Public statutes, archive & guest practice only. Private documents, court files, and admin panels require a verified Firebase account.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => logout(false)}
+              className="px-3 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] cursor-pointer"
+            >
+              Sign In with Verified Account
+            </button>
+          </div>
+        )}
+
+        {authClaims.authTier === 'email_unverified' && (
+          <div className="mb-4 px-4 py-2.5 rounded-2xl bg-rose-950/50 border border-rose-500/40 flex flex-wrap items-center justify-between gap-2 text-xs text-rose-200">
+            <div>
+              <span className="font-bold">📧 Email Verification Required:</span>{' '}
+              <span>
+                Verify your email ({user?.email}) to unlock private legal documents and protected workflows.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await resendEmailVerification();
+                    showToast('Verification email resent! Check your inbox.', '📧');
+                  } catch (e: any) {
+                    showToast(e?.message || 'Could not resend verification email.', '⚠️');
+                  }
+                }}
+                className="px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] cursor-pointer"
+              >
+                Resend Verification
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await user?.reload?.();
+                  const updated = await refreshAuthClaims();
+                  if (updated.isEmailVerified) {
+                    showToast('Email verified! Protected features unlocked.', '✅');
+                  } else {
+                    showToast('Still unverified. Click the link sent to your email first.', '⏳');
+                  }
+                }}
+                className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11px] cursor-pointer border border-slate-700"
+              >
+                Refresh Status
+              </button>
+            </div>
+          </div>
+        )}
+
+        {authClaims.authTier === 'phone_authenticated' && (
+          <div className="mb-4 px-4 py-2.5 rounded-2xl bg-sky-950/50 border border-sky-500/40 flex flex-wrap items-center justify-between gap-2 text-xs text-sky-200">
+            <div>
+              <span className="font-bold">📱 Phone Session Active:</span>{' '}
+              <span>
+                Phone-authenticated accounts can access public tools, local practice, and basic profile settings, but cannot access verified-email-only cloud documents or court staff folders. Sign in with a verified email account for protected cloud storage.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => logout(false)}
+              className="px-3 py-1 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-[11px] cursor-pointer"
+            >
+              Sign In with Email
+            </button>
+          </div>
+        )}
+
+        <ErrorBoundary currentLang={currentLang} onReset={() => setActiveTab('home')}>
+          <Suspense fallback={<LoadingFallback currentLang={currentLang} />}>
             {activeTab === 'home' && <HomeView currentLang={currentLang} onNavigate={setActiveTab} />}
+            {activeTab === 'assistant' && <HomeView currentLang={currentLang} onNavigate={setActiveTab} />}
+            {(activeTab === 'courtModules' || activeTab === 'oiccms') && <CourtModulesView currentLang={currentLang} onNavigate={setActiveTab} />}
             {activeTab === 'create' && <CreateView currentLang={currentLang} defaultOutputLang={settings.defaultOutputLanguage} onNavigateTab={setActiveTab} />}
-            {activeTab === 'explainLaw' && <ExplainLawView currentLang={currentLang} initialQuery={preloadedExplainQuery} />}
-            {activeTab === 'cassation' && <CassationLibraryView currentLang={currentLang} initialQuery={preloadedCassationQuery} />}
-            {activeTab === 'courtWork' && <CourtWorkView currentLang={currentLang} />}
-            {activeTab === 'adminDashboard' && <AdminDashboardView currentLang={currentLang} onNavigateTab={setActiveTab} />}
+            {activeTab === 'explainLaw' && <ExplainLawView currentLang={currentLang} initialQuery={explainQuery} />}
+            {activeTab === 'cassation' && <CassationLibraryView currentLang={currentLang} initialQuery={cassationQuery} />}
+            {activeTab === 'cassationImporter' && <CassationLibraryView currentLang={currentLang} />}
+            {activeTab === 'courtWork' && (
+              authClaims.isGuest || !authClaims.isEmailVerified ? (
+                <div className="max-w-lg mx-auto my-12 p-6 rounded-3xl bg-slate-900 border border-rose-500/40 text-center space-y-4">
+                  <ShieldAlert className="w-12 h-12 text-rose-400 mx-auto" />
+                  <h2 className="text-lg font-bold text-white">Verified Court Account Required</h2>
+                  <p className="text-xs text-slate-300">
+                    Guest and unverified accounts cannot access Institutional Court Folders or Court Documents. Please sign in with a verified court staff Firebase account.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => logout(false)}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer"
+                  >
+                    Switch to Verified Account
+                  </button>
+                </div>
+              ) : (
+                <CourtPersonnelFolderView currentLang={currentLang} />
+              )
+            )}
+            {activeTab === 'courtAIDashboard' && (
+              authClaims.isCourtStaff || authClaims.isTrustedAdmin ? (
+                <CourtAIDashboardView currentLang={currentLang} onNavigateTab={setActiveTab} />
+              ) : (
+                <div className="max-w-lg mx-auto my-12 p-6 rounded-3xl bg-slate-900 border border-rose-500/40 text-center space-y-3">
+                  <ShieldAlert className="w-10 h-10 text-rose-400 mx-auto" />
+                  <h2 className="text-base font-bold text-white">Court Staff Claims Required</h2>
+                  <p className="text-xs text-slate-300">Court AI Dashboard is restricted to verified court staff with assigned institutional claims.</p>
+                </div>
+              )
+            )}
+            {activeTab === 'adminDashboard' && (
+              authClaims.isTrustedAdmin ? (
+                <AdminDashboardView currentLang={currentLang} onNavigateTab={setActiveTab} />
+              ) : (
+                <div className="max-w-lg mx-auto my-12 p-6 rounded-3xl bg-slate-900 border border-rose-500/40 text-center space-y-3">
+                  <ShieldAlert className="w-10 h-10 text-rose-400 mx-auto" />
+                  <h2 className="text-base font-bold text-white">SuperAdmin Custom Claims Required</h2>
+                  <p className="text-xs text-slate-300">Admin Dashboard requires verified email and server-issued superadmin claims.</p>
+                </div>
+              )
+            )}
             {activeTab === 'settings' && <SettingsView currentLang={currentLang} onLanguageChange={handleLanguageChange} settings={settings} onSettingsUpdate={setSettings} onNavigateTab={setActiveTab} />}
             {activeTab === 'translate' && <TranslateView currentLang={currentLang} />}
             {activeTab === 'socialMedia' && <SocialMediaView currentLang={currentLang} />}
-            {activeTab === 'glossary' && <GlossaryView currentLang={currentLang} initialQuery={preloadedGlossaryQuery} />}
-            {activeTab === 'myContent' && <MyContentView currentLang={currentLang} activeDoc={activeDocForView} onDocSelect={(doc: SavedLegalDocument) => { setActiveDocForView(doc); setActiveTab('myContent'); }} />}
-            {activeTab === 'documentAnalysis' && <DocumentAnalysisView currentLang={currentLang} initialQuery={preloadedDocAnalysisQuery} />}
+            {activeTab === 'glossary' && <GlossaryView currentLang={currentLang} initialQuery={glossaryQuery} />}
+            {activeTab === 'myContent' && <MyContentView currentLang={currentLang} onOpenDoc={(doc: SavedLegalDocument) => { setActiveDoc(doc); setActiveTab('myContent'); }} />}
+            {activeTab === 'documentAnalysis' && <DocumentAnalysisView currentLang={currentLang} initialQuery={docAnalysisQuery} />}
             {activeTab === 'precedentSimulator' && <PrecedentSimulatorView currentLang={currentLang} />}
             {activeTab === 'airtime' && <AirtimeRechargeView currentLang={currentLang} />}
-            {activeTab === 'appGuide' && <AppGuideView currentLang={currentLang} />}
-            {activeTab === 'library' && <LibraryView currentLang={currentLang} />}
-            {activeTab === 'legislation' && <LegislationRepositoryView currentLang={currentLang} initialQuery={preloadedLegislationQuery} />}
+            {activeTab === 'appGuide' && <AppGuideView currentLang={currentLang} onNavigate={setActiveTab} />}
+            {activeTab === 'library' && <LibraryView currentLang={currentLang} onNavigateTab={setActiveTab} />}
+            {activeTab === 'legislation' && <LegislationRepositoryView currentLang={currentLang} initialSearchQuery={legislationQuery} />}
             {activeTab === 'witness' && <WitnessTestimonyView currentLang={currentLang} />}
-            {activeTab === 'templates' && <DocumentTemplatesView currentLang={currentLang} onNavigateTab={setActiveTab} />}
+            {activeTab === 'templates' && <DocumentTemplatesView currentLang={currentLang} />}
             {activeTab === 'analyticsFeedback' && <AnalyticsFeedbackView currentLang={currentLang} />}
             {activeTab === 'courtroomAssistant' && <CourtroomAssistantView currentLang={currentLang} />}
-            {activeTab === 'institutionManagement' && <InstitutionManagementView currentLang={currentLang} />}
-
-            {activeTab === 'premium' && <PremiumSubscriberDashboardView currentLang={currentLang} />}
-            {activeTab === 'comparison' && <LegalComparisonView currentLang={currentLang} />}
-            {activeTab === 'bizarre' && <WorldBizarreLawsView currentLang={currentLang} />}
-            {activeTab === 'profile' && <ProfileView currentLang={currentLang} />}
-            {activeTab === 'integration' && <IntegrationView currentLang={currentLang} />}
-            {activeTab === 'judicialTools' && <JudicialExpertToolsView currentLang={currentLang} />}
-            {activeTab === 'expertReview' && <ExpertLegalReviewView currentLang={currentLang} />}
+            {activeTab === 'institutionManagement' && (
+              authClaims.isTrustedAdmin || (authClaims.isCourtStaff && authClaims.courtRole === 'court_admin') ? (
+                <InstitutionManagementView currentLang={currentLang} />
+              ) : (
+                <div className="max-w-lg mx-auto my-12 p-6 rounded-3xl bg-slate-900 border border-rose-500/40 text-center space-y-3">
+                  <ShieldAlert className="w-10 h-10 text-rose-400 mx-auto" />
+                  <h2 className="text-base font-bold text-white">Court Admin Authorization Required</h2>
+                  <p className="text-xs text-slate-300">Institution Management requires verified court_admin or superadmin custom claims.</p>
+                </div>
+              )
+            )}
+            {activeTab === 'meeting' && <LegalMeetingRoomView currentLang={currentLang} initialRoomId={meetingRoomId} initialTopic={meetingTopic} />}
+            {activeTab === 'kiosk' && <KioskView currentLang={currentLang} />}
             {activeTab === 'voice' && <VoiceAndDocumentConverterView currentLang={currentLang} />}
-            {activeTab === 'caseRuling' && <CaseRulingAnalysisView currentLang={currentLang} />}
-            {activeTab === 'courtSchedule' && <CourtScheduleView currentLang={currentLang} />}
-            {activeTab === 'citation' && <LegalCitationFinderView currentLang={currentLang} />}
-            {activeTab === 'meeting' && <LegalMeetingRoomView currentLang={currentLang} roomId={meetingRoomId} topic={meetingTopic} />}
-            {activeTab === 'control' && <CourtroomControlView currentLang={currentLang} />}
-            {activeTab === 'kiosk' && <CourtroomKioskView currentLang={currentLang} />}
-            {activeTab === 'digitalJustice' && <DigitalJusticeHubView currentLang={currentLang} />}
-            {activeTab === 'personnelFolder' && <CourtPersonnelFolderView currentLang={currentLang} />}
-            {activeTab === 'caseStatus' && <CasePublicStatusView currentLang={currentLang} />}
+
+            {(!profile?.legalRole || !['judge', 'prosecutor', 'advocate', 'court_admin'].includes(profile.legalRole)) && (
+              <Fragment>
+                {activeTab === 'premium' && <PremiumSubscriberDashboardView currentLang={currentLang} />}
+                {activeTab === 'comparison' && <LegalComparisonView currentLang={currentLang} />}
+                {activeTab === 'bizarre' && <WorldBizarreLawsView currentLang={currentLang} />}
+                {activeTab === 'integration' && <IntegrationView currentLang={currentLang} />}
+                {activeTab === 'judicialTools' && <JudicialExpertToolsView currentLang={currentLang} />}
+                {activeTab === 'expertReview' && <ExpertLegalReviewView currentLang={currentLang} />}
+                {activeTab === 'caseRuling' && <CaseRulingAnalysisView currentLang={currentLang} />}
+                {activeTab === 'courtSchedule' && <CourtScheduleView currentLang={currentLang} />}
+                {activeTab === 'citation' && <LegalCitationFinderView currentLang={currentLang} />}
+                {activeTab === 'digitalJustice' && <DigitalJusticeHubView currentLang={currentLang} />}
+              </Fragment>
+            )}
+
+            {activeTab === 'profile' && <ProfileView currentLang={currentLang} />}
+            {activeTab === 'control' && (
+              authClaims.isTrustedAdmin ? (
+                <ControlDashboardView currentLang={currentLang} />
+              ) : (
+                <div className="max-w-lg mx-auto my-12 p-6 rounded-3xl bg-slate-900 border border-rose-500/40 text-center space-y-3">
+                  <ShieldAlert className="w-10 h-10 text-rose-400 mx-auto" />
+                  <h2 className="text-base font-bold text-white">SuperAdmin Custom Claims Required</h2>
+                  <p className="text-xs text-slate-300">Master Control Dashboard is restricted to verified administrators.</p>
+                </div>
+              )
+            )}
+            {activeTab === 'courtPractice' && <GurbichaCourtPractice currentLang={currentLang} />}
+            {activeTab === 'personnelFolder' && (
+              authClaims.isGuest || !authClaims.isEmailVerified ? (
+                <div className="max-w-lg mx-auto my-12 p-6 rounded-3xl bg-slate-900 border border-rose-500/40 text-center space-y-3">
+                  <ShieldAlert className="w-10 h-10 text-rose-400 mx-auto" />
+                  <h2 className="text-base font-bold text-white">Verified Court Account Required</h2>
+                  <p className="text-xs text-slate-300">Personnel folders require a verified court staff Firebase account.</p>
+                </div>
+              ) : (
+                <CourtPersonnelFolderView currentLang={currentLang} />
+              )
+            )}
+            {activeTab === 'telegramArchive' && <TelegramArchiveSearch language={currentLang} />}
+            {activeTab === 'telegramStatus' && <TelegramStatusDashboard currentLang={currentLang} />}
+            {activeTab === 'faq' && <LegalHelpFaq currentLang={currentLang} />}
+            {activeTab === 'caseStatus' && <CasePublicStatusView currentLang={currentLang} caseId={caseId || ''} onBack={() => setActiveTab('home')} />}
           </Suspense>
         </ErrorBoundary>
       </main>
 
+      {/* Footer */}
       <footer className="border-t border-slate-800 bg-slate-950 text-slate-400 py-6 mt-auto">
         <div className="max-w-7xl mx-auto px-4 text-center text-xs">
           <p>© 2026 SAI Ethio • SeeraAI | FDRE Proclamation 410/2004 Protected</p>
         </div>
       </footer>
 
-      {bgSyncToast && (
+      {/* Toast Alert */}
+      {toast && (
         <div className="fixed top-20 right-6 z-50 bg-slate-900 border border-sky-500/60 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3">
-          <span>{bgSyncToast.emoji}</span>
-          <span className="text-xs font-semibold text-sky-200">{bgSyncToast.message}</span>
+          <span>{toast.emoji}</span>
+          <span className="text-xs font-semibold text-sky-200">{toast.message}</span>
         </div>
       )}
 
+      {/* Global Modals */}
       <Suspense fallback={null}>
-        <GlobalCommandPalette isOpen={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} currentLang={currentLang} onNavigateTab={setActiveTab} onTriggerSave={handleGlobalSave} onTriggerPrint={handleGlobalPrint} />
-        <KeyboardShortcutsModal isOpen={isShortcutsHelpOpen} onClose={() => setIsShortcutsHelpOpen(false)} currentLang={currentLang} />
+        <GlobalCommandPalette
+          isOpen={isCommandPaletteOpen}
+          onClose={() => setIsCommandPaletteOpen(false)}
+          currentLang={currentLang}
+          onNavigateTab={setActiveTab}
+          onTriggerSave={handleTriggerSave}
+          onTriggerPrint={handleTriggerPrint}
+        />
+        <KeyboardShortcutsModal
+          isOpen={isShortcutsOpen}
+          onClose={() => setIsShortcutsOpen(false)}
+          currentLang={currentLang}
+        />
         <AlwaysAvailableGlossaryPopover currentLang={currentLang} />
+        <AIFeedbackFloatingButton currentLang={currentLang} />
         {(showUpdateModal || appUpdateInfo?.isMandatory) && (
           <AppUpdateNotificationModal
             currentLang={currentLang}
@@ -699,7 +889,17 @@ export default function App() {
         )}
       </Suspense>
 
-      {activeTab !== 'caseStatus' && <BottomNavbar currentLang={currentLang} activeTab={activeTab} onTabChange={setActiveTab} />}
+      {/* Bottom Navigation */}
+      {!hideHeader && activeTab !== 'caseStatus' && activeTab !== 'kiosk' && (
+        <BottomNavbar
+          currentLang={currentLang}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+        />
+      )}
+
+      {/* Global Citation Side Panel */}
+      <CitationLinkedInstancesPanel currentLang={currentLang} />
     </div>
   );
 }
