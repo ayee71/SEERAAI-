@@ -1,0 +1,487 @@
+/** * SEERAAI – UNIFIED ETHIOPIAN LEGAL DATABASE Federal and Oromia
+Legal Framework * Languages: Afaan Oromoo, Amharic, English
+Modules: * 1. Legal Enactment Database * 2. Cassation Decision
+Database * 3. Telegram Cassation Archive * 4. Legal Search and Relevance
+Ranking * 5. Source Verification */
+
+// ===================================================== // 1.
+JURISDICTION & CLASSIFICATION //
+=====================================================
+
+export type Jurisdiction = ‘oromia’ | ‘federal’;
+
+export type LegislationType = | ‘constitution’ | ‘proclamation’ |
+‘regulation’ | ‘directive’ | ‘amendment’ | ‘repeal’;
+
+export type LegalCategory = | ‘labor’ | ‘property_land’ |
+‘civil_contract’ | ‘commercial_tax’ | ‘criminal’ | ‘family’ |
+‘constitutional_admin’ | ‘procedure_evidence’ | ‘human_rights’ |
+‘investment’ | ‘environment’ | ‘other’;
+
+export type LegalLanguage = ‘om’ | ‘am’ | ‘en’;
+
+export type LegalStatus = | ‘draft’ | ‘published’ | ‘in_force’ |
+‘partially_amended’ | ‘amended’ | ‘repealed’ | ‘expired’ | ‘suspended’ |
+‘unknown’;
+
+export type LegalRecordType = ‘enactment’ | ‘cassation_decision’;
+
+// ===================================================== // 2.
+MULTILINGUAL CONTENT //
+=====================================================
+
+export interface MultilingualText { om: string; am: string; en: string;
+}
+
+export interface OptionalMultilingualText { om?: string; am?: string;
+en?: string; }
+
+// ===================================================== // 3. LEGAL
+AUTHORITY & SOURCE //
+=====================================================
+
+export interface LegalAuthority { name: MultilingualText;
+institutionType: | ‘federal’ | ‘regional’ | ‘parliament’ | ‘council’ |
+‘ministry’ | ‘court’ | ‘other’; issuingInstitution?: MultilingualText;
+legalAuthorityBasis?: string; country: string; region?: string; }
+
+export interface LegalSource { sourceType: | ‘official_gazette’ |
+‘official_website’ | ‘court_decision’ | ‘legal_database’ |
+‘scanned_document’ | ‘telegram_archive’ | ‘other’; title: string; url?:
+string; documentId?: string; publicationNumber?: string; pageNumber?:
+string; verified: boolean; verifiedDate?: string; language?:
+LegalLanguage; }
+
+// ===================================================== // 4. LEGAL
+ARTICLE STRUCTURE //
+=====================================================
+
+export interface LegalSubArticle { number: string; content:
+MultilingualText; paragraphs?: { number: string; content:
+MultilingualText; }[]; clauses?: { label: string; content:
+MultilingualText; }[]; }
+
+export interface LegalArticle { articleNumber: string; title?:
+MultilingualText; content: MultilingualText; subArticles?:
+LegalSubArticle[]; keywords?: string[]; legalPrinciples?:
+MultilingualText[]; crossReferences?: string[]; isRepealed?: boolean;
+amendmentHistory?: { amendedBy: string; amendmentDate?: string;
+description?: MultilingualText; }[]; }
+
+// ===================================================== // 5. AMENDMENT
+& REPEAL MANAGEMENT //
+=====================================================
+
+export interface LegalRelationship { enactmentId: string;
+relationshipType: | ‘amends’ | ‘amended_by’ | ‘repeals’ | ‘repealed_by’
+| ‘replaces’ | ‘replaced_by’ | ‘implements’ | ‘related_to’;
+effectiveDate?: string; affectedArticles?: string[]; description?:
+MultilingualText; }
+
+// ===================================================== // 6. MAIN
+LEGAL ENACTMENT // =====================================================
+
+export interface LegalEnactment { id: string; recordType: ‘enactment’;
+type: LegislationType; jurisdiction: Jurisdiction; number: string;
+title: MultilingualText; shortTitle?: MultilingualText; authority:
+LegalAuthority; yearEC: number; yearGC?: number; publicationDate?:
+string; approvalDate?: string; effectiveDate?: string; expirationDate?:
+string; category: LegalCategory; summary: MultilingualText; preamble?:
+MultilingualText; fullTextArticles: LegalArticle[]; keyPrinciples:
+MultilingualText[]; relationships: LegalRelationship[]; status:
+LegalStatus; sources: LegalSource[]; tags: string[]; version: number;
+createdAt: string; updatedAt: string; lastVerifiedDate?: string;
+verifiedBy?: string; notes?: string; }
+
+// ===================================================== // 7. CASSATION
+COURT & TELEGRAM SOURCE //
+=====================================================
+
+export type CassationCourt = | ‘federal_supreme_court’ |
+‘oromia_supreme_court’;
+
+export interface TelegramArchiveSource { channelId: string; channelName:
+string; messageId: number; messageDate: string; messageLink?: string;
+fileId?: string; fileName?: string; fileType?: ‘pdf’ | ‘docx’ | ‘image’
+| ‘text’ | ‘other’; }
+
+// ===================================================== // 8. CASSATION
+VERIFICATION // =====================================================
+
+export interface CassationVerification { documentVerified: boolean;
+textVerified: boolean; metadataVerified: boolean; bindingStatusVerified:
+boolean; verifiedAt?: string; verifiedBy?: string; verificationNotes?:
+string; }
+
+// ===================================================== // 9. CASSATION
+BINDING PRINCIPLES //
+=====================================================
+
+export interface CassationBindingPrinciple { principle:
+MultilingualText; applicableLaw?: string[]; relevantArticles?: string[];
+binding: boolean; panelSize?: number; unanimity?: boolean; }
+
+// ===================================================== // 10. MAIN
+CASSATION DECISION //
+=====================================================
+
+export interface CassationDecision { id: string; recordType:
+‘cassation_decision’; jurisdiction: Jurisdiction; court: CassationCourt;
+caseNumber: string; volume?: number | string; decisionDate: string;
+yearEC?: number; yearGC?: number; parties?: { applicant?: string;
+respondent?: string; }; subject: MultilingualText; legalQuestions:
+MultilingualText[]; facts: MultilingualText; courtReasoning:
+MultilingualText; decisionOutcome: MultilingualText; bindingPrinciples:
+CassationBindingPrinciple[]; relatedEnactments: string[];
+relatedDecisions: string[]; sources: LegalSource[]; tags: string[];
+verified: boolean; createdAt: string; updatedAt: string; }
+
+// ===================================================== // 11. TELEGRAM
+CASSATION ARCHIVE RECORD //
+=====================================================
+
+export interface CassationArchiveRecord extends CassationDecision {
+fullText: MultilingualText; telegramSource: TelegramArchiveSource;
+verification: CassationVerification; applicableLaws: string[];
+applicableArticles: string[]; indexedAt: string; }
+
+// ===================================================== // 12. UNIFIED
+LEGAL DATABASE RECORD //
+=====================================================
+
+export type LegalDatabaseRecord = LegalEnactment | CassationDecision;
+
+// ===================================================== // 13. LEGAL
+SEARCH FILTER // =====================================================
+
+export interface LegalSearchFilter { recordType?: LegalRecordType;
+jurisdiction?: Jurisdiction; type?: LegislationType; category?:
+LegalCategory; status?: LegalStatus; yearEC?: number; yearGC?: number;
+language?: LegalLanguage; keyword?: string; articleNumber?: string;
+verifiedOnly?: boolean; }
+
+// ===================================================== // 14.
+CASSATION SEARCH REQUEST //
+=====================================================
+
+export interface CassationSearchRequest { question: string;
+jurisdiction?: Jurisdiction; language: LegalLanguage; category?:
+LegalCategory; caseNumber?: string; volume?: string; yearEC?: number;
+yearGC?: number; applicableArticles?: string[]; limit?: number; }
+
+// ===================================================== // 15.
+CASSATION SEARCH RESULT //
+=====================================================
+
+export interface CassationSearchResult { record: CassationArchiveRecord;
+relevanceScore: number; matchedIssues: string[]; matchedArticles:
+string[]; matchedTerms: string[]; relevanceExplanation: string;
+sourceVerified: boolean; citation: { court: string; caseNumber: string;
+volume?: string; decisionDate?: string; telegramMessageId: number;
+sourceLink?: string; }; }
+
+// ===================================================== // 16.
+CASSATION SEARCH RESPONSE //
+=====================================================
+
+export interface CassationArchiveSearchResponse { query: string;
+totalResults: number; relevantResults: CassationSearchResult[];
+exactMatches: CassationSearchResult[]; relatedDecisions:
+CassationSearchResult[]; insufficientEvidence: boolean; warning?:
+string; searchedJurisdictions: Jurisdiction[]; searchedAt: string; }
+
+// ===================================================== // 17.
+CASSATION ARCHIVE REPOSITORY //
+=====================================================
+
+export interface CassationArchiveRepository { searchByText( query:
+string, filters?: CassationSearchRequest ):
+Promise<CassationArchiveRecord[]>;
+
+getById(id: string): Promise<CassationArchiveRecord | null>;
+
+getByCaseNumber( caseNumber: string ):
+Promise<CassationArchiveRecord[]>;
+
+verifySource(recordId: string): Promise; }
+
+// ===================================================== // 18. SEARCH
+TEXT NORMALIZATION //
+=====================================================
+
+function normalizeSearchText(value: string): string { return value
+.normalize(‘NFKC’) .toLocaleLowerCase() .replace(/+/g, ’ ’) .trim(); }
+
+function extractSearchTerms(value: string): string[] { const normalized
+= normalizeSearchText(value); const matches = normalized.match(/[]+/gu)
+?? [];
+
+return [ …new Set(matches.filter(term => term.length > 1)) ]; }
+
+function flattenMultilingualText(value: MultilingualText): string {
+return [value.om, value.am, value.en].join(’ ’); }
+
+// ===================================================== // 19.
+CASSATION SEARCHABLE CONTENT //
+=====================================================
+
+function getCassationSearchableText( record: CassationArchiveRecord ):
+string { const principleTexts = record.bindingPrinciples.map(item =>
+flattenMultilingualText(item.principle) );
+
+const issueTexts = record.legalQuestions.map( flattenMultilingualText );
+
+return [ flattenMultilingualText(record.subject), …issueTexts,
+flattenMultilingualText(record.facts),
+flattenMultilingualText(record.courtReasoning),
+flattenMultilingualText(record.decisionOutcome),
+flattenMultilingualText(record.fullText), …principleTexts,
+…record.applicableLaws, …record.applicableArticles, …record.tags,
+record.caseNumber ].join(’ ’); }
+
+// ===================================================== // 20. MATCHED
+LEGAL ISSUES // =====================================================
+
+function findMatchedIssues( record: CassationArchiveRecord, queryTerms:
+string[] ): string[] { return record.legalQuestions .filter(issue => {
+const issueTerms = new Set(
+extractSearchTerms(flattenMultilingualText(issue)) );
+
+      return queryTerms.some(term => issueTerms.has(term));
+    })
+    .map(issue => flattenMultilingualText(issue));
+
+}
+
+// ===================================================== // 21. MATCHED
+LEGAL ARTICLES // =====================================================
+
+function normalizeLegalReference(value: string): string { return
+normalizeSearchText(value) .replace(/[^\p{L}\p{N}]/gu, ’’); }
+
+function findMatchedArticles( record: CassationArchiveRecord,
+requestedArticles?: string[] ): string[] { if
+(!requestedArticles?.length) return [];
+
+const normalizedRequested = new Set(
+requestedArticles.map(normalizeLegalReference) );
+
+return record.applicableArticles.filter(article =>
+normalizedRequested.has(normalizeLegalReference(article)) ); }
+
+// ===================================================== // 22.
+CASSATION RELEVANCE SCORING //
+=====================================================
+
+export function calculateCassationRelevance( record:
+CassationArchiveRecord, request: CassationSearchRequest ): number { let
+score = 0;
+
+if ( request.caseNumber && normalizeLegalReference(record.caseNumber)
+=== normalizeLegalReference(request.caseNumber) ) { score += 40; }
+
+if ( request.jurisdiction && record.jurisdiction ===
+request.jurisdiction ) { score += 10; }
+
+if ( request.volume && String(record.volume ?? ’’) === request.volume )
+{ score += 10; }
+
+if (request.yearEC && record.yearEC === request.yearEC) { score += 8; }
+
+if (request.yearGC && record.yearGC === request.yearGC) { score += 8; }
+
+const matchedArticles = findMatchedArticles( record,
+request.applicableArticles );
+
+score += Math.min(18, matchedArticles.length * 6);
+
+const queryTerms = extractSearchTerms(request.question); const
+searchableTerms = new Set(
+extractSearchTerms(getCassationSearchableText(record)) );
+
+const matchedTerms = queryTerms.filter(term => searchableTerms.has(term)
+);
+
+score += Math.min(25, matchedTerms.length * 5);
+
+if (record.verification.documentVerified) score += 2; if
+(record.verification.metadataVerified) score += 2; if
+(record.verification.textVerified) score += 1; if
+(record.verification.bindingStatusVerified) score += 1;
+
+return Math.min(100, score); }
+
+// ===================================================== // 23. SOURCE
+VERIFICATION CHECK //
+=====================================================
+
+function isArchiveRecordVerified( record: CassationArchiveRecord,
+liveSourceVerified: boolean ): boolean { return ( record.verified ===
+true && record.verification.documentVerified === true &&
+record.verification.textVerified === true &&
+record.verification.metadataVerified === true &&
+record.verification.bindingStatusVerified === true && liveSourceVerified
+=== true ); }
+
+// ===================================================== // 24.
+RELEVANCE EXPLANATION //
+=====================================================
+
+function buildRelevanceExplanation( record: CassationArchiveRecord,
+request: CassationSearchRequest, matchedTerms: string[],
+matchedArticles: string[] ): string { const reasons: string[] = [];
+
+if ( request.caseNumber && normalizeLegalReference(record.caseNumber)
+=== normalizeLegalReference(request.caseNumber) ) {
+reasons.push(‘Lakkoofsi galmee sirriitti wal sima.’); }
+
+if ( request.jurisdiction && record.jurisdiction ===
+request.jurisdiction ) { reasons.push(‘Aangoon seeraa wal sima.’); }
+
+if (matchedArticles.length > 0) { reasons.push(‘Keewwatni seeraa wal
+siman argamaniiru.’); }
+
+if (matchedTerms.length > 0) { reasons.push(
+${matchedTerms.length} jechoonni gaaffii waliin wal siman argamaniiru.
+); }
+
+if (reasons.length === 0) { return ( ‘Bu’aan kun sirna barbaacha keessaa
+argame;’ + ‘rogummaa isaa ragaa dabalataa irratti hundaa’uun madaaluun
+barbaachisa.’ ); }
+
+return reasons.join(’ ’); }
+
+// ===================================================== // 25. MAIN
+TELEGRAM CASSATION ARCHIVE SEARCH //
+=====================================================
+
+export async function searchCassationArchive( repository:
+CassationArchiveRepository, request: CassationSearchRequest ): Promise {
+const records = await repository.searchByText( request.question, request
+);
+
+const sourceVerificationResults = await Promise.all( records.map(async
+record => { try { return await repository.verifySource(record.id); }
+catch { return false; } }) );
+
+const ranked: CassationSearchResult[] = [];
+
+for (let index = 0; index < records.length; index++) { const record =
+records[index]; const liveSourceVerified =
+sourceVerificationResults[index];
+
+    const relevanceScore = calculateCassationRelevance(
+      record,
+      request
+    );
+
+    const queryTerms = extractSearchTerms(request.question);
+    const searchableTerms = new Set(
+      extractSearchTerms(getCassationSearchableText(record))
+    );
+
+    const matchedTerms = queryTerms.filter(term =>
+      searchableTerms.has(term)
+    );
+
+    const matchedIssues = findMatchedIssues(
+      record,
+      queryTerms
+    );
+
+    const matchedArticles = findMatchedArticles(
+      record,
+      request.applicableArticles
+    );
+
+    const sourceVerified = isArchiveRecordVerified(
+      record,
+      liveSourceVerified
+    );
+
+    ranked.push({
+      record,
+      relevanceScore,
+      matchedIssues,
+      matchedArticles,
+      matchedTerms,
+      relevanceExplanation: buildRelevanceExplanation(
+        record,
+        request,
+        matchedTerms,
+        matchedArticles
+      ),
+      sourceVerified,
+      citation: {
+        court: record.court,
+        caseNumber: record.caseNumber,
+        volume:
+          record.volume === undefined
+            ? undefined
+            : String(record.volume),
+        decisionDate: record.decisionDate,
+        telegramMessageId: record.telegramSource.messageId,
+        sourceLink: record.telegramSource.messageLink
+      }
+    });
+
+}
+
+const sorted = ranked.sort( (a, b) => b.relevanceScore -
+a.relevanceScore );
+
+const relevant = sorted.filter( item => item.relevanceScore >= 15 );
+
+const exactMatches = request.caseNumber ? relevant.filter(item =>
+normalizeLegalReference(item.record.caseNumber) ===
+normalizeLegalReference(request.caseNumber!) ) : [];
+
+const relatedDecisions = relevant.filter( item =>
+!exactMatches.includes(item) );
+
+const limit = Math.max( 1, Math.min(Math.floor(request.limit ?? 10),
+100) );
+
+const limitedResults = relevant.slice(0, limit);
+
+const hasRelevantResults = limitedResults.length > 0; const
+hasVerifiedResult = limitedResults.some( item => item.sourceVerified );
+
+const insufficientEvidence = !hasRelevantResults || !hasVerifiedResult;
+
+let warning: string | undefined;
+
+if (!hasRelevantResults) { warning = ‘Murtii rogummaa qabu hin
+argamne.’ + ‘Gaaffii, lakkoofsa galmee ykn keewwata seeraa sirreessuun
+barbaachisaa ta’uu danda’a.’; } else if (!hasVerifiedResult) { warning =
+‘Murtiiwwan barbaachisoo ta’an argamaniiru;’ + ‘garuu madda isaanii
+guutummaatti hin mirkanoofne.’ + ‘Murtiiwwan kana akka madda seeraa
+mirkanaa’eetti fayyadamuun dura ragaa jalqabaa sakatta’i.’; }
+
+const searchedJurisdictions: Jurisdiction[] = request.jurisdiction ?
+[request.jurisdiction] : […new Set(records.map(record =>
+record.jurisdiction))];
+
+if (searchedJurisdictions.length === 0) {
+searchedJurisdictions.push(‘oromia’, ‘federal’); }
+
+return { query: request.question, totalResults: records.length,
+relevantResults: limitedResults, exactMatches, relatedDecisions,
+insufficientEvidence, warning, searchedJurisdictions, searchedAt: new
+Date().toISOString() }; }
+
+// ===================================================== // 26. LEGAL
+RESEARCH RESULT // =====================================================
+
+export interface LegalResearchResult { question: string; language:
+LegalLanguage; applicableJurisdiction: Jurisdiction;
+
+applicableEnactments: { enactmentId: string; title: MultilingualText;
+articles: string[]; relevance: string; }[];
+
+cassationDecisions: { decisionId: string; caseNumber: string; volume?:
+number | string; legalPrinciple: MultilingualText; binding: boolean;
+}[];
+
+legalAnalysis: MultilingualText; conclusion: MultilingualText;
+limitations: string[]; sources: LegalSource[]; generatedAt: string; }

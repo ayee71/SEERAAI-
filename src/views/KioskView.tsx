@@ -10,8 +10,8 @@ interface KioskViewProps {
 }
 
 interface CourtSessionData {
-  vkLink?: string;
   googleMeetLink?: string;
+  secondaryMeetLink?: string;
   courtLogoUrl?: string;
   autoJoin?: boolean;
   status?: 'active' | 'inactive';
@@ -172,8 +172,8 @@ export const KioskView: React.FC<KioskViewProps> = ({ currentLang }) => {
       if (doc.exists()) {
         const data = doc.data();
         setSession(data as any);
-        if (data.status === 'active' && data.vkLink) {
-          window.location.href = data.vkLink;
+        if (data.status === 'active' && data.googleMeetLink && data.autoJoin) {
+          window.location.href = data.googleMeetLink;
         }
         // Check for hard refresh or reset trigger in Firestore (fail-safe)
         if (data.hardRefreshTrigger || data.resetTrigger) {
@@ -307,7 +307,7 @@ export const KioskView: React.FC<KioskViewProps> = ({ currentLang }) => {
           </p>
 
           {/* Google Meet / Virtual Courtroom Joining Card */}
-          {(session?.googleMeetLink || session?.vkLink) ? (
+          {(session?.googleMeetLink || session?.secondaryMeetLink) ? (
             <div className="p-4 rounded-2xl bg-slate-950/90 border border-amber-500/40 space-y-3 text-left">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-amber-300 flex items-center gap-2">
@@ -320,12 +320,12 @@ export const KioskView: React.FC<KioskViewProps> = ({ currentLang }) => {
               </div>
 
               <div className="font-mono text-xs text-slate-300 bg-slate-900 p-2.5 rounded-xl border border-slate-800 truncate">
-                {session?.googleMeetLink || session?.vkLink}
+                {session?.googleMeetLink || session?.secondaryMeetLink}
               </div>
 
               <div className="flex items-center gap-3 pt-1">
                 <a
-                  href={session?.googleMeetLink || session?.vkLink}
+                  href={session?.googleMeetLink || session?.secondaryMeetLink}
                   target="_blank"
                   rel="noreferrer"
                   className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
@@ -338,7 +338,7 @@ export const KioskView: React.FC<KioskViewProps> = ({ currentLang }) => {
                   type="button"
                   onClick={() => {
                     if (navigator.clipboard) {
-                      navigator.clipboard.writeText(session?.googleMeetLink || session?.vkLink || '');
+                      navigator.clipboard.writeText(session?.googleMeetLink || session?.secondaryMeetLink || '');
                       alert(currentLang === 'om' ? 'Liinkiin waraabbameera!' : 'ሊንኩ ተቀድቷል!');
                     }
                   }}

@@ -1,0 +1,845 @@
+
+
+########################################################################
+# FILE: SEERAAI_PHASE_8B.5.5_REPORT.txt
+########################################################################
+
+SEERAAI PRO - PHASE 8B.5.5
+ISOLATED CI EMULATOR EXECUTION & FINAL SECURITY VERIFICATION
+Report date: 2026-11-15
+Firebase project ID (reference only, never targeted): leafy-rush-xvd6f
+
+======================================================================
+FINAL RELEASE RECOMMENDATION:  BLOCKED
+======================================================================
+Reason: the two candidate files were not available in this environment,
+and the Firebase Emulator could not be installed (network disabled).
+NO test was executed. Therefore NO test is reported as PASSED.
+
+----------------------------------------------------------------------
+A. CANDIDATE FILE INTEGRITY
+----------------------------------------------------------------------
+Firestore candidate: firestore.rules.phase8b5.3.integrated.candidate
+  Status: NOT FOUND (uploads folder empty; filesystem search found nothing)
+  Path / size / lines / SHA-256: NOT RECORDED
+Storage candidate: storage.rules.phase8b5.4.integrated.candidate
+  Status: NOT FOUND
+  Path / size / lines / SHA-256: NOT RECORDED
+Complete integrated ruleset?  UNVERIFIED
+Original paths/permissions preserved?  UNVERIFIED
+(Earlier reports were NOT assumed correct.)
+
+----------------------------------------------------------------------
+B. EMULATOR CONFIGURATION
+----------------------------------------------------------------------
+Environment check performed:
+  - Java: openjdk 21.0.12 (meets Java 17+ requirement)  -> AVAILABLE
+  - Node: v22.23.4, npm present                          -> AVAILABLE
+  - firebase-tools CLI                                   -> NOT INSTALLED
+  - Network access (needed to install firebase-tools,
+    @firebase/rules-unit-testing, emulator jars)         -> DISABLED
+Dependency changes made: NONE.
+Production firebase.json: NOT touched.
+Temporary config: prepared below as a template (section K), not run.
+
+----------------------------------------------------------------------
+C. FIRESTORE TEST RESULTS
+----------------------------------------------------------------------
+Executed: 0   Passed: 0   Failed: 0
+Blocked: ALL (all items listed in task section 4)
+
+----------------------------------------------------------------------
+D. STORAGE TEST RESULTS
+----------------------------------------------------------------------
+Executed: 0   Passed: 0   Failed: 0
+Blocked: ALL (all items listed in task section 5)
+
+----------------------------------------------------------------------
+E. REGRESSION TEST RESULTS
+----------------------------------------------------------------------
+Executed: 0. All blocked (auth, court documents, witnesses, courtroom
+audio, Telegram, knowledge repository, search/RAG, audit logs,
+institutional dashboards).
+
+----------------------------------------------------------------------
+F. SECURITY VULNERABILITIES DISCOVERED
+----------------------------------------------------------------------
+None discovered - because nothing was analyzed. This is NOT a clean bill.
+
+----------------------------------------------------------------------
+G. FEATURES POSSIBLY AFFECTED
+----------------------------------------------------------------------
+Unknown. Cannot be assessed without the files and test run.
+
+----------------------------------------------------------------------
+H. EXACT REMAINING BLOCKERS
+----------------------------------------------------------------------
+1. Upload both candidate files (and the existing rules test suite,
+   package.json, and current production rules for comparison).
+2. Environment with network access to install firebase-tools and
+   @firebase/rules-unit-testing, OR run via the CI workflow in section K.
+3. Tests must then be executed and exit codes recorded.
+
+----------------------------------------------------------------------
+I. RECOMMENDATION
+----------------------------------------------------------------------
+BLOCKED
+
+----------------------------------------------------------------------
+K. PREPARED (NOT EXECUTED) CI TEMPLATE
+----------------------------------------------------------------------
+File: firebase.emulator.test.json  (separate; never replaces firebase.json)
+{
+  "firestore": { "rules": "firestore.rules.phase8b5.3.integrated.candidate" },
+  "storage":   { "rules": "storage.rules.phase8b5.4.integrated.candidate" },
+  "emulators": {
+    "firestore": { "port": 8080 },
+    "storage":   { "port": 9199 },
+    "auth":      { "port": 9099 },
+    "ui":        { "enabled": false }
+  }
+}
+
+Integrity commands:
+  sha256sum firestore.rules.phase8b5.3.integrated.candidate \
+            storage.rules.phase8b5.4.integrated.candidate
+  wc -lc <both files>
+
+Execution command (runs tests, not just emulators; use a demo project ID
+so nothing can reach the production project):
+  firebase emulators:exec --config firebase.emulator.test.json \
+    --project demo-seeraai-test --only firestore,storage \
+    "npm test"
+  echo "exit code: $?"
+
+GitHub Actions workflow (.github/workflows/rules-test.yml):
+  name: rules-emulator-tests
+  on: [workflow_dispatch]
+  jobs:
+    test:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-java@v4
+          with: { distribution: temurin, java-version: '17' }
+        - uses: actions/setup-node@v4
+          with: { node-version: '20' }
+        - run: npm ci
+        - run: npx firebase-tools emulators:exec --config firebase.emulator.test.json --project demo-seeraai-test --only firestore,storage "npm test"
+
+Production was not published, deployed, migrated, or modified.
+Stopping here as required. Owner review needed before any next step.
+
+
+########################################################################
+# FILE: SEERAAI_PHASE_8B.5.6_REPORT.txt
+########################################################################
+
+SEERAAI PRO - PHASE 8B.5.6
+CI TEST EXECUTION, EVIDENCE COLLECTION & CANDIDATE RULES REVIEW
+Report date: 2026-11-15
+Isolated project ID used for all planned tests: demo-seeraai-test
+
+======================================================================
+FINAL STATUS:  BLOCKED
+======================================================================
+No test was executed. No evidence was fabricated. Nothing was deployed,
+published, or modified in production.
+
+----------------------------------------------------------------------
+1. INSPECTION OF PREPARED ARTIFACTS
+----------------------------------------------------------------------
+Checked in this environment (uploads folder + full filesystem search):
+
+  .github/workflows/rules-test.yml                      NOT FOUND
+  firebase.emulator.test.json                           NOT FOUND
+  firestore.rules.phase8b5.3.integrated.candidate       NOT FOUND
+  storage.rules.phase8b5.4.integrated.candidate         NOT FOUND
+  Firestore Rules test files                            NOT FOUND
+  Storage Rules test files                              NOT FOUND
+  package.json / lockfile                               NOT FOUND
+
+Contents, sizes, hashes: NOT AVAILABLE.
+Emulator config loads candidate files (not production)?  UNVERIFIED.
+(The files in section K of the Phase 8B.5.5 report were templates I
+wrote; they are not the project's real artifacts.)
+
+Environment facts:
+  Java 21 present; Node v22 present; firebase-tools absent;
+  network disabled -> firebase-tools / emulator jars cannot be installed.
+
+----------------------------------------------------------------------
+2. CI WORKFLOW VERIFICATION CHECKLIST (not yet checkable)
+----------------------------------------------------------------------
+Owner/reviewer must confirm each item in the real rules-test.yml:
+  [ ] Supported Node version (20 or 22)
+  [ ] "npm ci" used with a committed package-lock.json
+  [ ] firebase-tools pinned (devDependency or npx with exact version)
+  [ ] Command is: firebase emulators:exec --config firebase.emulator.test.json
+      --project demo-seeraai-test --only firestore,storage "<test command>"
+  [ ] Tests actually run (a real test runner, not just emulator start)
+  [ ] Step fails the job on non-zero exit (no "|| true", no
+      continue-on-error)
+  [ ] actions/upload-artifact with "if: always()" for test output and
+      firebase-debug.log / firestore-debug.log / storage-debug.log
+  [ ] No secrets, no GOOGLE_APPLICATION_CREDENTIALS, no production
+      project ID anywhere
+  [ ] sha256sum of both candidate files printed BEFORE and AFTER tests
+
+----------------------------------------------------------------------
+3. EXACT STEPS FOR THE PROJECT OWNER (local or CI)
+----------------------------------------------------------------------
+Requirements: Java 17+, Node 20+, repo checked out, no prod credentials.
+
+  sha256sum firestore.rules.phase8b5.3.integrated.candidate \
+            storage.rules.phase8b5.4.integrated.candidate \
+            | tee hashes_before.txt
+  wc -lc firestore.rules.phase8b5.3.integrated.candidate \
+         storage.rules.phase8b5.4.integrated.candidate
+  npm ci
+  npx firebase-tools emulators:exec \
+      --config firebase.emulator.test.json \
+      --project demo-seeraai-test \
+      --only firestore,storage \
+      "npm test" 2>&1 | tee test_output.txt
+  echo "EXIT CODE: ${PIPESTATUS[0]}" | tee exit_code.txt
+  sha256sum firestore.rules.phase8b5.3.integrated.candidate \
+            storage.rules.phase8b5.4.integrated.candidate \
+            | tee hashes_after.txt
+  diff hashes_before.txt hashes_after.txt && echo "HASHES UNCHANGED"
+
+Send back: test_output.txt, exit_code.txt, both hash files,
+firebase-debug.log, firestore-debug.log, storage-debug.log, and the CI run
+URL if run on GitHub Actions. Then the report can be completed.
+
+----------------------------------------------------------------------
+4. REQUIRED TEST COVERAGE (to confirm exists in the suites)
+----------------------------------------------------------------------
+Each needs a PERMITTED and a DENIED case:
+  - Unauthenticated denial
+  - Owner vs other user
+  - Cross-institution / cross-tenant denial
+  - Missing, invalid, conflicting claims (must fail closed)
+  - judge, registrar, court_admin, other roles
+  - admin, legal-content-manager
+  - Telegram: public read of published feeds only; client writes denied
+  - Subscribers, poll results, statistics, briefing logs: client denied
+  - Court document, logo, audio access
+  - Storage MIME type and size limits (just under / just over limit)
+  - Update/delete denied for unauthorized; institutionId change denied
+  - Catch-all / overlapping match tests (see section 5)
+Coverage status: UNVERIFIED (test files not available).
+
+----------------------------------------------------------------------
+5. SECURITY REVIEW GUIDE (rules not available, so no findings)
+----------------------------------------------------------------------
+a) Allow rules are ADDITIVE. If any matching block allows an operation,
+   it is allowed. A restrictive block does not override a permissive one.
+b) Review every "match /{document=**}" and any wildcard such as
+   "match /{path=**}" in Storage. Any "allow ...: if true" or
+   "if request.auth != null" there can silently re-open data that
+   specific blocks try to protect. For every protected collection,
+   write a test that proves a DENIED operation stays denied.
+c) Check nested wildcard overlap, e.g. /institutions/{id}/{document=**}
+   vs. specific subcollection rules.
+d) Check that update rules compare request.resource.data.institutionId
+   with resource.data.institutionId (immutability).
+e) Claims must be read as boolean true (e.g.
+   request.auth.token.admin == true), and UID equality alone must not
+   grant institutional access.
+f) Firebase Admin SDK routes (Express/Cloud Run backend, e.g. server code
+   handling Telegram, RAG, audit logs, court links) BYPASS Firestore and
+   Storage Rules. Each route needs separate tests: missing/invalid ID
+   token -> 401; wrong role -> 403; wrong institution -> 403; input
+   validation; no trust of client-sent institutionId/role.
+   Admin-route inventory: NOT DONE (source code not provided).
+
+Vulnerabilities found: none confirmed, none ruled out.
+
+----------------------------------------------------------------------
+6. EVIDENCE TABLE
+----------------------------------------------------------------------
+  1. Exact command executed ............ NONE (blocked)
+  2. CI run URL / evidence ............. NONE
+  3. Test count (pass/fail/skip) ....... 0 / 0 / 0 (not executed)
+  4. Firestore Rules result ............ NOT EXECUTED
+  5. Storage Rules result .............. NOT EXECUTED
+  6. Emulator start/stop logs .......... NONE
+  7. Exit code ......................... NONE
+  8. Candidate paths actually loaded ... UNKNOWN
+  9. SHA-256 before/after .............. NOT AVAILABLE
+ 10. Uncovered cases / vulnerabilities . All items in sections 4 and 5
+
+----------------------------------------------------------------------
+7. FINAL DECISION
+----------------------------------------------------------------------
+BLOCKED - tests not executed; evidence incomplete.
+
+Exact next safe action: run the section 3 steps on a connected trusted
+runner (or upload the prepared artifacts plus a runner with network) and
+return the outputs. Even a PASS does not authorize deployment: production
+release still requires live Rules inspection, backup, full diff review,
+claims migration dry-run, rollback plan, and explicit owner approval.
+
+Stopped after reporting. No production resource was touched.
+
+
+########################################################################
+# FILE: SEERAAI_PHASE_8B.5.7_REPORT.txt
+########################################################################
+
+SEERAAI PRO - PHASE 8B.5.7
+GITHUB ACTIONS WORKFLOW READINESS & EXECUTION SUPPORT
+Report date: 2026-11-15
+Isolated project ID: demo-seeraai-test
+
+======================================================================
+WORKFLOW READINESS STATUS:  NOT VERIFIED (BLOCKED)
+SECURITY STATUS:            NOT VERIFIED - no tests have been executed
+======================================================================
+Nothing was deployed, published, migrated, or modified in production.
+No production credentials or data were accessed.
+
+----------------------------------------------------------------------
+1. EXACT FILES INSPECTED
+----------------------------------------------------------------------
+Searched the uploads folder and the whole filesystem of this session:
+
+  .github/workflows/rules-test.yml                   NOT FOUND
+  firebase.emulator.test.json                        NOT FOUND
+  firestore.rules.phase8b5.3.integrated.candidate    NOT FOUND
+  storage.rules.phase8b5.4.integrated.candidate      NOT FOUND
+  package.json / package-lock.json                   NOT FOUND
+  Rules test files                                   NOT FOUND
+
+Therefore items 2-7 of the task (workflow_dispatch, lockfile install,
+candidate loading, project ID, test execution, non-zero exit, artifacts)
+could NOT be verified. I will not describe them as correct.
+
+Note: the earlier workflow text in the Phase 8B.5.5 report (section K)
+was a template I wrote. It is not the project's real file.
+
+----------------------------------------------------------------------
+2. VERIFICATION CHECKLIST FOR THE REAL rules-test.yml
+----------------------------------------------------------------------
+Compare your real file against each line; mark PASS/FAIL yourself.
+
+ [ ] 2. "on: workflow_dispatch:" present, file is on the default branch
+        (GitHub only shows the "Run workflow" button for workflows that
+        exist on the default branch).
+ [ ] 3. "npm ci" (not "npm install"); package-lock.json committed;
+        firebase-tools and @firebase/rules-unit-testing are in
+        devDependencies with exact versions; actions pinned to major
+        versions at least (checkout@v4, setup-node@v4, setup-java@v4).
+ [ ] 4. firebase.emulator.test.json has:
+          "firestore": {"rules": "firestore.rules.phase8b5.3.integrated.candidate"}
+          "storage":   {"rules": "storage.rules.phase8b5.4.integrated.candidate"}
+        and the workflow passes --config firebase.emulator.test.json.
+        Tests must not silently read the production firestore.rules or
+        storage.rules.
+ [ ] 5. --project demo-seeraai-test everywhere; the string
+        leafy-rush-xvd6f appears nowhere in workflow/test/config files.
+ [ ] 6. Uses "firebase emulators:exec ... \"npm test\"" (actually runs
+        tests); no "|| true", no "continue-on-error: true"; exit code
+        propagated.
+ [ ] 7. upload-artifact step with "if: always()" saving: test output,
+        exit code, hashes before/after, firebase-debug.log,
+        firestore-debug.log, storage-debug.log (or ui-debug.log).
+
+----------------------------------------------------------------------
+3. PROPOSED CORRECTION (smallest set; CI + test config only)
+----------------------------------------------------------------------
+Use ONLY if the real workflow fails any checklist item. Replace the
+contents of .github/workflows/rules-test.yml with the following. It does
+not touch production firestore.rules, storage.rules, or firebase.json.
+
+--- BEGIN .github/workflows/rules-test.yml ---
+name: rules-emulator-tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rules-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GCLOUD_PROJECT: demo-seeraai-test
+      FIRESTORE_CANDIDATE: firestore.rules.phase8b5.3.integrated.candidate
+      STORAGE_CANDIDATE: storage.rules.phase8b5.4.integrated.candidate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies from lockfile
+        run: npm ci
+
+      - name: Guard - isolated config only
+        run: |
+          set -euo pipefail
+          test -f "$FIRESTORE_CANDIDATE"
+          test -f "$STORAGE_CANDIDATE"
+          test -f firebase.emulator.test.json
+          grep -q "$FIRESTORE_CANDIDATE" firebase.emulator.test.json
+          grep -q "$STORAGE_CANDIDATE" firebase.emulator.test.json
+          if grep -rq "leafy-rush-xvd6f" firebase.emulator.test.json .github test 2>/dev/null; then
+            echo "Production project ID found in test setup"; exit 1
+          fi
+
+      - name: Prepare evidence folder and hashes (before)
+        run: |
+          mkdir -p evidence
+          sha256sum "$FIRESTORE_CANDIDATE" "$STORAGE_CANDIDATE" | tee evidence/hashes_before.txt
+          wc -lc "$FIRESTORE_CANDIDATE" "$STORAGE_CANDIDATE" | tee evidence/sizes.txt
+          npx --no-install firebase --version | tee evidence/tool_versions.txt
+          java -version 2>> evidence/tool_versions.txt
+          node -v >> evidence/tool_versions.txt
+
+      - name: Run Firestore + Storage rules tests in emulators
+        run: |
+          set +e
+          npx --no-install firebase emulators:exec \
+            --config firebase.emulator.test.json \
+            --project demo-seeraai-test \
+            --only firestore,storage \
+            "npm test" 2>&1 | tee evidence/test_output.txt
+          code=${PIPESTATUS[0]}
+          echo "$code" > evidence/exit_code.txt
+          exit 0
+
+      - name: Hashes (after) and unchanged check
+        if: always()
+        run: |
+          sha256sum "$FIRESTORE_CANDIDATE" "$STORAGE_CANDIDATE" | tee evidence/hashes_after.txt
+          diff evidence/hashes_before.txt evidence/hashes_after.txt \
+            && echo "HASHES UNCHANGED" | tee evidence/hash_check.txt \
+            || { echo "HASHES CHANGED" | tee evidence/hash_check.txt; exit 1; }
+          cp -f firebase-debug.log firestore-debug.log storage-debug.log ui-debug.log evidence/ 2>/dev/null || true
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rules-test-evidence
+          path: evidence/
+          if-no-files-found: error
+
+      - name: Fail job if tests failed
+        run: |
+          code=$(cat evidence/exit_code.txt)
+          echo "Test exit code: $code"
+          test "$code" = "0"
+--- END ---
+
+Why the run step uses "exit 0": it lets the evidence/hash/upload steps
+run, and the LAST step fails the job with the real exit code. A failed
+test therefore still produces a red workflow AND downloadable evidence.
+
+Required test-config changes (only if missing):
+ - package.json: "test" script runs the real Firestore and Storage rules
+   test files (e.g. mocha/jest), devDependencies pinned, lockfile
+   committed.
+ - firebase.emulator.test.json: separate from firebase.json, with
+   firestore rules, storage rules, and emulators ports
+   (firestore 8080, storage 9199, auth 9099, ui disabled).
+ - Tests must create the environment with projectId demo-seeraai-test and
+   must assert which rules are loaded (e.g. read the candidate files with
+   fs and pass them to initializeTestEnvironment), so a wrong path fails
+   loudly instead of silently using other rules.
+
+----------------------------------------------------------------------
+4. STEPS FOR THE PROJECT OWNER IN GITHUB ACTIONS
+----------------------------------------------------------------------
+ 1. Create a branch (e.g. ci/rules-test). Add or correct ONLY:
+    .github/workflows/rules-test.yml, firebase.emulator.test.json,
+    package.json + package-lock.json, and the rules test files.
+    Do not edit firestore.rules, storage.rules, firebase.json.
+ 2. Confirm both candidate files are committed at the repo root.
+ 3. Merge the workflow to the default branch (needed for the
+    "Run workflow" button), or run it from the branch if GitHub shows it.
+ 4. GitHub -> Actions -> "rules-emulator-tests" -> Run workflow.
+    No secrets are required; do not add any.
+ 5. When finished, open the run, note the run URL and the job result.
+ 6. Download artifact "rules-test-evidence" (bottom of run page).
+ 7. Send back: the run URL and these files: test_output.txt,
+    exit_code.txt, hashes_before.txt, hashes_after.txt, hash_check.txt,
+    sizes.txt, tool_versions.txt, and the *-debug.log files.
+ 8. A genuine report (PASS / FAIL / BLOCKED) can only be produced from
+    that evidence.
+
+----------------------------------------------------------------------
+5. REMAINING BLOCKERS AND LIMITS
+----------------------------------------------------------------------
+ - Real workflow, config, candidate files and tests not available to me.
+ - Zero tests executed; security NOT verified.
+ - Backend routes using Firebase Admin SDK bypass Rules and still need
+   separate auth/authorization tests.
+ - Review all overlapping matches, especially match /{document=**};
+   allow rules are additive.
+
+Status: BLOCKED. No production change was made. Stopping here.
+
+
+########################################################################
+# FILE: SEERAAI_PHASE_8B.5.8_REPORT.txt
+########################################################################
+
+SEERAAI PRO - PHASE 8B.5.8
+CI ARTIFACT RECOVERY AND REPOSITORY READINESS
+Report date: 2026-11-15
+Repository (per owner): sai-ethio-legal-ai
+Isolated project ID: demo-seeraai-test
+
+======================================================================
+FINAL STATUS:  BLOCKED
+======================================================================
+Per Task 2, work STOPPED because the candidate Rules files are missing.
+No tests ran. Nothing is verified. No production change, deployment, or
+credential use occurred.
+
+----------------------------------------------------------------------
+TASK 1 - REPOSITORY INSPECTION (what actually exists in this workspace)
+----------------------------------------------------------------------
+Uploads folder: EMPTY. Filesystem search (excluding system folders)
+found none of these:
+
+  firestore.rules.phase8b5.3.integrated.candidate   MISSING
+  storage.rules.phase8b5.4.integrated.candidate     MISSING
+  .github/workflows/rules-test.yml                  MISSING
+  firebase.emulator.test.json                       MISSING
+  firestore.rules / storage.rules / firebase.json   MISSING
+  package.json / package-lock.json                  MISSING
+  Any rules test files                              MISSING
+  Repository checkout "sai-ethio-legal-ai"          NOT PRESENT
+
+Whether these files exist in the GitHub repository is UNKNOWN to me.
+
+----------------------------------------------------------------------
+TASK 2 - STOP CONDITION
+----------------------------------------------------------------------
+The instruction says: if either candidate is missing, STOP and report;
+do not invent its contents or substitute production Rules.
+
+Tests for Firestore/Storage Rules must match the real collection names,
+paths, claim names (judge, registrar, court_admin, admin,
+legal-content-manager), institutionId fields, size and MIME limits that
+are written inside the candidate files. I cannot know these. Writing
+tests now would mean guessing the rules, and tests built on guesses could
+"pass" or "fail" without meaning anything. So I have not generated them.
+
+A generic CI workflow, firebase.emulator.test.json, and package.json
+script layout were already delivered in
+SEERAAI_PHASE_8B.5.7_REPORT.txt (section 3). That workflow is a proposal
+that has never run.
+
+----------------------------------------------------------------------
+WHAT THE OWNER MUST PROVIDE (any one of these)
+----------------------------------------------------------------------
+ A. Upload to this chat:
+    1. firestore.rules.phase8b5.3.integrated.candidate
+    2. storage.rules.phase8b5.4.integrated.candidate
+    3. package.json (+ package-lock.json if it exists)
+    4. Existing .github/workflows/rules-test.yml and
+       firebase.emulator.test.json, if they exist in GitHub
+    5. Existing rules test files, if any
+ B. OR a zip of the repository without secrets (.env, service account
+    JSON, keys must be removed).
+
+Check in GitHub first (branch list and Actions tab): the files may
+already exist on a branch such as the phase 8B.5.x branch. If they do,
+upload them rather than recreating them.
+
+----------------------------------------------------------------------
+WHAT I WILL PRODUCE AFTER THE FILES ARRIVE
+----------------------------------------------------------------------
+For each file: exact path, full contents or patch, dependencies and
+commands, branch/commit steps, how to run the workflow, and the evidence
+list:
+  .github/workflows/rules-test.yml
+  firebase.emulator.test.json
+  test/firestore.rules.test.js   (auth, ownership, tenant isolation,
+      claims incl. missing/invalid/conflicting, Telegram public-read vs
+      write, subscribers/polls/stats/briefing logs privacy, court
+      documents, overlapping match /{document=**} cases)
+  test/storage.rules.test.js     (logos, court documents, audio, MIME,
+      size just under/over limit, update/delete, institutionId change)
+  package.json scripts and pinned devDependencies
+
+----------------------------------------------------------------------
+COMMIT STEPS (generic, for later)
+----------------------------------------------------------------------
+  git checkout -b ci/rules-emulator-tests
+  git add .github/workflows/rules-test.yml firebase.emulator.test.json \
+          test/ package.json package-lock.json
+  git commit -m "Add isolated rules emulator tests (demo-seeraai-test)"
+  git push -u origin ci/rules-emulator-tests
+Do not stage firestore.rules, storage.rules, or firebase.json.
+
+----------------------------------------------------------------------
+EVIDENCE REQUIRED FOR ANY FUTURE PASS/FAIL
+----------------------------------------------------------------------
+GitHub Actions run URL; artifact "rules-test-evidence" containing
+test_output.txt, exit_code.txt, hashes_before.txt, hashes_after.txt,
+hash_check.txt, sizes.txt, tool_versions.txt, and emulator debug logs;
+counts of passed/failed/skipped tests.
+
+Status: BLOCKED. Stopped before any production change or deployment.
+
+
+########################################################################
+# FILE: SEERAAI_GITHUB_SYNC_PHASE1_REPORT.txt
+########################################################################
+
+SEERAAI PRO - GITHUB SAFE SYNC
+PHASE 1 - READ-ONLY INSPECTION REPORT
+Report date: 2026-11-15
+Target repository requested: ayee71/SEERAAI-
+
+======================================================================
+PHASE 1 RESULT:  BLOCKED - sync cannot be performed from this session
+======================================================================
+Nothing was staged, committed, pushed, or deployed. No production
+resource, rule, credential, claim, or secret was touched.
+
+----------------------------------------------------------------------
+1. WHERE THIS SESSION RUNS
+----------------------------------------------------------------------
+This session is Claude (Anthropic chat app). It is NOT the Google AI
+Studio workspace. I have no access to your AI Studio project, its files,
+its GitHub connection, or its chatbox change history.
+
+----------------------------------------------------------------------
+2. WHAT WAS ACTUALLY CHECKED
+----------------------------------------------------------------------
+ - git is installed (version 2.43.0).
+ - No git repository (.git folder) exists in this session's filesystem.
+ - No remote URL, no connected GitHub account, no active branch.
+ - Uploads folder is empty: no SEERAAI PRO source files present.
+ - No GitHub token or credentials in the environment (checked variable
+   names only; no values were read or shown).
+ - Network access from the sandbox is disabled, so GitHub cannot be
+   contacted at all.
+
+----------------------------------------------------------------------
+3. ITEMS REQUESTED IN PHASE 1
+----------------------------------------------------------------------
+ Verified GitHub connection ................ NOT POSSIBLE
+ Remote URL / account / active branch ...... UNKNOWN
+ Is ayee71/SEERAAI- the same repo as
+   sai-ethio-legal-ai? ..................... UNKNOWN - not assumed to be
+                                             the same; must be checked
+ Added / modified / deleted files .......... UNKNOWN
+ Diff against GitHub branch ................ NOT POSSIBLE
+ Merge conflicts ........................... UNKNOWN
+ Exposed secrets scan ...................... NOT POSSIBLE (no files)
+ Risks ..................................... see section 4
+
+----------------------------------------------------------------------
+4. RISKS TO WATCH (apply when you inspect on the real workspace)
+----------------------------------------------------------------------
+ - Two repository names are in use (ayee71/SEERAAI- and
+   sai-ethio-legal-ai). Pushing to the wrong one is the main risk.
+   Confirm with: git remote -v
+ - Secrets: .env, API keys (e.g. Gemini), service-account JSON, Firebase
+   admin keys, keystores. Check .gitignore covers them.
+ - Confidential court documents or test data with real case information.
+ - Generated build output (dist/, build/, node_modules/, APK/AAB).
+ - Accidental changes to production firestore.rules, storage.rules, or
+   firebase.json inside the sync.
+ - Committing to main/master: use a separate branch only.
+
+----------------------------------------------------------------------
+5. READ-ONLY COMMANDS YOU CAN RUN YOURSELF (no changes made by them)
+----------------------------------------------------------------------
+Run in a terminal in the project folder (or after downloading the
+project as a ZIP and extracting it):
+
+  git remote -v
+  git branch --show-current
+  git status --short
+  git fetch origin            # downloads refs only; changes no files
+  git diff --stat origin/main # or the branch you want to compare
+  git diff --name-status origin/main
+  git ls-files | grep -i -E "\.env|serviceAccount|credentials|\.pem|\.jks|\.keystore"
+  git grep -n -i -E "AIza[0-9A-Za-z_-]{20,}|BEGIN (RSA |EC )?PRIVATE KEY|api[_-]?key\s*[:=]"
+
+Paste the output (with any secret values removed) and I will turn it into
+the full inspection report.
+
+----------------------------------------------------------------------
+6. WHAT I NEED TO CONTINUE
+----------------------------------------------------------------------
+ A. Upload a ZIP of the AI Studio project (remove .env and keys first),
+    OR paste the outputs of the commands in section 5.
+ B. Tell me which repository is correct: ayee71/SEERAAI- or
+    sai-ethio-legal-ai, after you check git remote -v.
+
+----------------------------------------------------------------------
+7. PHASES 2-4
+----------------------------------------------------------------------
+Not started. Per your instruction, nothing proceeds until the repository
+identity is verified and you approve. Even then, this Claude session has
+no GitHub access: branch creation, commit, and push would have to be done
+by you (I can prepare the exact commands, commit message, and a reviewed
+file list) or inside AI Studio / your own terminal. I will never claim a
+commit SHA or push result that did not happen.
+
+----------------------------------------------------------------------
+8. PHASE 5 - FUTURE SYNC (limits of my knowledge)
+----------------------------------------------------------------------
+I cannot see your AI Studio project, and I cannot confirm from here
+whether its chatbox changes sync to GitHub automatically or need a
+manual commit/push. Check the GitHub option in the AI Studio project
+menu and its official documentation, and look at the repository commit
+history after a change: if no new commit appears, the sync is manual.
+A safe manual process that works anywhere:
+  git checkout -b sync/aistudio-chatbox-changes
+  git add <reviewed files only>
+  git diff --cached           # review everything
+  git commit -m "<message>"
+  git push -u origin sync/aistudio-chatbox-changes   # never --force
+Then open a Pull Request and review before merging.
+
+STATUS: BLOCKED at Phase 1. Stopped. No changes made anywhere.
+
+
+########################################################################
+# FILE: SEERAAI_FULL_SYNC_REPORT.txt
+########################################################################
+
+SEERAAI PRO - AI STUDIO TO GITHUB SYNCHRONIZATION
+FULL WORKFLOW ATTEMPT REPORT (PHASES 1-5)
+Report date: 2026-11-15
+
+======================================================================
+RESULT: NOT SYNCHRONIZED - BLOCKED AT PHASE 1 (permission/environment)
+======================================================================
+No branch created, nothing staged, committed, or pushed. No production
+resource, rule, credential, claim, secret, or data was touched.
+No success is claimed for any step.
+
+----------------------------------------------------------------------
+WHY IT STOPPED (genuine blockers, as the instructions allow)
+----------------------------------------------------------------------
+1. This session is the Claude chat app, not Google AI Studio. The
+   AI Studio workspace, its chat history and its GitHub connection are
+   not accessible from here.
+2. No project files: the uploads folder is empty; no git repository
+   exists in this session.
+3. GitHub is unreachable: a test of
+   "git ls-remote https://github.com/ayee71/SEERAAI-" failed with
+   "Could not resolve host: github.com" (sandbox network is disabled).
+   No GitHub account is authenticated and no token is available.
+4. Repository identity is unverified: "ayee71/SEERAAI-" and
+   "sai-ethio-legal-ai" have NOT been shown to be the same repository.
+5. Build, TypeScript, lint, tests, Rules tests, and secret scan could
+   not run because there is no code in this session and no network to
+   install dependencies.
+
+----------------------------------------------------------------------
+PHASE-BY-PHASE STATUS
+----------------------------------------------------------------------
+Phase 1 Verify/inspect ........ NOT POSSIBLE (items 1-4 above)
+Phase 2 Safe branch ........... NOT STARTED
+Phase 3 Checks ................ NOT EXECUTED (0 tests run; none reported)
+Phase 4 Commit and push ....... NOT DONE
+Phase 5 Verification .......... NOT DONE (no SHA, no remote files seen)
+
+Repository identity: UNVERIFIED
+Branch: none
+Files synchronized: none
+Security scan: NOT RUN
+Tests/build: NOT RUN
+Commit SHA: none
+Push verification: none
+
+----------------------------------------------------------------------
+WHAT YOU CAN RUN YOURSELF (safe; never force-pushes; never touches main)
+----------------------------------------------------------------------
+In the project folder where AI Studio's code is (downloaded ZIP or
+cloned repo), in a terminal:
+
+ 1. Verify identity (read-only):
+      git remote -v
+      git branch --show-current
+      git status --short
+      git fetch origin
+      git diff --stat origin/main
+    If the remote is not ayee71/SEERAAI-, STOP and tell me.
+
+ 2. Create the branch:
+      git checkout -b sync/aistudio-chatbox-changes
+
+ 3. Check .gitignore covers secrets and builds:
+      .env
+      .env.*
+      node_modules/
+      dist/
+      build/
+      *.keystore
+      *.jks
+      *serviceAccount*.json
+      firebase-debug.log
+    Then scan (read-only):
+      git ls-files | grep -i -E "\.env|serviceAccount|credentials|\.pem|\.jks|\.keystore"
+      git grep -n -i -E "AIza[0-9A-Za-z_-]{20,}|BEGIN (RSA |EC )?PRIVATE KEY"
+
+ 4. Stage only reviewed files (no "git add ."):
+      git add <file1> <file2> ...
+      git diff --cached --stat
+      git diff --cached
+    Do not stage firestore.rules, storage.rules, firebase.json, court
+    documents, or personal data.
+
+ 5. Checks (only those your package.json supports):
+      npm ci
+      npx tsc --noEmit
+      npm run lint
+      npm run build
+      npm test
+
+ 6. Commit and push (no --force):
+      git commit -m "chore: sync reviewed AI Studio changes"
+      git push -u origin sync/aistudio-chatbox-changes
+    If GitHub asks to sign in, use your own account in your own
+    terminal/browser; never paste tokens into chat.
+
+ 7. Verify on GitHub: repository ayee71/SEERAAI-, branch
+    sync/aistudio-chatbox-changes, commit message, file list. Compare
+    with:  git rev-parse HEAD   and   git ls-remote origin sync/aistudio-chatbox-changes
+    The two SHAs must match.
+
+----------------------------------------------------------------------
+FUTURE SYNCHRONIZATION
+----------------------------------------------------------------------
+I cannot see AI Studio from here, so I cannot say whether its chatbox
+changes sync automatically. Automatic sync is NOT claimed. How to
+determine it yourself: make a small change in AI Studio, then check the
+GitHub commit history and branch list. If a new commit appears without
+you pressing anything, sync is automatic; if not, it needs an explicit
+commit/push (use the AI Studio GitHub option in the project menu, or the
+manual steps above). Check AI Studio's current documentation for the
+exact supported process.
+
+----------------------------------------------------------------------
+HOW TO CONTINUE
+----------------------------------------------------------------------
+Upload a ZIP of the project (without .env, keys, court documents) and/or
+paste the outputs of the read-only commands in step 1 and the scans in
+step 3. I will then produce the real inspection, diff review, and check
+analysis. Pushing must be done by you or from an environment with GitHub
+access.
+
+STATUS: BLOCKED. No changes made anywhere.

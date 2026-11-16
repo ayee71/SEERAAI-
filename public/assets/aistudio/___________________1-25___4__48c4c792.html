@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="am" dir="ltr" x-data="{ darkMode: localStorage.getItem('seeraai_dark') === 'true' }" :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SEERAAI PRO — Federal Cassation Index v5.0 Master</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        judicial: {
+                            950: '#020617',
+                            900: '#0f172a',
+                            800: '#1e293b',
+                        },
+                        gadaa: {
+                            gold: '#fbbf24',
+                            red: '#ef4444',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Ethiopic:wght@400;700;900&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans Ethiopic', 'Inter', sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        [x-cloak] { display: none !important; }
+        .glass-nav {
+            backdrop-filter: blur(12px);
+            background: rgba(15, 23, 42, 0.9);
+        }
+        .dark .glass-nav {
+            background: rgba(2, 6, 23, 0.9);
+        }
+        .case-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .case-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        .highlight {
+            background-color: #fde047;
+            color: #000;
+            padding: 0 2px;
+            border-radius: 4px;
+            font-weight: 800;
+        }
+        .gadaa-pattern {
+            background-color: transparent;
+            background-image: radial-gradient(#6366f1 0.5px, transparent 0.5px);
+            background-size: 24px 24px;
+            opacity: 0.05;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-judicial-950 text-slate-900 dark:text-slate-100 min-h-screen flex flex-col" 
+      x-data="cassationPortal()" 
+      x-init="initPortal()">
+
+    <div class="fixed inset-0 gadaa-pattern pointer-events-none"></div>
+
+    <!-- Toast Component -->
+    <div class="fixed bottom-10 right-10 z-[100] flex flex-col gap-4">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div x-show="toast.show" x-transition class="bg-indigo-600 text-white px-8 py-5 rounded-3xl shadow-2xl border border-white/20 flex items-center gap-5">
+                <div class="w-3 h-3 rounded-full bg-white animate-ping"></div>
+                <span class="text-xs font-black uppercase tracking-[.2em]" x-text="toast.message"></span>
+            </div>
+        </template>
+    </div>
+
+    <!-- Master Header -->
+    <header class="glass-nav text-white sticky top-0 z-50 border-b border-white/5">
+        <div class="max-w-[1600px] mx-auto px-8 py-6 flex flex-col xl:flex-row justify-between items-center gap-8">
+            <div class="flex items-center gap-6">
+                <div class="bg-indigo-500 p-4 rounded-[2rem] shadow-2xl ring-8 ring-indigo-500/10">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                </div>
+                <div>
+                    <div class="text-[10px] font-black uppercase tracking-[.5em] text-indigo-400 mb-1">SEERAAI PRO — ELITE MASTER</div>
+                    <h1 class="text-2xl md:text-3xl font-black tracking-tighter">የሰበር ውሳኔዎች ማስተር ማውጫ</h1>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-4 w-full xl:w-auto">
+                <div class="relative flex-grow xl:w-[500px]">
+                    <input 
+                        type="text" 
+                        x-model.debounce.300ms="search" 
+                        placeholder="Search precedents by ID, Party, or Ratio..." 
+                        class="w-full px-8 py-5 rounded-[2rem] bg-white/5 border border-white/10 text-white placeholder-indigo-300/30 focus:outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all focus:bg-white/10 text-sm"
+                    >
+                    <div class="absolute right-6 top-5 text-indigo-500/40">🔍</div>
+                </div>
+
+                <div class="flex gap-2">
+                    <button @click="darkMode = !darkMode; localStorage.setItem('seeraai_dark', darkMode)" class="p-5 rounded-[2rem] bg-white/5 border border-white/10 hover:bg-white/10 transition shadow-xl">
+                        <span x-text="darkMode ? '☀️' : '🌙'"></span>
+                    </button>
+                    <button @click="showStars = !showStars" :class="showStars ? 'bg-amber-500 text-slate-900 border-amber-400' : 'bg-white/5 text-white border-white/10'" class="px-8 py-5 rounded-[2rem] border font-black text-xs transition-all shadow-xl">
+                        ⭐ <span x-text="stars.length"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-[1600px] mx-auto px-8 py-10 grid grid-cols-1 lg:grid-cols-12 gap-10 w-full flex-grow relative z-10">
+        
+        <!-- Filter Column -->
+        <aside class="lg:col-span-3 space-y-8">
+            <div class="bg-white dark:bg-slate-900 p-8 rounded-[3rem] shadow-2xl border border-slate-200 dark:border-white/5 sticky top-32">
+                <h2 class="font-black text-[11px] text-slate-400 dark:text-slate-500 uppercase tracking-[.4em] mb-8 flex items-center gap-3">
+                    <span class="w-8 h-px bg-indigo-500/30"></span> Judicial Categories
+                </h2>
+
+                <!-- Volume Filter -->
+                <div class="mb-8">
+                    <select x-model="volume" class="w-full px-6 py-5 rounded-[2rem] bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 text-sm font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 appearance-none shadow-inner">
+                        <option value="">All Master Volumes</option>
+                        <template x-for="v in volumes" :key="v">
+                            <option :value="v" x-text="'Volume ' + v"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <nav class="space-y-3 max-h-[55vh] overflow-y-auto pr-3 custom-scrollbar">
+                    <button @click="category = ''" :class="category === '' ? 'bg-indigo-600 text-white shadow-2xl' : 'hover:bg-slate-50 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400'" class="w-full text-left px-6 py-5 rounded-[2rem] transition-all flex justify-between items-center group">
+                        <span class="text-xs font-black uppercase tracking-wider">All Decisions</span>
+                        <span class="text-[10px] font-mono opacity-40" x-text="total"></span>
+                    </button>
+                    <template x-for="cat in categories" :key="cat">
+                        <button @click="category = cat" :class="category === cat ? 'bg-indigo-600 text-white shadow-2xl' : 'hover:bg-slate-50 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400'" class="w-full text-left px-6 py-5 rounded-[2rem] transition-all flex justify-between items-center">
+                            <span class="text-xs font-bold truncate pr-3" x-text="cat"></span>
+                            <span class="text-[10px] font-mono opacity-40 shrink-0" x-text="count(cat)"></span>
+                        </button>
+                    </template>
+                </nav>
+
+                <div class="mt-10 pt-8 border-t border-slate-100 dark:border-white/5">
+                    <h3 class="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-6 ml-2">Export Brief</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <button @click="exportData('json')" class="bg-slate-900 dark:bg-white/5 text-white py-4 rounded-2xl text-[11px] font-black uppercase hover:bg-indigo-600 transition shadow-lg">JSON</button>
+                        <button @click="exportData('csv')" class="bg-slate-900 dark:bg-white/5 text-white py-4 rounded-2xl text-[11px] font-black uppercase hover:bg-indigo-600 transition shadow-lg">CSV</button>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Decisions Feed -->
+        <section class="lg:col-span-9 space-y-8">
+            
+            <!-- Comparison Bar -->
+            <div x-show="compareList.length > 0" x-cloak class="bg-indigo-600 p-6 rounded-[3rem] text-white flex justify-between items-center shadow-[0_20px_50px_rgba(79,70,229,0.4)] animate-in zoom-in duration-300">
+                <div class="flex items-center gap-6">
+                    <div class="flex -space-x-4">
+                        <template x-for="c in compareList" :key="c">
+                            <div class="w-12 h-12 rounded-full bg-slate-900 border-4 border-indigo-600 flex items-center justify-center text-xs font-black" x-text="c.split('-')[1]"></div>
+                        </template>
+                    </div>
+                    <div>
+                        <h4 class="font-black uppercase text-xs tracking-widest">Bench Comparison Mode</h4>
+                        <p class="text-indigo-200 text-xs font-bold">You have <span x-text="compareList.length"></span> decisions ready for side-by-side analysis.</p>
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <button @click="clearCompare()" class="text-white text-xs font-black uppercase tracking-widest underline decoration-2 underline-offset-4">Clear</button>
+                    <button @click="launchCompare()" class="bg-white text-indigo-600 px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl">Analyze Bench</button>
+                </div>
+            </div>
+
+            <template x-for="(item, index) in paginated" :key="key(item)">
+                <article class="case-card bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-200 dark:border-white/5 overflow-hidden shadow-2xl">
+                    <div class="px-10 py-8 bg-slate-50/50 dark:bg-white/5 border-b border-slate-100 dark:border-white/5 flex flex-col xl:flex-row justify-between items-start gap-8">
+                        <div class="space-y-4">
+                            <div class="flex flex-wrap items-center gap-4">
+                                <span class="bg-indigo-600 text-white text-[11px] font-black px-5 py-2 rounded-full uppercase tracking-tighter shadow-2xl ring-4 ring-indigo-600/10">መዝገብ <span x-text="item.case.lakk_galmee"></span></span>
+                                <span class="bg-slate-800 dark:bg-judicial-950 text-slate-300 text-[11px] font-black px-5 py-2 rounded-full uppercase tracking-widest" x-text="item.category"></span>
+                                <span class="text-[11px] font-bold text-slate-400 dark:text-slate-500 tracking-widest uppercase" x-text="'PAGE ' + item.case.fuula + ' • VOL ' + (item.case.fuula_jildii || '1')"></span>
+                            </div>
+                            <h3 class="font-black text-slate-900 dark:text-white text-2xl leading-tight tracking-tight" x-html="highlight(item.case.falmitoota)"></h3>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <button @click="toggleStar(key(item))" :class="starred(key(item)) ? 'bg-amber-500 text-slate-900 border-amber-400' : 'bg-white dark:bg-white/5 text-slate-400 border-slate-200 dark:border-white/10'" class="p-5 rounded-[2rem] border shadow-2xl transition-all active:scale-90 text-xl">⭐</button>
+                            <button @click="toggleCompare(key(item))" :class="comparing(key(item)) ? 'bg-indigo-600 text-white border-indigo-400 shadow-[0_0_20px_rgba(79,70,229,0.5)]' : 'bg-white dark:bg-white/5 text-slate-400 border-slate-200 dark:border-white/10'" class="p-5 rounded-[2rem] border shadow-2xl transition-all active:scale-90 text-xl">⚖️</button>
+                        </div>
+                    </div>
+                    
+                    <div class="p-12 space-y-10">
+                        <div>
+                            <h4 class="text-[11px] font-black text-indigo-400 uppercase tracking-[.4em] mb-6 flex items-center gap-3"><span class="w-8 h-px bg-indigo-500/30"></span> Ratio Decidendi</h4>
+                            <p class="text-slate-700 dark:text-slate-300 text-xl leading-relaxed font-black italic tracking-tight" x-html="highlight(item.case.qabxii_ijoo)"></p>
+                        </div>
+                        
+                        <div class="p-10 bg-indigo-50/50 dark:bg-white/5 rounded-[2.5rem] border border-indigo-100 dark:border-white/5 shadow-inner">
+                            <h4 class="text-[11px] font-black text-indigo-500 uppercase tracking-[.4em] mb-4">Statutory Basis</h4>
+                            <p class="text-indigo-900 dark:text-indigo-300 text-lg font-black tracking-tight" x-html="highlight(item.case.seera_caqasame)"></p>
+                        </div>
+
+                        <div class="flex justify-between items-center border-t border-slate-100 dark:border-white/5 pt-10">
+                            <span class="text-[11px] font-black text-slate-400 uppercase tracking-[.3em]" x-text="item.case.guyyaa_murtii"></span>
+                            <div class="flex gap-4">
+                                <button @click="copy(item)" class="bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 px-8 py-4 rounded-full font-black text-[11px] uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">Copy Citation</button>
+                                <button @click="aiInsight(item)" class="bg-[#0f172a] text-white px-8 py-4 rounded-full font-black text-[11px] uppercase tracking-widest shadow-2xl hover:bg-indigo-600 transition-all">Elite AI Insight</button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+            </template>
+        </section>
+    </main>
+
+    <script>
+        function cassationPortal() {
+            return {
+                search: '', category: '', volume: '', page: 1, pSize: 10,
+                stars: JSON.parse(localStorage.getItem('seeraai_stars') || '[]'),
+                compareList: [],
+                toasts: [],
+                showBookmarks: false,
+                
+                db: [
+                    {
+                        category: "አሠሪና ሠራተኛ",
+                        murtiilee: [
+                            {lakk_galmee: "18180", guyyaa_murtii: "ሐምሌ 29/1997 (ቅጽ 1)", falmitoota: "የኬ.ኬ ብርድ ልብስ ፋብሪካ መሰረታዊ ሰራተኞች ማህበር እና የኬ.ኬ ጨርቃ ጨርቅ ኢንዱስትሪ", fuula: 5, fuula_jildii: "1", qabxii_ijoo: "የአሰሪና ሰራተኛ ጉዳይ ወሳኝ ቦርድ የዳኝነት ስልጣን፣ የሰራተኛ ቅነሳ ጉዳይን በሚመለከት ስለሚነሳ ክርክር።", seera_caqasame: "አዋጅ ቁ. 42/85 አንቀጽ 138(1), 147"},
+                            {lakk_galmee: "14414", guyyaa_murtii: "ጥቅምት 1/1998 (ቅጽ 2)", falmitoota: "የጊምቢ ከተማ አስተዳደር ጽህፈት ቤት እና ወ/ሮ መረርቱ ፈቃዱ", fuula: 5, fuula_jildii: "2", qabxii_ijoo: "በሕዝብ አስተዳደር አካል ውስጥ የሚሰራ ሰራተኛ ከመ/ቤቱ ጋር ባለው ስራ ክርክር የአዋጅ ቁ. 42/85 ተፈፃሚ ስለመሆኑ።", seera_caqasame: "አዋጅ ቁ. 42/85 አንቀጽ 2(1), 3(2)"},
+                            {lakk_galmee: "15410", guyyaa_murtii: "ጥቅምት 26/1998 (ቅጽ 2)", falmitoota: "አቶ ተሾመ ጅፋር እና የኢትዮጵያ ቴሌኮሙኒኬሽን ኮርፖሬሽን", fuula: 6, fuula_jildii: "2", qabxii_ijoo: "አጠቃላይ የአሰሪን የደመወዝ ጭማሪ አወሳሰን ስርዓትን ሳይሆን የግል ጥቅምን መሰረት አድርጐ የሚቀርብን የደመወዝ ጭማሪ ክስ የማየት ስልጣን የስራ ክርክር ችሎት ስለመሆኑ።", seera_caqasame: "አዋጅ ቁ. 42/85 አንቀጽ 147"},
+                            {lakk_galmee: "16273", guyyaa_murtii: "ጥቅምት 22/1998 (ቅጽ 2)", falmitoota: "የኢትዮጵያ ቴሌኮሙኒኬሽን ኮርፖሬሽን እና አቶ ገንታ ገምአ", fuula: 6, fuula_jildii: "2", qabxii_ijoo: "ላልተወሰነ ጊዜ የተቀጠርኩ እንደሆንኩ ብቻ ይወሰንልኝ በሚል የሚቀርብ ጥያቄ የክስ ምክንያት የሌለው ስለመሆኑ እና የግል ጥቅምን መሰረት አድርጐ የሚቀርብን የጥቅማጥቅም ክስ የማየት ስልጣን።", seera_caqasame: "አዋጅ ቁ. 377/96 አንቀጽ 9, 10, 138, 142"},
+                            {lakk_galmee: "17189", guyyaa_murtii: "ጥቅምት 17/1998 (ቅጽ 2)", falmitoota: "የሸቀጦች ጅምላ ንግድና አስመጭ ድርጅት እና አቶ ንጉሴ ዘለቀ", fuula: 6, fuula_jildii: "2", qabxii_ijoo: "በአሰሪ 'ገንዘብ' ላይ ሰራተኛው ያደረሰው ጉዳት በአሰሪው 'ንብረት' የደረሰ ጉዳት ስለመሆኑ እና ሰራተኛ የስራ ውሉ ተቋርጦ ስራ ላልሰራበት ጊዜ ደመወዝ የሚያገኝበት የህግ ምክንያት ስላለመሆኑ።", seera_caqasame: "አዋጅ ቁ. 42/85 አንቀጽ 27(1), 53(1), 54"},
+                            {lakk_galmee: "18307", guyyaa_murtii: "ጥቅምት 25/1998 (ቅጽ 2)", falmitoota: "ንብ ትራንስፖርት አ.ማ. እና አቶ ተገኑ መሸሻ", fuula: 6, fuula_jildii: "2", qabxii_ijoo: "በድርጅት ውስጥ የስራ መሪ የሆነ ሰራተኛ ከአሰሪው ጋር ያለው የስራ ክርክር የሚገዛው በፍትሐብሔር ህጉ የስራ አገልግሎት መስጠትን ስለመመለከቱ ውሎች ክፍል በተመለከቱት ድንጋጌዎች ስለመሆኑ።", seera_caqasame: "የፍትሐብሔር ህግ ቁ. 2534, 2540, 2541(1)"},
+                            {lakk_galmee: "15815", guyyaa_murtii: "ታህሳስ 10/1998 (ቅጽ 3)", falmitoota: "አርሲ እርሻ ልማት ድርጅት እና አቶ ሰለሞን አበበ", fuula: 7, fuula_jildii: "3", qabxii_ijoo: "የስራ ውሉ በህግ ወጥ መንገድ የተቋረጠ የስራ መሪ ስለሚያገኘው መፍትሔ።", seera_caqasame: "የፍትሐብሔር ህግ ቁ. 2570, 2573, 2574, 2571"}
+                        ]
+                    },
+                    {
+                        category: "ውል",
+                        murtiilee: [
+                            {lakk_galmee: "15493", guyyaa_murtii: "ሐምሌ 29/1997 (ቅጽ 1)", falmitoota: "አቶ ጳውሎስ ሩምቾ እና ወ/ሮ ጫልቱ መርዳሳ", fuula: 112, fuula_jildii: "1", qabxii_ijoo: "በህግ ግምት የሚሸፈንን የፍሬ ነገር ክርክር በሚመለከት ተከራካሪ ወገኖች ባያነሱትም ፍ/ቤቱ ግምቱን ተፈፃሚ ስለማድረጉ", seera_caqasame: "የፍ/ብ/ህ/ቁ. 1845, 2024"},
+                            {lakk_galmee: "17068", guyyaa_murtii: "ሐምሌ 19/1997 (ቅጽ 1)", falmitoota: "የኪራይ ቤቶች አስተዳደር ድርጅት እና ሚ/ር ቢሮኒ አቲክፖ", fuula: 112, fuula_jildii: "1", qabxii_ijoo: "በህግ ግምት የሚሸፈንን የፍሬ ነገር ክርክር በሚመለከት ተከራካሪ ወገኖች ባያነሱትም ፍ/ቤቱ የህግ ግምቱን ተፈፃሚ ስለማድረጉ", seera_caqasame: "የፍ/ብ/ህ/ቁ. 1856, 2024"}
+                        ]
+                    }
+                ],
+
+                get flat() {
+                    let l = [];
+                    this.db.forEach(g => g.murtiilee.forEach(m => l.push({ category: g.category, case: m })));
+                    return l;
+                },
+
+                get filtered() {
+                    const q = this.search.toLowerCase();
+                    return this.flat.filter(i => {
+                        const mCat = !this.category || i.category === this.category;
+                        const mVol = !this.volume || i.case.fuula_jildii === this.volume;
+                        const mStar = !this.showBookmarks || this.stars.includes(this.key(i));
+                        const mSearch = !q || [i.case.lakk_galmee, i.case.falmitoota, i.case.qabxii_ijoo, i.case.seera_caqasame].some(v => v.toLowerCase().includes(q));
+                        return mCat && mVol && mStar && mSearch;
+                    });
+                },
+
+                get paginated() { return this.filtered.slice((this.page-1)*this.pSize, this.page*this.pSize); },
+                get total() { return this.flat.length; },
+                get totalPages() { return Math.ceil(this.filtered.length / this.pSize) || 1; },
+                get categories() { return this.db.map(d => d.category); },
+                get volumes() { return [...new Set(this.flat.map(i => i.case.fuula_jildii))].filter(Boolean).sort((a,b) => a-b); },
+                
+                count(c) { return this.db.find(d => d.category === c)?.murtiilee.length || 0; },
+                key(i) { return btoa(i.category + i.case.lakk_galmee + i.case.fuula); },
+                starred(k) { return this.stars.includes(k); },
+                comparing(k) { return this.compareList.includes(k); },
+
+                initPortal() {
+                    this.$watch('search', () => this.page = 1);
+                    this.$watch('category', () => this.page = 1);
+                    this.$watch('volume', () => this.page = 1);
+                },
+
+                toggleStar(k) {
+                    this.stars = this.starred(k) ? this.stars.filter(s => s !== k) : [...this.stars, k];
+                    localStorage.setItem('seeraai_stars', JSON.stringify(this.stars));
+                    this.toast(this.starred(k) ? 'Decision Starred' : 'Removed from Starred');
+                },
+
+                toggleCompare(k) {
+                    this.compareList = this.comparing(k) ? this.compareList.filter(c => c !== k) : [...this.compareList, k];
+                    this.toast(this.comparing(k) ? 'Added to Bench' : 'Removed from Bench');
+                },
+
+                highlight(t) {
+                    if (!this.search.trim()) return t;
+                    return t.replace(new RegExp(`(${this.search})`, 'gi'), '<span class="highlight">$1</span>');
+                },
+
+                async copy(i) {
+                    const c = `PRECEDENT: ${i.case.lakk_galmee}\nPARTIES: ${i.case.falmitoota}\nISSUE: ${i.case.qabxii_ijoo}\nSOURCE: Vol ${i.case.fuula_jildii}, Page ${i.case.fuula}`;
+                    await navigator.clipboard.writeText(c);
+                    this.toast('Citation Copied');
+                },
+
+                aiInsight(i) {
+                    this.toast('Synthesizing Elite Insight...');
+                    setTimeout(() => {
+                        alert(`Elite Judicial Insight - Case ${i.case.lakk_galmee}:\n\nThis decision clarifies the intersection of ${i.category} and the principle of ${i.case.seera_caqasame.split(' ')[0]}. It is a pivotal precedent for cases involving ${i.case.qabxii_ijoo.split(' ').slice(0,5).join(' ')}...`);
+                    }, 800);
+                },
+
+                toast(m) {
+                    const id = Date.now();
+                    this.toasts.push({ id, message: m, show: true });
+                    setTimeout(() => this.toasts = this.toasts.filter(t => t.id !== id), 4000);
+                },
+
+                resetAllFilters() {
+                    this.search = ''; this.category = ''; this.volume = ''; this.showBookmarks = false; this.page = 1;
+                },
+
+                exportData(type) {
+                    const data = type === 'json' ? JSON.stringify(this.filtered, null, 2) : 'Category,ID,Parties,Ratio\n' + this.filtered.map(i => `"${i.category}","${i.case.lakk_galmee}","${i.case.falmitoota}","${i.case.qabxii_ijoo}"`).join('\n');
+                    const blob = new Blob([data], { type: type === 'json' ? 'application/json' : 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = `seeraai_elite_export.${type}`; a.click();
+                    this.toast(`${type.toUpperCase()} Exported`);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

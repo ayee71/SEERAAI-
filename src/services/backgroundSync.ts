@@ -1,4 +1,11 @@
-import { SavedLegalDocument, getSavedDocuments, updateDocument } from './storage';
+import {
+  SavedLegalDocument,
+  getSavedDocuments,
+  updateDocument,
+  getCurrentUserKey,
+  getCurrentUserEmail,
+  getUserScopedKey,
+} from './storage';
 import {
   getOfflineDocumentsFromDB,
   saveOfflineDocumentToDB,
@@ -6,14 +13,25 @@ import {
   addQueuedEditToDB,
   getQueuedEditsFromDB,
   removeQueuedEditFromDB,
-  clearQueuedEditsFromDB,
 } from './indexedDb';
+import { syncStatusService } from './syncStatusService';
+import { addSyncLog } from './syncLogService';
+import { saveDocumentToFirestoreVerified } from './firestoreDraftService';
+import { auth } from './firebase';
+import { isWriteLocked, trackInFlightWrite } from './signOutSafetyService';
 
 type SyncCallback = (docs: SavedLegalDocument[]) => void;
 type QueueCallback = (queue: QueuedDocumentEdit[]) => void;
 
-const STORAGE_QUEUE_KEY = 'seera_ai_queued_edits';
-export const STORAGE_LAST_SYNC_KEY = 'seera_ai_last_sync_timestamp';
+import {
+  STORAGE_LAST_SYNC_KEY,
+  STORAGE_QUEUE_KEY,
+  OFFLINE_MODE_STORAGE_KEY,
+  USER_SETTINGS_STORAGE_KEY,
+  getLastSyncTime as getGlobalLastSyncTime,
+  setLastSyncTime as setGlobalLastSyncTime,
+  getStoredOfflineMode,
+} from './syncUtils';
 
 class DocumentSyncManager {
   private subscribers: Set<SyncCallback> = new Set();
@@ -21,6 +39,9 @@ class DocumentSyncManager {
   private timerId: any = null;
   private isChecking = false;
   private isSyncingEdits = false;
+  private paused = false;
+  private activeSyncPromise: Promise<any> | null = null;
+  private activeQueueSyncPromise: Promise<any> | null = null;
   private lastDocumentHash = '';
   private channel: BroadcastChannel | null = null;
 
@@ -30,6 +51,7 @@ class DocumentSyncManager {
         if ('BroadcastChannel' in window) {
           this.channel = new BroadcastChannel('seera_ai_idb_sync');
           this.channel.onmessage = (event) => {
+            if (this.paused || isWriteLocked()) return;
             if (event.data?.type === 'DOCUMENTS_UPDATED') {
               this.syncNow();
             } else if (event.data?.type === 'SYNC_QUEUED_EDITS') {
@@ -41,44 +63,94 @@ class DocumentSyncManager {
         console.warn('BroadcastChannel not available, using periodic sync only', e);
       }
 
-      // Sync on window focus and online restore
+      // Sync on window focus and online restore (only when not paused / not in manual offline mode)
       window.addEventListener('focus', () => {
+        if (this.paused || isWriteLocked() || getStoredOfflineMode()) return;
         this.syncNow();
         this.syncQueuedEdits();
       });
 
       window.addEventListener('online', () => {
+        if (this.paused || isWriteLocked() || getStoredOfflineMode()) return;
         this.syncQueuedEdits();
         this.syncNow();
+      });
+
+      window.addEventListener('seera_offline_mode_changed', (e: Event) => {
+        const custom = e as CustomEvent<{ offlineModeEnabled?: boolean }>;
+        const offlineEnabled =
+          typeof custom.detail?.offlineModeEnabled === 'boolean'
+            ? custom.detail.offlineModeEnabled
+            : getStoredOfflineMode();
+        if (offlineEnabled || this.paused || isWriteLocked()) {
+          this.stop();
+        } else {
+          this.start(3500);
+        }
+      });
+
+      window.addEventListener('seera_storage_changed', () => {
+        if (this.paused || isWriteLocked()) return;
+        this.notifyChanged();
+      });
+
+      window.addEventListener('seera_privacy_cleared', () => {
+        this.lastDocumentHash = '';
+        this.subscribers.forEach((cb) => {
+          try {
+            cb([]);
+          } catch {}
+        });
+        this.queueSubscribers.forEach((cb) => {
+          try {
+            cb([]);
+          } catch {}
+        });
       });
 
       // Service worker message listener (from Background Sync event in sw.js)
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.addEventListener('message', (event) => {
-          if (event.data?.type === 'SEERA_SYNC_QUEUED_DOCUMENT_EDITS') {
+          if (
+            event.data?.type === 'SEERA_SYNC_QUEUED_DOCUMENT_EDITS' &&
+            !this.paused &&
+            !isWriteLocked() &&
+            !getStoredOfflineMode()
+          ) {
             this.syncQueuedEdits();
           }
         });
       }
 
       window.addEventListener('storage', (e) => {
-        if (e.key === 'seera_ai_saved_documents') {
+        if (this.paused || isWriteLocked()) return;
+        if (e.key === 'seera_ai_saved_documents' || e.key?.startsWith('seera_ai_saved_documents_')) {
           this.syncNow();
         } else if (e.key === STORAGE_QUEUE_KEY) {
           this.notifyQueueSubscribers();
+        } else if (e.key === OFFLINE_MODE_STORAGE_KEY || e.key === USER_SETTINGS_STORAGE_KEY) {
+          if (getStoredOfflineMode()) {
+            this.stop();
+          } else {
+            this.start(3500);
+          }
         }
       });
     }
   }
 
-  /**
-   * Start periodic background polling for new IndexedDB items & queued edits
-   */
   public start(intervalMs: number = 3000): void {
+    if (this.paused || isWriteLocked() || getStoredOfflineMode()) return;
     if (this.timerId) return;
     this.syncNow();
-    this.syncQueuedEdits();
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      this.syncQueuedEdits();
+    }
     this.timerId = setInterval(() => {
+      if (this.paused || isWriteLocked() || getStoredOfflineMode()) {
+        this.stop();
+        return;
+      }
       this.syncNow();
       if (typeof navigator !== 'undefined' && navigator.onLine) {
         this.syncQueuedEdits();
@@ -86,9 +158,6 @@ class DocumentSyncManager {
     }, intervalMs);
   }
 
-  /**
-   * Stop periodic background sync
-   */
   public stop(): void {
     if (this.timerId) {
       clearInterval(this.timerId);
@@ -96,19 +165,44 @@ class DocumentSyncManager {
     }
   }
 
-  /**
-   * Check if periodic background sync is currently active
-   */
-  public isActive(): boolean {
-    return this.timerId !== null;
+  public pause(): void {
+    this.paused = true;
+    this.stop();
   }
 
-  /**
-   * Register a subscriber callback to receive silently synced document list updates
-   */
+  public resume(): void {
+    this.paused = false;
+    if (!isWriteLocked() && !getStoredOfflineMode()) {
+      this.start(3500);
+    }
+  }
+
+  public isPaused(): boolean {
+    return this.paused;
+  }
+
+  public isActive(): boolean {
+    return this.timerId !== null && !this.paused;
+  }
+
+  public async drainActiveSync(timeoutMs: number = 2500): Promise<boolean> {
+    const active: Promise<any>[] = [];
+    if (this.activeSyncPromise) active.push(this.activeSyncPromise);
+    if (this.activeQueueSyncPromise) active.push(this.activeQueueSyncPromise);
+    if (active.length === 0) return true;
+
+    let done = false;
+    await Promise.race([
+      Promise.allSettled(active).then(() => {
+        done = true;
+      }),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+    return done;
+  }
+
   public subscribe(callback: SyncCallback): () => void {
     this.subscribers.add(callback);
-    // Provide current state immediately
     const current = getSavedDocuments();
     callback(current);
 
@@ -117,9 +211,6 @@ class DocumentSyncManager {
     };
   }
 
-  /**
-   * Register a subscriber callback for offline queued edits updates
-   */
   public subscribeQueue(callback: QueueCallback): () => void {
     this.queueSubscribers.add(callback);
     this.getQueuedEdits().then((queue) => callback(queue));
@@ -140,48 +231,31 @@ class DocumentSyncManager {
     });
   }
 
-  /**
-   * Get the last recorded sync time ISO string
-   */
   public getLastSyncTime(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem(STORAGE_LAST_SYNC_KEY);
+    return getGlobalLastSyncTime();
   }
 
-  /**
-   * Set or update the last recorded sync time
-   */
   public setLastSyncTime(isoString?: string): void {
-    if (typeof window === 'undefined') return;
-    const time = isoString || new Date().toISOString();
-    try {
-      localStorage.setItem(STORAGE_LAST_SYNC_KEY, time);
-    } catch {}
+    setGlobalLastSyncTime(isoString);
   }
 
-  /**
-   * Manually trigger a full re-sync when online.
-   * Reconciles queued edits, syncs local storage with IndexedDB,
-   * updates the last sync timestamp, and notifies all subscribers.
-   */
   public async triggerManualSync(): Promise<{
     success: boolean;
     syncedDocsCount: number;
     syncedEditsCount: number;
+    remainingPendingCount: number;
     timestamp: string;
   }> {
+    const startTime = performance.now();
     const timestamp = new Date().toISOString();
     try {
-      // 1. Sync any pending offline queued edits first
       const editResult = await this.syncQueuedEdits();
-
-      // 2. Full reconciliation between local storage & IndexedDB
       const syncedDocs = await this.syncNow();
 
-      // 3. Update last sync timestamp
-      this.setLastSyncTime(timestamp);
+      if (editResult.remainingPendingCount === 0) {
+        this.setLastSyncTime(timestamp);
+      }
 
-      // 4. Dispatch status event for UI indicators
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('seera_sync_status_updated', {
@@ -189,54 +263,74 @@ class DocumentSyncManager {
               timestamp,
               syncedDocsCount: syncedDocs.length,
               syncedEditsCount: editResult.syncedCount,
-              success: true,
+              remainingPendingCount: editResult.remainingPendingCount,
+              success: editResult.remainingPendingCount === 0,
             },
           })
         );
       }
 
+      const endTime = performance.now();
+      await addSyncLog({
+        status: editResult.remainingPendingCount === 0 ? 'success' : 'partial',
+        type: 'full',
+        details: `Manual sync run: ${editResult.syncedCount} cloud-confirmed edits, ${editResult.remainingPendingCount} remaining pending.`,
+        affectedIds: syncedDocs.map(d => d.id),
+        conflictsResolved: editResult.remainingPendingCount === 0,
+        latency: Math.round(endTime - startTime)
+      });
+
       return {
-        success: true,
+        success: editResult.remainingPendingCount === 0,
         syncedDocsCount: syncedDocs.length,
         syncedEditsCount: editResult.syncedCount,
+        remainingPendingCount: editResult.remainingPendingCount,
         timestamp,
       };
     } catch (err) {
+      const endTime = performance.now();
       console.error('Manual re-sync failed:', err);
+
+      await addSyncLog({
+        status: 'failed',
+        type: 'full',
+        details: `Manual sync failed: ${err instanceof Error ? err.message : String(err)}`,
+        affectedIds: [],
+        conflictsResolved: false,
+        errorMessage: err instanceof Error ? err.message : String(err),
+        latency: Math.round(endTime - startTime)
+      });
+
+      const pending = await this.getQueuedEdits();
       return {
         success: false,
         syncedDocsCount: getSavedDocuments().length,
         syncedEditsCount: 0,
+        remainingPendingCount: pending.length,
         timestamp,
       };
     }
   }
 
-  /**
-   * Explicitly notify sync manager that a document was written or deleted
-   */
   public notifyChanged(): void {
+    if (this.paused || isWriteLocked()) return;
     if (this.channel) {
       try {
         this.channel.postMessage({ type: 'DOCUMENTS_UPDATED' });
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
     this.syncNow();
   }
 
-  /**
-   * Queue a document edit while offline or during intermittent connection.
-   * Performs an immediate optimistic update in local storage so the user sees the edits,
-   * stores the edit in the persistent queue (IndexedDB + localStorage), and registers
-   * Service Worker Background Sync so it automatically reconciles when online.
-   */
   public async queueDocumentEdit(
     docId: string,
     changes: Partial<SavedLegalDocument>,
     originalTitle?: string
   ): Promise<QueuedDocumentEdit> {
+    if (isWriteLocked()) {
+      throw new Error('SIGN_OUT_WRITE_LOCKED:queueDocumentEdit');
+    }
+
     const queuedEdit: QueuedDocumentEdit = {
       id: `edit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       docId,
@@ -250,56 +344,54 @@ class DocumentSyncManager {
       originalDocTitle: originalTitle || changes.title,
     };
 
-    // 1. Save to IndexedDB
-    await addQueuedEditToDB(queuedEdit);
+    await trackInFlightWrite('queue:addQueuedEdit', (async () => {
+      await addQueuedEditToDB(queuedEdit);
 
-    // 2. Save to localStorage queue fallback
-    try {
-      const rawQueue = localStorage.getItem(STORAGE_QUEUE_KEY);
-      const queueList: QueuedDocumentEdit[] = rawQueue ? JSON.parse(rawQueue) : [];
-      queueList.push(queuedEdit);
-      localStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify(queueList));
-    } catch (e) {
-      console.warn('LocalStorage queue update failed', e);
-    }
+      try {
+        const rawQueue = localStorage.getItem(STORAGE_QUEUE_KEY);
+        const queueList: QueuedDocumentEdit[] = rawQueue ? JSON.parse(rawQueue) : [];
+        queueList.push(queuedEdit);
+        localStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify(queueList));
+      } catch (e) {
+        console.warn('LocalStorage queue update failed', e);
+      }
 
-    // 3. Optimistic local update so user immediately sees their changes in My Content
-    updateDocument(docId, changes);
+      // Optimistic local update (automatically invalidates prior serverConfirmedAt)
+      updateDocument(docId, changes);
+    })());
 
-    // 4. Try to register Background Sync with Service Worker
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'SyncManager' in window) {
       try {
         const reg: any = await navigator.serviceWorker.ready;
         if (reg?.sync) {
           await reg.sync.register('sync-queued-document-edits');
         }
-      } catch (err) {
-        console.warn('ServiceWorker sync registration not available:', err);
-      }
+      } catch {}
     }
 
-    // 5. Notify listeners
     this.notifyQueueSubscribers();
     this.notifyChanged();
 
-    // 6. If currently online, attempt immediate sync
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
+    if (typeof navigator !== 'undefined' && navigator.onLine && !getStoredOfflineMode() && !this.paused && !isWriteLocked()) {
       this.syncQueuedEdits();
     }
 
     return queuedEdit;
   }
 
-  /**
-   * Get all currently pending queued document edits
-   */
   public async getQueuedEdits(): Promise<QueuedDocumentEdit[]> {
     try {
       const idbQueue = await getQueuedEditsFromDB();
-      if (idbQueue && idbQueue.length > 0) return idbQueue;
-
       const raw = localStorage.getItem(STORAGE_QUEUE_KEY);
-      return raw ? JSON.parse(raw) : [];
+      const lsQueue: QueuedDocumentEdit[] = raw ? JSON.parse(raw) : [];
+      const mergedMap = new Map<string, QueuedDocumentEdit>();
+      for (const item of idbQueue || []) {
+        if (item?.id) mergedMap.set(item.id, item);
+      }
+      for (const item of lsQueue || []) {
+        if (item?.id && !mergedMap.has(item.id)) mergedMap.set(item.id, item);
+      }
+      return Array.from(mergedMap.values());
     } catch {
       try {
         const raw = localStorage.getItem(STORAGE_QUEUE_KEY);
@@ -311,173 +403,319 @@ class DocumentSyncManager {
   }
 
   /**
-   * Synchronize all queued document edits into local storage and IndexedDB
+   * Synchronize queued document edits to Firestore ('user_documents/{docId}') with server verification.
+   * NEVER deletes queued edits unless the Firestore server write is explicitly verified via getDocFromServer.
    */
-  public async syncQueuedEdits(): Promise<{ syncedCount: number }> {
-    if (this.isSyncingEdits) return { syncedCount: 0 };
-    this.isSyncingEdits = true;
-
-    try {
-      const edits = await this.getQueuedEdits();
-      if (!edits || edits.length === 0) {
-        return { syncedCount: 0 };
-      }
-
-      let syncedCount = 0;
-      for (const item of edits) {
-        // Find existing doc and merge edits
-        const localDocs = getSavedDocuments();
-        const targetDoc = localDocs.find((d) => d.id === item.docId);
-
-        if (targetDoc) {
-          const updatedDoc: SavedLegalDocument = {
-            ...targetDoc,
-            title: item.title !== undefined ? item.title : targetDoc.title,
-            content: item.content !== undefined ? item.content : targetDoc.content,
-            folderId: item.folderId !== undefined ? item.folderId : targetDoc.folderId,
-            tags: item.tags !== undefined ? item.tags : targetDoc.tags,
-            isBookmarked: item.isBookmarked !== undefined ? item.isBookmarked : targetDoc.isBookmarked,
-          };
-
-          // Save to localStorage & IndexedDB
-          updateDocument(item.docId, updatedDoc);
-          await saveOfflineDocumentToDB(updatedDoc);
-          syncedCount++;
-        }
-
-        // Remove from IDB queue
-        await removeQueuedEditFromDB(item.id);
-      }
-
-      // Clear localStorage queue
-      try {
-        localStorage.removeItem(STORAGE_QUEUE_KEY);
-      } catch {}
-
-      // Notify Service Worker to trigger notification if registered
-      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        try {
-          navigator.serviceWorker.controller.postMessage({
-            type: 'NOTIFY_EDITS_SYNCED',
-            count: syncedCount,
-          });
-        } catch {}
-      }
-
-      // Broadcast and emit event
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('seera_queued_edits_synced', {
-            detail: { count: syncedCount },
-          })
-        );
-      }
-
-      this.notifyQueueSubscribers();
-      this.syncNow();
-
-      return { syncedCount };
-    } catch (e) {
-      console.error('Failed to sync queued document edits:', e);
-      return { syncedCount: 0 };
-    } finally {
-      this.isSyncingEdits = false;
+  public async syncQueuedEdits(options?: { allowDuringSignOut?: boolean }): Promise<{
+    syncedCount: number;
+    remainingPendingCount: number;
+    confirmedIds: string[];
+    errors: string[];
+  }> {
+    if (this.isSyncingEdits) {
+      const pending = await this.getQueuedEdits();
+      return { syncedCount: 0, remainingPendingCount: pending.length, confirmedIds: [], errors: [] };
     }
-  }
+    if ((this.paused || isWriteLocked()) && !options?.allowDuringSignOut) {
+      const pending = await this.getQueuedEdits();
+      return { syncedCount: 0, remainingPendingCount: pending.length, confirmedIds: [], errors: [] };
+    }
+    if (getStoredOfflineMode() || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      const pending = await this.getQueuedEdits();
+      syncStatusService.setSyncing(false, pending.length);
+      return { syncedCount: 0, remainingPendingCount: pending.length, confirmedIds: [], errors: ['OFFLINE'] };
+    }
 
-  /**
-   * Core synchronization routine: compares IndexedDB with local storage and reconciles differences
-   */
-  public async syncNow(): Promise<SavedLegalDocument[]> {
-    if (this.isChecking) return getSavedDocuments();
-    this.isChecking = true;
+    const runPromise = (async () => {
+      this.isSyncingEdits = true;
+      const startTime = performance.now();
+      const confirmedIds: string[] = [];
+      const errors: string[] = [];
 
-    try {
-      // 1. Fetch from IndexedDB
-      const idbDocs = await getOfflineDocumentsFromDB();
-      // 2. Fetch from localStorage
-      const localDocs = getSavedDocuments();
+      try {
+        const edits = await this.getQueuedEdits();
+        if (!edits || edits.length === 0) {
+          syncStatusService.setSyncing(false, 0);
+          return { syncedCount: 0, remainingPendingCount: 0, confirmedIds: [], errors: [] };
+        }
 
-      // 3. Merge & deduplicate by ID, prioritizing newer createdAt
-      const mergedMap = new Map<string, SavedLegalDocument>();
+        if (!auth.currentUser?.uid) {
+          syncStatusService.setSyncing(false, edits.length);
+          return {
+            syncedCount: 0,
+            remainingPendingCount: edits.length,
+            confirmedIds: [],
+            errors: ['AUTH_REQUIRED: Firebase Auth session is required to confirm cloud sync.'],
+          };
+        }
 
-      // Index local docs
-      for (const d of localDocs) {
-        mergedMap.set(d.id, d);
-      }
+        syncStatusService.setSyncing(true, edits.length);
+        let syncedCount = 0;
+        const remainingQueue: QueuedDocumentEdit[] = [];
 
-      let hasNewFromIdb = false;
-      // Index and compare with IDB
-      for (const d of idbDocs) {
-        if (!mergedMap.has(d.id)) {
-          mergedMap.set(d.id, d);
-          hasNewFromIdb = true;
-        } else {
-          // Compare dates if both exist
-          const existing = mergedMap.get(d.id)!;
-          if (new Date(d.createdAt) > new Date(existing.createdAt)) {
-            mergedMap.set(d.id, d);
-            hasNewFromIdb = true;
+        for (const item of edits) {
+          const localDocs = getSavedDocuments();
+          const targetDoc = localDocs.find((d) => d.id === item.docId);
+
+          const mergedPayload: Partial<SavedLegalDocument> = targetDoc
+            ? {
+                ...targetDoc,
+                title: item.title !== undefined ? item.title : targetDoc.title,
+                content: item.content !== undefined ? item.content : targetDoc.content,
+                folderId: item.folderId !== undefined ? item.folderId : targetDoc.folderId,
+                tags: item.tags !== undefined ? item.tags : targetDoc.tags,
+                isBookmarked: item.isBookmarked !== undefined ? item.isBookmarked : targetDoc.isBookmarked,
+              }
+            : {
+                id: item.docId,
+                title: item.title || item.originalDocTitle || 'Untitled Document',
+                content: item.content || '',
+                folderId: item.folderId,
+                tags: item.tags || [],
+                isBookmarked: item.isBookmarked,
+                userId: auth.currentUser.uid,
+                userEmail: auth.currentUser.email || undefined,
+              };
+
+          const verifyRes = await saveDocumentToFirestoreVerified(item.docId, {
+            id: item.docId,
+            title: mergedPayload.title,
+            content: mergedPayload.content,
+            taskType: mergedPayload.taskType,
+            userId: auth.currentUser.uid,
+            userEmail: auth.currentUser.email || mergedPayload.userEmail,
+            metadata: {
+              folderId: mergedPayload.folderId ?? null,
+              tags: mergedPayload.tags ?? [],
+              isBookmarked: mergedPayload.isBookmarked ?? false,
+            },
+          });
+
+          if (verifyRes.confirmed) {
+            // Update local record with verified server ack metadata before removing from queue
+            if (targetDoc) {
+              updateDocument(
+                item.docId,
+                {
+                  ...mergedPayload,
+                  serverConfirmedAt: verifyRes.serverConfirmedAt,
+                  serverConfirmedUid: auth.currentUser.uid,
+                  serverSyncNonce: verifyRes.serverSyncNonce,
+                },
+                { allowDuringSignOut: options?.allowDuringSignOut }
+              );
+            }
+            await removeQueuedEditFromDB(item.id, { allowDuringSignOut: options?.allowDuringSignOut });
+            syncedCount++;
+            confirmedIds.push(item.docId);
+          } else {
+            const errText = verifyRes.error || 'Firestore verification failed';
+            errors.push(`${item.docId}: ${errText}`);
+            remainingQueue.push({
+              ...item,
+              status: 'failed',
+              lastError: errText,
+            });
           }
         }
-      }
 
-      // Check if any local docs need to be pushed back to IDB
-      for (const d of localDocs) {
-        if (!idbDocs.some((idb) => idb.id === d.id)) {
-          await saveOfflineDocumentToDB(d);
-        }
-      }
+        // Update localStorage queue ONLY with remaining unverified/failed items
+        try {
+          if (remainingQueue.length === 0) {
+            localStorage.removeItem(STORAGE_QUEUE_KEY);
+          } else {
+            localStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify(remainingQueue));
+          }
+        } catch {}
 
-      const mergedDocs = Array.from(mergedMap.values()).sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-
-      // Generate a fast content-signature hash
-      const currentHash = mergedDocs.map((d) => `${d.id}_${d.createdAt}`).join('|');
-
-      if (currentHash !== this.lastDocumentHash || hasNewFromIdb) {
-        this.lastDocumentHash = currentHash;
-
-        // Update localStorage if IDB provided new entries
-        if (hasNewFromIdb) {
+        if (syncedCount > 0 && typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker.controller) {
           try {
-            localStorage.setItem('seera_ai_saved_documents', JSON.stringify(mergedDocs));
-          } catch (e) {
-            console.error('Failed to sync merged docs to localStorage', e);
-          }
+            navigator.serviceWorker.controller.postMessage({
+              type: 'NOTIFY_EDITS_SYNCED',
+              count: syncedCount,
+            });
+          } catch {}
         }
 
-        // Notify all subscribers silently without requiring a page refresh
-        this.subscribers.forEach((cb) => {
-          try {
-            cb(mergedDocs);
-          } catch (err) {
-            console.error('Error in document sync subscriber:', err);
-          }
-        });
-
-        // Dispatch a global DOM event for other listeners
-        if (typeof window !== 'undefined') {
+        if (syncedCount > 0 && typeof window !== 'undefined') {
           window.dispatchEvent(
-            new CustomEvent('seera_documents_synced', {
-              detail: { documents: mergedDocs },
+            new CustomEvent('seera_queued_edits_synced', {
+              detail: { count: syncedCount, confirmedIds },
             })
           );
         }
-      }
 
-      if (!this.getLastSyncTime()) {
-        this.setLastSyncTime();
-      }
+        this.notifyQueueSubscribers();
+        if (!options?.allowDuringSignOut) {
+          this.syncNow();
+        }
+        syncStatusService.setSyncing(false, remainingQueue.length);
 
-      return mergedDocs;
-    } catch (e) {
-      console.error('Background document sync check failed:', e);
+        const endTime = performance.now();
+        if (syncedCount > 0 || errors.length > 0) {
+          await addSyncLog({
+            status: errors.length === 0 ? 'success' : syncedCount > 0 ? 'partial' : 'failed',
+            type: 'upload',
+            details: `Cloud sync verified ${syncedCount} edit(s) in Firestore; ${remainingQueue.length} remain pending.`,
+            affectedIds: confirmedIds,
+            conflictsResolved: errors.length === 0,
+            errorMessage: errors.length > 0 ? errors[0] : undefined,
+            latency: Math.round(endTime - startTime)
+          });
+        }
+
+        return {
+          syncedCount,
+          remainingPendingCount: remainingQueue.length,
+          confirmedIds,
+          errors,
+        };
+      } catch (e: any) {
+        const endTime = performance.now();
+        console.error('Failed to sync queued document edits:', e);
+        syncStatusService.setError();
+
+        await addSyncLog({
+          status: 'failed',
+          type: 'upload',
+          details: `Failed to sync queued edits: ${e instanceof Error ? e.message : String(e)}`,
+          affectedIds: [],
+          conflictsResolved: false,
+          errorMessage: e instanceof Error ? e.message : String(e),
+          latency: Math.round(endTime - startTime)
+        });
+
+        const pending = await this.getQueuedEdits();
+        return {
+          syncedCount: 0,
+          remainingPendingCount: pending.length,
+          confirmedIds: [],
+          errors: [e?.message || String(e)],
+        };
+      } finally {
+        this.isSyncingEdits = false;
+        this.activeQueueSyncPromise = null;
+      }
+    })();
+
+    this.activeQueueSyncPromise = runPromise;
+    return trackInFlightWrite('sync:syncQueuedEdits', runPromise);
+  }
+
+  /**
+   * User-scoped reconciliation between IndexedDB and current user's localStorage key.
+   */
+  public async syncNow(options?: { allowDuringSignOut?: boolean }): Promise<SavedLegalDocument[]> {
+    if (this.isChecking) return getSavedDocuments();
+    if ((this.paused || isWriteLocked()) && !options?.allowDuringSignOut) {
       return getSavedDocuments();
-    } finally {
-      this.isChecking = false;
     }
+
+    const runPromise = (async () => {
+      this.isChecking = true;
+      const startTime = performance.now();
+
+      try {
+        const currentUserKey = getCurrentUserKey();
+        const currentUserEmail = getCurrentUserEmail()?.toLowerCase();
+        const allIdbDocs = await getOfflineDocumentsFromDB();
+
+        // Strictly scope IDB docs to the active user so another user's records never cross into this session
+        const idbDocs = allIdbDocs.filter((d) => {
+          const matchesId = d.userId && d.userId === currentUserKey;
+          const matchesEmail = currentUserEmail && d.userEmail && d.userEmail.toLowerCase() === currentUserEmail;
+          return Boolean(matchesId || matchesEmail);
+        });
+
+        const localDocs = getSavedDocuments();
+        const mergedMap = new Map<string, SavedLegalDocument>();
+
+        for (const d of localDocs) {
+          mergedMap.set(d.id, d);
+        }
+
+        let hasNewFromIdb = false;
+        for (const d of idbDocs) {
+          if (!mergedMap.has(d.id)) {
+            mergedMap.set(d.id, d);
+            hasNewFromIdb = true;
+          } else {
+            const existing = mergedMap.get(d.id)!;
+            const dTime = new Date(d.updatedAt || d.createdAt).getTime();
+            const eTime = new Date(existing.updatedAt || existing.createdAt).getTime();
+            if (dTime > eTime) {
+              mergedMap.set(d.id, d);
+              hasNewFromIdb = true;
+            }
+          }
+        }
+
+        for (const d of localDocs) {
+          if (!idbDocs.some((idb) => idb.id === d.id)) {
+            await saveOfflineDocumentToDB(d, { allowDuringSignOut: options?.allowDuringSignOut });
+          }
+        }
+
+        const mergedDocs = Array.from(mergedMap.values()).sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+
+        const currentHash = mergedDocs.map((d) => `${d.id}_${d.updatedAt || d.createdAt}`).join('|');
+
+        if (currentHash !== this.lastDocumentHash || hasNewFromIdb) {
+          this.lastDocumentHash = currentHash;
+
+          if (hasNewFromIdb && !isWriteLocked()) {
+            try {
+              localStorage.setItem(getUserScopedKey('seera_ai_saved_documents'), JSON.stringify(mergedDocs));
+            } catch (e) {
+              console.error('Failed to sync merged docs to user-scoped localStorage', e);
+            }
+          }
+
+          this.subscribers.forEach((cb) => {
+            try {
+              cb(mergedDocs);
+            } catch (err) {
+              console.error('Error in document sync subscriber:', err);
+            }
+          });
+
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('seera_documents_synced', {
+                detail: { documents: mergedDocs },
+              })
+            );
+          }
+
+          const endTime = performance.now();
+          await addSyncLog({
+            status: 'success',
+            type: 'download',
+            details: `Reconciled ${mergedDocs.length} user-scoped local documents.`,
+            affectedIds: mergedDocs.map(d => d.id),
+            conflictsResolved: true,
+            latency: Math.round(endTime - startTime)
+          });
+        }
+
+        if (!this.getLastSyncTime()) {
+          this.setLastSyncTime();
+        }
+
+        return mergedDocs;
+      } catch (e) {
+        console.error('Background document sync check failed:', e);
+        return getSavedDocuments();
+      } finally {
+        this.isChecking = false;
+        this.activeSyncPromise = null;
+      }
+    })();
+
+    this.activeSyncPromise = runPromise;
+    return runPromise;
   }
 }
 
@@ -485,16 +723,7 @@ export const backgroundSyncManager = new DocumentSyncManager();
 
 // Automatically start background sync in browser environment if not disabled in settings
 if (typeof window !== 'undefined') {
-  const settingsRaw = localStorage.getItem('seera_ai_user_settings');
-  let isOffline = false;
-  try {
-    if (settingsRaw) {
-      const settings = JSON.parse(settingsRaw);
-      isOffline = !!settings.offlineModeEnabled;
-    }
-  } catch {}
-  
-  if (!isOffline) {
+  if (!getStoredOfflineMode() && !isWriteLocked()) {
     backgroundSyncManager.start(3500);
   }
 }

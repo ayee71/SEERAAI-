@@ -1,0 +1,1967 @@
+SEERAAI – UNIFIED ETHIOPIAN LEGAL DATABASE & CASSATION SEARCH
+================================================================
+Integrated TypeScript module bundle for the existing SEERAAI application
+Jurisdictions: Federal Ethiopia and Oromia
+Languages: Afaan Oromoo (om), Amharic (am), English (en)
+
+IMPORTANT DELIVERY NOTE
+-----------------------
+This is a structured source bundle in one TXT file. Each section names the
+real path where that source belongs. Copy each section into the indicated
+file. It is not one giant TypeScript file.
+
+This is a strong implementation baseline, not a certified claim of 10/10 or
+an assertion that it is already integrated into your private repository.
+It must be type-checked and tested against your actual versions of Express,
+Firebase Admin SDK, Firebase project, named Firestore database, existing
+middleware, and RBAC model before production deployment.
+
+NON-NEGOTIABLE INTEGRATION RULES
+--------------------------------
+1. Do NOT create a new Firebase project.
+2. Do NOT change or recreate the existing Firestore database.
+3. Do NOT replace the existing SEERAAI AuthContext, Firebase initialization,
+   ownerAuth, institution RBAC, server.ts, server-app.ts, or storage service.
+4. Inject the already-initialized Firestore instance from the existing backend.
+   Do not call getFirestore() with no database selection if SEERAAI uses a
+   named database. The existing firebaseAdmin module must supply the correct db.
+5. Use Firebase Storage for original PDF/DOCX/image files. Keep only metadata,
+   extracted/searchable text where suitably small, hashes, and storage paths in
+   Firestore. Do not put large original files in Firestore documents.
+6. Keep OpenAI/Gemini keys on the backend only. This module does not need either
+   key for deterministic legal search.
+7. All create/update/verification operations must pass through authenticated
+   backend routes with the existing SEERAAI role/institution permission checks.
+8. A Telegram post alone is not proof that a cassation decision is authentic or
+   legally binding. Binding status must be separately reviewed and evidenced.
+9. Do not set a source to VERIFIED merely because a URL exists or because a
+   Telegram message was downloaded.
+10. Test the final merged Firestore rules. Firestore allow statements are
+    additive; a new restrictive match block does not cancel a broader existing
+    allow rule elsewhere in the rules file.
+
+RECOMMENDED FILE LAYOUT
+----------------------
+src/modules/legal-database/
+  types/legal.types.ts
+  core/normalize.ts
+  core/search-index.ts
+  core/relevance.ts
+  core/verification.ts
+  repositories/legal.repository.ts
+  services/legal-search.service.ts
+  api/legal.routes.ts
+  index.ts
+src/services/legalDatabaseClient.ts
+
+The backend route imports the module from src/modules/legal-database and
+injects the existing Firestore db and existing authentication/authorization
+middleware. Adjust relative import paths to the actual SEERAAI directory layout.
+
+================================================================
+FILE 1: src/modules/legal-database/types/legal.types.ts
+================================================================
+
+export type Jurisdiction = "federal" | "oromia";
+
+export type LegalLanguage = "om" | "am" | "en";
+
+export type LegislationType =
+  | "constitution"
+  | "proclamation"
+  | "regulation"
+  | "directive"
+  | "amendment"
+  | "repeal";
+
+export type LegalCategory =
+  | "labor"
+  | "property_land"
+  | "civil_contract"
+  | "commercial_tax"
+  | "criminal"
+  | "family"
+  | "constitutional_admin"
+  | "procedure_evidence"
+  | "human_rights"
+  | "investment"
+  | "environment"
+  | "other";
+
+export type LegalStatus =
+  | "draft"
+  | "published"
+  | "in_force"
+  | "partially_amended"
+  | "amended"
+  | "repealed"
+  | "expired"
+  | "suspended"
+  | "unknown";
+
+export type LegalRecordType = "enactment" | "cassation_decision";
+
+export type VerificationStatus =
+  | "unverified"
+  | "partially_verified"
+  | "verified"
+  | "rejected";
+
+export type LegalSourceType =
+  | "official_gazette"
+  | "official_website"
+  | "court_decision"
+  | "legal_database"
+  | "scanned_document"
+  | "telegram_archive"
+  | "other";
+
+/**
+ * Each language is optional because a valid original legal document may exist
+ * in only one language. Do not invent translations to fill missing fields.
+ */
+export interface MultilingualText {
+  om?: string;
+  am?: string;
+  en?: string;
+}
+
+export interface LegalAuthority {
+  name: MultilingualText;
+  institutionType:
+    | "federal"
+    | "regional"
+    | "parliament"
+    | "council"
+    | "ministry"
+    | "court"
+    | "other";
+  issuingInstitution?: MultilingualText;
+  legalAuthorityBasis?: string;
+  country: string;
+  region?: string;
+}
+
+export interface LegalSource {
+  id: string;
+  sourceType: LegalSourceType;
+  title: string;
+  url?: string;
+  documentId?: string;
+  storagePath?: string;
+  publicationNumber?: string;
+  pageNumber?: string;
+  language?: LegalLanguage;
+
+  /** SHA-256 of the exact original file, where a file is available. */
+  documentHash?: string;
+
+  verificationStatus: VerificationStatus;
+  verifiedAt?: string;
+  verifiedBy?: string;
+  verificationNote?: string;
+}
+
+export interface LegalParagraph {
+  number: string;
+  content: MultilingualText;
+}
+
+export interface LegalClause {
+  label: string;
+  content: MultilingualText;
+}
+
+export interface LegalSubArticle {
+  number: string;
+  content: MultilingualText;
+  paragraphs?: LegalParagraph[];
+  clauses?: LegalClause[];
+}
+
+export interface LegalArticle {
+  articleNumber: string;
+  title?: MultilingualText;
+  content: MultilingualText;
+  subArticles?: LegalSubArticle[];
+  keywords?: string[];
+  legalPrinciples?: MultilingualText[];
+  crossReferences?: string[];
+  isRepealed?: boolean;
+  amendmentHistory?: Array<{
+    amendedBy: string;
+    amendmentDate?: string;
+    description?: MultilingualText;
+  }>;
+}
+
+export interface LegalRelationship {
+  targetEnactmentId: string;
+  relationshipType:
+    | "amends"
+    | "amended_by"
+    | "repeals"
+    | "repealed_by"
+    | "replaces"
+    | "replaced_by"
+    | "implements"
+    | "related_to";
+  effectiveDate?: string;
+  affectedArticles?: string[];
+  description?: MultilingualText;
+}
+
+export interface LegalEnactment {
+  id: string;
+  recordType: "enactment";
+  type: LegislationType;
+  jurisdiction: Jurisdiction;
+  number: string;
+  title: MultilingualText;
+  shortTitle?: MultilingualText;
+  authority: LegalAuthority;
+  yearEC: number;
+  yearGC?: number;
+  publicationDate?: string;
+  approvalDate?: string;
+  effectiveDate?: string;
+  expirationDate?: string;
+  category: LegalCategory;
+  summary: MultilingualText;
+  preamble?: MultilingualText;
+
+  /**
+   * Keep article text here only where the Firestore document stays safely
+   * below Firestore's document-size limit. For large enactments, store the
+   * original/extracted full text in Storage and use fullTextStoragePath.
+   */
+  fullTextArticles: LegalArticle[];
+  fullTextStoragePath?: string;
+  fullTextHash?: string;
+
+  keyPrinciples: MultilingualText[];
+  relationships: LegalRelationship[];
+  status: LegalStatus;
+  sources: LegalSource[];
+  tags: string[];
+
+  verificationStatus: VerificationStatus;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
+  lastVerifiedDate?: string;
+  verifiedBy?: string;
+  notes?: string;
+}
+
+export type CassationCourt =
+  | "federal_supreme_court"
+  | "oromia_supreme_court";
+
+export interface TelegramArchiveSource {
+  channelId: string;
+  channelName: string;
+  messageId: number;
+  messageDate: string;
+  messageLink?: string;
+  fileId?: string;
+  fileName?: string;
+  fileType?: "pdf" | "docx" | "image" | "text" | "other";
+}
+
+/**
+ * Authenticity verification and binding-status review are separate matters.
+ * A reviewer must not infer binding status solely from the source document.
+ */
+export interface CassationVerification {
+  documentVerified: boolean;
+  textVerified: boolean;
+  metadataVerified: boolean;
+  bindingStatusReviewed: boolean;
+  verifiedAt?: string;
+  verifiedBy?: string;
+  verificationNotes?: string;
+  comparedDocumentHash?: string;
+}
+
+export type BindingStatus =
+  | "binding"
+  | "persuasive"
+  | "not_established"
+  | "not_reviewed";
+
+export interface CassationBindingPrinciple {
+  principle: MultilingualText;
+  applicableLaw?: string[];
+  relevantArticles?: string[];
+  bindingStatus: BindingStatus;
+  bindingBasis?: string;
+  panelSize?: number;
+  unanimity?: boolean;
+}
+
+export interface CassationDecision {
+  id: string;
+  recordType: "cassation_decision";
+  jurisdiction: Jurisdiction;
+  court: CassationCourt;
+  category?: LegalCategory;
+  caseNumber: string;
+  volume?: number | string;
+  decisionDate: string;
+  yearEC?: number;
+  yearGC?: number;
+  parties?: {
+    applicant?: string;
+    respondent?: string;
+  };
+  subject: MultilingualText;
+  legalQuestions: MultilingualText[];
+  facts: MultilingualText;
+  courtReasoning: MultilingualText;
+  decisionOutcome: MultilingualText;
+  bindingPrinciples: CassationBindingPrinciple[];
+  relatedEnactments: string[];
+  relatedDecisions: string[];
+  sources: LegalSource[];
+  tags: string[];
+  verificationStatus: VerificationStatus;
+  verification?: CassationVerification;
+  fullText?: MultilingualText;
+  fullTextStoragePath?: string;
+  fullTextHash?: string;
+  telegramSource?: TelegramArchiveSource;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
+  version: number;
+  /** Legacy archive metadata retained during migration. */
+  applicableLaws?: string[];
+  applicableArticles?: string[];
+}
+
+/** Compatibility type for records imported from a Telegram cassation archive. */
+export interface CassationArchiveRecord extends CassationDecision {
+  telegramSource: TelegramArchiveSource;
+  verification: CassationVerification;
+  applicableLaws: string[];
+  applicableArticles: string[];
+  indexedAt: string;
+}
+
+export type LegalDatabaseRecord = LegalEnactment | CassationDecision;
+
+export interface LegalSearchFilter {
+  recordType?: LegalRecordType;
+  jurisdiction?: Jurisdiction;
+  type?: LegislationType;
+  category?: LegalCategory;
+  status?: LegalStatus;
+  yearEC?: number;
+  yearGC?: number;
+  language?: LegalLanguage;
+  keyword?: string;
+  articleNumber?: string;
+  verifiedOnly?: boolean;
+}
+
+export interface LegalSearchRequest {
+  question: string;
+  language: LegalLanguage;
+  jurisdiction?: Jurisdiction;
+  recordTypes?: LegalRecordType[];
+  legislationType?: LegislationType;
+  category?: LegalCategory;
+  status?: LegalStatus;
+  caseNumber?: string;
+  volume?: string;
+  yearEC?: number;
+  yearGC?: number;
+  applicableArticles?: string[];
+  verifiedOnly?: boolean;
+  limit?: number;
+}
+
+export type MatchType = "exact" | "high_relevance" | "related";
+
+export interface LegalSearchResult {
+  record: LegalDatabaseRecord;
+  relevanceScore: number;
+  matchType: MatchType;
+  matchedIssues: string[];
+  matchedArticles: string[];
+  matchedTerms: string[];
+  relevanceExplanation: string;
+  sourceVerified: boolean;
+  citation: {
+    courtOrAuthority: string;
+    recordNumber: string;
+    volume?: string;
+    decisionDate?: string;
+    sourceLink?: string;
+    telegramMessageId?: number;
+  };
+}
+
+export type CassationSearchRequest = LegalSearchRequest;
+
+export type CassationSearchResult = LegalSearchResult & {
+  record: CassationDecision;
+};
+
+export interface CassationArchiveSearchResponse extends LegalSearchResponse {}
+
+export interface CassationArchiveRepository {
+  searchByText(
+    query: string,
+    filters?: CassationSearchRequest,
+  ): Promise<CassationArchiveRecord[]>;
+  getById(id: string): Promise<CassationArchiveRecord | null>;
+  getByCaseNumber(caseNumber: string): Promise<CassationArchiveRecord[]>;
+  verifySource(recordId: string): Promise<boolean>;
+}
+
+export interface LegalSearchResponse {
+  query: string;
+  totalResults: number;
+  relevantResults: LegalSearchResult[];
+  exactMatches: LegalSearchResult[];
+  relatedDecisions: LegalSearchResult[];
+  insufficientEvidence: boolean;
+  warnings: string[];
+  searchedJurisdictions: Jurisdiction[];
+  searchedAt: string;
+  candidateSetMayBeTruncated: boolean;
+}
+
+export interface VerificationEvidence {
+  sourceId: string;
+  originalDocument: Buffer;
+  expectedSha256?: string;
+  officialSourceConfirmed: boolean;
+  metadataCompared: boolean;
+  textCompared: boolean;
+  bindingStatusReviewed: boolean;
+  reviewerUid: string;
+  note: string;
+}
+
+================================================================
+FILE 2: src/modules/legal-database/core/normalize.ts
+================================================================
+
+import type { MultilingualText } from "../types/legal.types";
+
+/**
+ * Populate only with cross-language legal equivalents reviewed by qualified
+ * legal translators. Kept empty by default to avoid inventing legal meanings.
+ */
+export const APPROVED_LEGAL_SYNONYM_GROUPS: readonly (readonly string[])[] = [];
+
+export function normalizeSearchText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[’‘`]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function extractSearchTerms(value: string): string[] {
+  const normalized = normalizeSearchText(value);
+  const matches = normalized.match(/[\p{L}\p{N}]+/gu) ?? [];
+  return [...new Set(matches.filter((term) => term.length > 1))];
+}
+
+export function flattenMultilingualText(
+  value?: MultilingualText | null,
+): string {
+  if (!value) return "";
+  return [value.om, value.am, value.en]
+    .filter((part): part is string =>
+      typeof part === "string" && part.trim().length > 0,
+    )
+    .join(" ");
+}
+
+export function normalizeLegalReference(value: string): string {
+  return normalizeSearchText(value).replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+/**
+ * Optional, human-reviewed cross-language synonyms can be injected here.
+ * Do not add legal translations without review by a competent legal translator.
+ */
+export function expandWithApprovedSynonyms(
+  terms: string[],
+  approvedGroups: readonly (readonly string[])[] = [],
+): string[] {
+  const result = new Set(terms);
+  const normalizedGroups = approvedGroups.map((group) =>
+    group.map(normalizeSearchText),
+  );
+
+  for (const term of terms) {
+    for (const group of normalizedGroups) {
+      if (group.includes(term)) {
+        group.forEach((synonym) => result.add(synonym));
+      }
+    }
+  }
+  return [...result];
+}
+
+================================================================
+FILE 3: src/modules/legal-database/core/search-index.ts
+================================================================
+
+import type { LegalDatabaseRecord } from "../types/legal.types";
+import { extractSearchTerms, flattenMultilingualText,
+  normalizeLegalReference } from "./normalize";
+
+export const SEARCH_INDEX_VERSION = 1;
+export const MAX_INDEX_TERMS = 1800;
+
+export interface LegalSearchIndexFields {
+  searchTokens: string[];
+  caseNumberNormalized?: string;
+  enactmentNumberNormalized?: string;
+  indexingVersion: number;
+}
+
+export function getRecordSearchableText(
+  record: LegalDatabaseRecord,
+): string {
+  if (record.recordType === "enactment") {
+    return [
+      flattenMultilingualText(record.title),
+      flattenMultilingualText(record.shortTitle),
+      flattenMultilingualText(record.summary),
+      flattenMultilingualText(record.preamble),
+      ...record.fullTextArticles.flatMap((article) => [
+        article.articleNumber,
+        flattenMultilingualText(article.title),
+        flattenMultilingualText(article.content),
+        ...(article.keywords ?? []),
+        ...(article.crossReferences ?? []),
+        ...(article.subArticles ?? []).map((sub) => sub.number),
+        ...(article.subArticles ?? []).map((sub) =>
+          flattenMultilingualText(sub.content),
+        ),
+      ]),
+      ...record.keyPrinciples.map(flattenMultilingualText),
+      ...record.tags,
+      record.number,
+      record.category,
+      record.authority.name.om ?? "",
+      record.authority.name.am ?? "",
+      record.authority.name.en ?? "",
+    ].join(" ");
+  }
+
+  return [
+    flattenMultilingualText(record.subject),
+    ...record.legalQuestions.map(flattenMultilingualText),
+    flattenMultilingualText(record.facts),
+    flattenMultilingualText(record.courtReasoning),
+    flattenMultilingualText(record.decisionOutcome),
+    flattenMultilingualText(record.fullText),
+    ...record.bindingPrinciples.map((item) =>
+      flattenMultilingualText(item.principle),
+    ),
+    ...record.bindingPrinciples.flatMap((item) => item.applicableLaw ?? []),
+    ...record.bindingPrinciples.flatMap((item) => item.relevantArticles ?? []),
+    ...(record.sources ?? []).map((source) => source.title),
+    ...(record.tags ?? []),
+    record.caseNumber,
+    record.category ?? "",
+    String(record.volume ?? ""),
+    ...(record.telegramSource ? [record.telegramSource.channelName] : []),
+    ...(record.applicableLaws ?? []),
+    ...(record.applicableArticles ?? []),
+  ].join(" ");
+}
+
+export function buildSearchIndexFields(
+  record: LegalDatabaseRecord,
+): LegalSearchIndexFields {
+  const searchTokens = extractSearchTerms(
+    getRecordSearchableText(record),
+  ).slice(0, MAX_INDEX_TERMS);
+
+  if (record.recordType === "cassation_decision") {
+    return {
+      searchTokens,
+      caseNumberNormalized: normalizeLegalReference(record.caseNumber),
+      indexingVersion: SEARCH_INDEX_VERSION,
+    };
+  }
+
+  return {
+    searchTokens,
+    enactmentNumberNormalized: normalizeLegalReference(record.number),
+    indexingVersion: SEARCH_INDEX_VERSION,
+  };
+}
+
+================================================================
+FILE 4: src/modules/legal-database/core/verification.ts
+================================================================
+
+import { createHash } from "node:crypto";
+import type {
+  CassationDecision,
+  LegalDatabaseRecord,
+  LegalSource,
+  VerificationEvidence,
+  VerificationStatus,
+} from "../types/legal.types";
+
+export function calculateSha256(content: Buffer): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+/**
+ * Telegram is a provenance clue, not by itself an authoritative legal source.
+ * At least one official gazette, official website, or court-decision source
+ * must be marked verified before sourceVerified can become true.
+ */
+export function isAuthoritativeSourceVerified(
+  sources: LegalSource[],
+): boolean {
+  return sources.some((source) =>
+    ["official_gazette", "official_website", "court_decision"].includes(
+      source.sourceType,
+    ) && source.verificationStatus === "verified" &&
+    Boolean(source.verifiedAt && source.verifiedBy),
+  );
+}
+
+export function isLegalRecordSourceVerified(
+  record: LegalDatabaseRecord,
+): boolean {
+  if (record.verificationStatus !== "verified") return false;
+  if (!isAuthoritativeSourceVerified(record.sources ?? [])) return false;
+
+  if (record.recordType === "cassation_decision") {
+    const check = record.verification;
+    if (!check) return false;
+    return check.documentVerified === true &&
+      check.textVerified === true &&
+      check.metadataVerified === true &&
+      Boolean(check.verifiedAt && check.verifiedBy);
+  }
+
+  return true;
+}
+
+export interface VerificationAssessment {
+  status: VerificationStatus;
+  calculatedSha256: string;
+  checks: {
+    hashMatches: boolean;
+    officialSourceConfirmed: boolean;
+    metadataCompared: boolean;
+    textCompared: boolean;
+    bindingStatusReviewed: boolean;
+  };
+  reasons: string[];
+}
+
+export function assessCassationVerification(
+  evidence: VerificationEvidence,
+): VerificationAssessment {
+  const calculatedSha256 = calculateSha256(evidence.originalDocument);
+  const hashMatches = evidence.expectedSha256
+    ? evidence.expectedSha256.toLowerCase() === calculatedSha256
+    : true;
+
+  const checks = {
+    hashMatches,
+    officialSourceConfirmed: evidence.officialSourceConfirmed,
+    metadataCompared: evidence.metadataCompared,
+    textCompared: evidence.textCompared,
+    bindingStatusReviewed: evidence.bindingStatusReviewed,
+  };
+
+  const reasons: string[] = [];
+  if (!hashMatches) reasons.push("SHA-256 hash source document waliin wal hin simu.");
+  if (!evidence.officialSourceConfirmed) reasons.push("Maddi mootummaa/mana murtii original hin mirkanoofne.");
+  if (!evidence.metadataCompared) reasons.push("Metadata murtii hin wal bira qabamne.");
+  if (!evidence.textCompared) reasons.push("Barreeffamni murtii original waliin hin wal bira qabamne.");
+  if (!evidence.bindingStatusReviewed) reasons.push("Haalli aangoo dirqisiisummaa murtii hin qoramne.");
+
+  const authenticityComplete = hashMatches &&
+    evidence.officialSourceConfirmed &&
+    evidence.metadataCompared &&
+    evidence.textCompared;
+
+  const status: VerificationStatus = authenticityComplete
+    ? "verified"
+    : [hashMatches, evidence.officialSourceConfirmed,
+        evidence.metadataCompared, evidence.textCompared]
+        .filter(Boolean).length >= 2
+      ? "partially_verified"
+      : "unverified";
+
+  return { status, calculatedSha256, checks, reasons };
+}
+
+/**
+ * Use this to generate the server-side verification patch after a verifier has
+ * reviewed the original evidence. Do not call it from an ordinary client.
+ */
+export function buildCassationVerificationPatch(
+  assessment: VerificationAssessment,
+  reviewerUid: string,
+  note: string,
+): Pick<CassationDecision, "verificationStatus" | "verification"> {
+  if (!reviewerUid.trim()) throw new Error("Reviewer UID is required.");
+  return {
+    verificationStatus: assessment.status,
+    verification: {
+      documentVerified: assessment.checks.hashMatches &&
+        assessment.checks.officialSourceConfirmed,
+      textVerified: assessment.checks.textCompared,
+      metadataVerified: assessment.checks.metadataCompared,
+      bindingStatusReviewed: assessment.checks.bindingStatusReviewed,
+      verifiedAt: new Date().toISOString(),
+      verifiedBy: reviewerUid,
+      verificationNotes: [note, ...assessment.reasons].filter(Boolean).join(" "),
+      comparedDocumentHash: assessment.calculatedSha256,
+    },
+  };
+}
+
+================================================================
+FILE 5: src/modules/legal-database/core/relevance.ts
+================================================================
+
+import type {
+  CassationDecision,
+  LegalDatabaseRecord,
+  LegalSearchRequest,
+  LegalSearchResult,
+} from "../types/legal.types";
+import { extractSearchTerms, flattenMultilingualText,
+  normalizeLegalReference } from "./normalize";
+import { isLegalRecordSourceVerified } from "./verification";
+import { getRecordSearchableText } from "./search-index";
+
+function getCassationIssues(record: CassationDecision): string[] {
+  return record.legalQuestions.map(flattenMultilingualText)
+    .filter((value) => value.length > 0);
+}
+
+function findMatchedArticles(
+  record: LegalDatabaseRecord,
+  requested: string[] = [],
+): string[] {
+  if (!requested.length) return [];
+  const desired = new Set(requested.map(normalizeLegalReference));
+  const actual = record.recordType === "cassation_decision"
+    ? [...record.bindingPrinciples.flatMap((item) => item.relevantArticles ?? []),
+       ...(record.applicableArticles ?? [])]
+    : record.fullTextArticles.flatMap((item) => [
+        item.articleNumber,
+        ...(item.subArticles ?? []).map((sub) => sub.number),
+      ]);
+  return [...new Set(actual.filter((item) =>
+    desired.has(normalizeLegalReference(item)),
+  ))];
+}
+
+function matchTerms(
+  request: LegalSearchRequest,
+  record: LegalDatabaseRecord,
+  approvedSynonymGroups: readonly (readonly string[])[] = [],
+): { matchedTerms: string[]; coverage: number } {
+  const queryTerms = extractSearchTerms(request.question);
+  const documentTerms = new Set(
+    extractSearchTerms(getRecordSearchableText(record)),
+  );
+  const groups = approvedSynonymGroups.map((group) =>
+    group.map(normalizeLegalReference),
+  );
+  const matchedTerms = queryTerms.filter((term) => {
+    if (documentTerms.has(term)) return true;
+    const equivalentGroup = groups.find((group) => group.includes(term));
+    return Boolean(equivalentGroup?.some((equivalent) => documentTerms.has(equivalent)));
+  });
+  const coverage = queryTerms.length ? matchedTerms.length / queryTerms.length : 0;
+  return { matchedTerms: [...new Set(matchedTerms)], coverage };
+}
+
+export function scoreLegalRecord(
+  record: LegalDatabaseRecord,
+  request: LegalSearchRequest,
+  approvedSynonymGroups: readonly (readonly string[])[] = [],
+): LegalSearchResult {
+  let score = 0;
+  const reasons: string[] = [];
+
+  const exactCase = record.recordType === "cassation_decision" &&
+    Boolean(request.caseNumber) &&
+    normalizeLegalReference(record.caseNumber) ===
+      normalizeLegalReference(request.caseNumber ?? "");
+
+  const exactEnactment = record.recordType === "enactment" &&
+    Boolean(request.caseNumber) &&
+    normalizeLegalReference(record.number) ===
+      normalizeLegalReference(request.caseNumber ?? "");
+
+  if (exactCase || exactEnactment) {
+    score = 100;
+    reasons.push("Lakkoofsa galmee/seeraa sirrii waliin wal sima.");
+  } else {
+    if (request.jurisdiction && record.jurisdiction === request.jurisdiction) {
+      score += 8;
+      reasons.push("Aangoon seeraa wal sima.");
+    }
+
+    if (record.recordType === "cassation_decision") {
+      if (request.volume &&
+        normalizeLegalReference(String(record.volume ?? "")) ===
+          normalizeLegalReference(request.volume)) {
+        score += 8;
+        reasons.push("Jildiin murtii wal sima.");
+      }
+      if (request.yearEC && record.yearEC === request.yearEC) {
+        score += 6;
+        reasons.push("Bara Itoophiyaa wal sima.");
+      }
+      if (request.yearGC && record.yearGC === request.yearGC) {
+        score += 6;
+        reasons.push("Bara Gregorian wal sima.");
+      }
+    } else {
+      if (request.yearEC && record.yearEC === request.yearEC) {
+        score += 6;
+        reasons.push("Bara Itoophiyaa wal sima.");
+      }
+      if (request.yearGC && record.yearGC === request.yearGC) {
+        score += 6;
+        reasons.push("Bara Gregorian wal sima.");
+      }
+    }
+
+    const matchedArticles = findMatchedArticles(
+      record, request.applicableArticles,
+    );
+    score += Math.min(18, matchedArticles.length * 6);
+    if (matchedArticles.length) reasons.push("Keewwatawwan seeraa wal siman argamaniiru.");
+
+    if (request.category && record.category === request.category) {
+      score += 6;
+      reasons.push("Gosa dhimmichaa wal sima.");
+    }
+
+    const { matchedTerms, coverage } = matchTerms(request, record, approvedSynonymGroups);
+    score += Math.round(40 * coverage);
+    if (matchedTerms.length) reasons.push(`${matchedTerms.length} jechoonni wal siman argamaniiru.`);
+
+    if (isLegalRecordSourceVerified(record)) {
+      score += 8;
+      reasons.push("Maddi seeraa ulaagaalee mirkaneessaa guuteera.");
+    }
+  }
+
+  const matchedArticles = findMatchedArticles(record, request.applicableArticles);
+  const { matchedTerms } = matchTerms(request, record, approvedSynonymGroups);
+  const matchedIssues = record.recordType === "cassation_decision"
+    ? getCassationIssues(record).filter((issue) => {
+        const terms = new Set(extractSearchTerms(issue));
+        return matchedTerms.some((term) => terms.has(term));
+      })
+    : [];
+
+  const boundedScore = Math.min(100, Math.max(0, Math.round(score)));
+  const matchType = exactCase || exactEnactment
+    ? "exact"
+    : boundedScore >= 55
+      ? "high_relevance"
+      : "related";
+
+  const source = record.sources.find((item) =>
+    item.verificationStatus === "verified" && item.url,
+  );
+
+  return {
+    record,
+    relevanceScore: boundedScore,
+    matchType,
+    matchedIssues,
+    matchedArticles,
+    matchedTerms,
+    relevanceExplanation: reasons.length
+      ? reasons.join(" ")
+      : "Jechoota ykn metadata muraasa irratti hundaa'uun argame; hiika seeraa isaa madaaluun barbaachisa.",
+    sourceVerified: isLegalRecordSourceVerified(record),
+    citation: {
+      courtOrAuthority: record.recordType === "cassation_decision"
+        ? record.court
+        : (record.authority.name.om ?? record.authority.name.en ?? record.authority.name.am ?? "Issuing authority"),
+      recordNumber: record.recordType === "cassation_decision"
+        ? record.caseNumber
+        : record.number,
+      volume: record.recordType === "cassation_decision"
+        ? String(record.volume ?? "") || undefined
+        : undefined,
+      decisionDate: record.recordType === "cassation_decision"
+        ? record.decisionDate
+        : record.publicationDate,
+      sourceLink: source?.url,
+      telegramMessageId: record.recordType === "cassation_decision"
+        ? record.telegramSource?.messageId
+        : undefined,
+    },
+  };
+}
+
+================================================================
+FILE 6: src/modules/legal-database/repositories/legal.repository.ts
+================================================================
+
+import type { Firestore } from "firebase-admin/firestore";
+import type {
+  CassationDecision,
+  LegalDatabaseRecord,
+  LegalEnactment,
+  LegalSearchRequest,
+} from "../types/legal.types";
+import { buildSearchIndexFields } from "../core/search-index";
+import { extractSearchTerms, normalizeLegalReference, expandWithApprovedSynonyms } from "../core/normalize";
+import type { VerificationAssessment } from "../core/verification";
+import { isLegalRecordSourceVerified } from "../core/verification";
+
+const ENACTMENTS = "legalEnactments";
+const CASSATION = "cassationDecisions";
+const AUDIT = "legalAuditLogs";
+const CANDIDATE_LIMIT_PER_COLLECTION = 250;
+const MAX_QUERY_TERMS = 30;
+
+export interface LegalActor {
+  uid: string;
+  institutionId?: string;
+  role: string;
+}
+
+/**
+ * New records always start unverified. Verification is a separate privileged
+ * workflow and cannot be asserted by the data-importing client.
+ */
+function resetVerificationForNewEntry(
+  record: LegalDatabaseRecord,
+): LegalDatabaseRecord {
+  const sources = (record.sources ?? []).map((source) => {
+    const { verifiedAt: _verifiedAt, verifiedBy: _verifiedBy, ...safeSource } = source;
+    return { ...safeSource, verificationStatus: "unverified" as const };
+  });
+
+  if (record.recordType === "cassation_decision") {
+    const bindingPrinciples = record.bindingPrinciples.map((principle) => {
+      const { bindingBasis: _bindingBasis, ...safePrinciple } = principle;
+      return { ...safePrinciple, bindingStatus: "not_reviewed" as const };
+    });
+    return {
+      ...record,
+      sources,
+      verificationStatus: "unverified",
+      verification: {
+        documentVerified: false,
+        textVerified: false,
+        metadataVerified: false,
+        bindingStatusReviewed: false,
+      },
+      bindingPrinciples,
+    };
+  }
+
+  return { ...record, sources, verificationStatus: "unverified" };
+}
+
+export class LegalRepository {
+  constructor(
+    private readonly db: Firestore,
+    private readonly approvedSynonymGroups: readonly (readonly string[])[] = [],
+  ) {}
+
+  private collectionFor(record: LegalDatabaseRecord): string {
+    return record.recordType === "enactment" ? ENACTMENTS : CASSATION;
+  }
+
+  async getEnactment(id: string): Promise<LegalEnactment | null> {
+    const snapshot = await this.db.collection(ENACTMENTS).doc(id).get();
+    if (!snapshot.exists) return null;
+    return snapshot.data() as LegalEnactment;
+  }
+
+  async getCassation(id: string): Promise<CassationDecision | null> {
+    const snapshot = await this.db.collection(CASSATION).doc(id).get();
+    if (!snapshot.exists) return null;
+    return snapshot.data() as CassationDecision;
+  }
+
+  async createRecord(
+    record: LegalDatabaseRecord,
+    actor: LegalActor,
+  ): Promise<void> {
+    const collectionName = this.collectionFor(record);
+    const ref = this.db.collection(collectionName).doc(record.id);
+    const safeRecord = resetVerificationForNewEntry(record);
+    const indexFields = buildSearchIndexFields(safeRecord);
+
+    await this.db.runTransaction(async (transaction) => {
+      const existing = await transaction.get(ref);
+      if (existing.exists) throw new Error("LEGAL_RECORD_ALREADY_EXISTS");
+
+      transaction.create(ref, {
+        ...safeRecord,
+        ...indexFields,
+        createdBy: actor.uid,
+        updatedBy: actor.uid,
+        version: 1,
+      });
+
+      const auditRef = this.db.collection(AUDIT).doc();
+      transaction.create(auditRef, {
+        action: "CREATE",
+        recordId: record.id,
+        recordType: record.recordType,
+        actorUid: actor.uid,
+        institutionId: actor.institutionId ?? null,
+        createdAt: new Date().toISOString(),
+      });
+    });
+  }
+
+  async updateRecord(
+    record: LegalDatabaseRecord,
+    actor: LegalActor,
+    expectedVersion: number,
+  ): Promise<void> {
+    const collectionName = this.collectionFor(record);
+    const ref = this.db.collection(collectionName).doc(record.id);
+    const safeRecord = resetVerificationForNewEntry(record);
+    const indexFields = buildSearchIndexFields(safeRecord);
+
+    await this.db.runTransaction(async (transaction) => {
+      const current = await transaction.get(ref);
+      if (!current.exists) throw new Error("LEGAL_RECORD_NOT_FOUND");
+      const currentData = current.data() as LegalDatabaseRecord & { version?: number };
+      const currentVersion = currentData.version ?? 1;
+      if (currentVersion !== expectedVersion) {
+        throw new Error("LEGAL_RECORD_VERSION_CONFLICT");
+      }
+
+      transaction.set(ref, {
+        ...safeRecord,
+        ...indexFields,
+        createdAt: (currentData as { createdAt?: string }).createdAt ?? record.createdAt,
+        createdBy: (currentData as { createdBy?: string }).createdBy ?? actor.uid,
+        updatedAt: new Date().toISOString(),
+        updatedBy: actor.uid,
+        version: currentVersion + 1,
+      }, { merge: false });
+
+      const auditRef = this.db.collection(AUDIT).doc();
+      transaction.create(auditRef, {
+        action: "UPDATE",
+        recordId: record.id,
+        recordType: record.recordType,
+        actorUid: actor.uid,
+        institutionId: actor.institutionId ?? null,
+        previousVersion: currentVersion,
+        newVersion: currentVersion + 1,
+        createdAt: new Date().toISOString(),
+      });
+    });
+  }
+
+  /**
+   * Persist a reviewer assessment for one cassation decision. The caller must
+   * already have checked the original document and must be protected by the
+   * existing legal-verifier RBAC middleware. A Telegram-only source is rejected.
+   */
+  async applyCassationVerification(input: {
+    recordId: string;
+    sourceId: string;
+    assessment: VerificationAssessment;
+    reviewerUid: string;
+    note: string;
+    expectedVersion: number;
+  }): Promise<void> {
+    const ref = this.db.collection(CASSATION).doc(input.recordId);
+
+    await this.db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists) throw new Error("LEGAL_RECORD_NOT_FOUND");
+
+      const current = snapshot.data() as CassationDecision;
+      if (current.version !== input.expectedVersion) {
+        throw new Error("LEGAL_RECORD_VERSION_CONFLICT");
+      }
+      if (!input.reviewerUid.trim()) throw new Error("VERIFIER_UID_REQUIRED");
+
+      const source = current.sources.find((item) => item.id === input.sourceId);
+      if (!source) throw new Error("LEGAL_SOURCE_NOT_FOUND");
+      const authoritativeTypes = ["official_gazette", "official_website", "court_decision"];
+      if (!authoritativeTypes.includes(source.sourceType)) {
+        throw new Error("AUTHORITATIVE_SOURCE_REQUIRED");
+      }
+      if (!input.assessment.checks.officialSourceConfirmed) {
+        throw new Error("OFFICIAL_SOURCE_NOT_CONFIRMED");
+      }
+
+      const now = new Date().toISOString();
+      const updatedSources = current.sources.map((item) =>
+        item.id === input.sourceId
+          ? {
+              ...item,
+              documentHash: input.assessment.calculatedSha256,
+              verificationStatus: input.assessment.status,
+              verifiedAt: now,
+              verifiedBy: input.reviewerUid,
+              verificationNote: input.note,
+            }
+          : item,
+      );
+
+      const updated: CassationDecision = {
+        ...current,
+        sources: updatedSources,
+        verificationStatus: input.assessment.status,
+        verification: {
+          documentVerified: input.assessment.checks.hashMatches &&
+            input.assessment.checks.officialSourceConfirmed,
+          textVerified: input.assessment.checks.textCompared,
+          metadataVerified: input.assessment.checks.metadataCompared,
+          bindingStatusReviewed: input.assessment.checks.bindingStatusReviewed,
+          verifiedAt: now,
+          verifiedBy: input.reviewerUid,
+          verificationNotes: [input.note, ...input.assessment.reasons]
+            .filter(Boolean).join(" "),
+          comparedDocumentHash: input.assessment.calculatedSha256,
+        },
+        updatedAt: now,
+        updatedBy: input.reviewerUid,
+        version: current.version + 1,
+      };
+
+      transaction.set(ref, {
+        ...updated,
+        ...buildSearchIndexFields(updated),
+      }, { merge: false });
+
+      const auditRef = this.db.collection(AUDIT).doc();
+      transaction.create(auditRef, {
+        action: "VERIFY_SOURCE",
+        recordId: input.recordId,
+        recordType: "cassation_decision",
+        sourceId: input.sourceId,
+        actorUid: input.reviewerUid,
+        previousVersion: current.version,
+        newVersion: current.version + 1,
+        assessmentStatus: input.assessment.status,
+        createdAt: now,
+      });
+    });
+  }
+
+  async searchCandidates(
+    request: LegalSearchRequest,
+  ): Promise<{ records: LegalDatabaseRecord[]; mayBeTruncated: boolean }> {
+    const requestedTypes = request.recordTypes ?? ["enactment", "cassation_decision"];
+    const rawTerms = extractSearchTerms(request.question);
+    const expandedTerms = expandWithApprovedSynonyms(rawTerms, this.approvedSynonymGroups);
+    const terms = expandedTerms.slice(0, MAX_QUERY_TERMS);
+    let mayHaveHitCandidateLimit = false;
+    const mayBeTruncated = rawTerms.length > MAX_QUERY_TERMS;
+    const byKey = new Map<string, LegalDatabaseRecord>();
+
+    const collections: string[] = [];
+    if (requestedTypes.includes("enactment")) collections.push(ENACTMENTS);
+    if (requestedTypes.includes("cassation_decision")) collections.push(CASSATION);
+
+    await Promise.all(collections.map(async (collectionName) => {
+      const collection = this.db.collection(collectionName);
+      const tasks = [];
+
+      if (terms.length > 0) {
+        tasks.push(
+          collection
+            .where("searchTokens", "array-contains-any", terms)
+            .limit(CANDIDATE_LIMIT_PER_COLLECTION)
+            .get(),
+        );
+      }
+
+      if (request.caseNumber) {
+        const normalized = normalizeLegalReference(request.caseNumber);
+        const field = collectionName === CASSATION
+          ? "caseNumberNormalized"
+          : "enactmentNumberNormalized";
+        tasks.push(
+          collection.where(field, "==", normalized)
+            .limit(20).get(),
+        );
+      }
+
+      const snapshots = await Promise.all(tasks);
+      for (const snapshot of snapshots) {
+        if (snapshot.size >= CANDIDATE_LIMIT_PER_COLLECTION) {
+          mayHaveHitCandidateLimit = true;
+        }
+        for (const doc of snapshot.docs) {
+          const data = doc.data() as LegalDatabaseRecord;
+          byKey.set(`${collectionName}/${doc.id}`, data);
+        }
+      }
+    }));
+
+    // Filters are applied after candidate retrieval to avoid an uncontrolled
+    // explosion of composite indexes. For a large repository, use a dedicated
+    // search engine adapter rather than increasing this Firestore scan limit.
+    const filtered = [...byKey.values()].filter((record) => {
+      if (request.jurisdiction && record.jurisdiction !== request.jurisdiction) return false;
+      if (request.category && record.category !== request.category) return false;
+      if (request.legislationType &&
+        (record.recordType !== "enactment" || record.type !== request.legislationType)) return false;
+      if (request.status && (record.recordType !== "enactment" || record.status !== request.status)) return false;
+      if (request.verifiedOnly && !isLegalRecordSourceVerified(record)) return false;
+      if (request.yearEC) {
+        const year = record.yearEC;
+        if (year !== request.yearEC) return false;
+      }
+      if (request.yearGC && record.yearGC !== request.yearGC) return false;
+      if (request.category &&
+        (record.recordType !== "enactment" || record.category !== request.category)) return false;
+      if (request.volume &&
+        (record.recordType !== "cassation_decision" ||
+          normalizeLegalReference(String(record.volume ?? "")) !==
+          normalizeLegalReference(request.volume))) return false;
+      return true;
+    });
+
+    // A full page may mean additional matching records exist beyond the cap.
+    return { records: filtered, mayBeTruncated: mayBeTruncated || mayHaveHitCandidateLimit };
+  }
+
+  async findCassationByCaseNumber(
+    caseNumber: string,
+  ): Promise<CassationDecision[]> {
+    const normalized = normalizeLegalReference(caseNumber);
+    const snapshot = await this.db.collection(CASSATION)
+      .where("caseNumberNormalized", "==", normalized)
+      .limit(50)
+      .get();
+    return snapshot.docs.map((doc) => doc.data() as CassationDecision);
+  }
+}
+
+================================================================
+FILE 7: src/modules/legal-database/services/legal-search.service.ts
+================================================================
+
+import type {
+  LegalSearchRequest,
+  LegalSearchResponse,
+  LegalSearchResult,
+} from "../types/legal.types";
+import { LegalRepository } from "../repositories/legal.repository";
+import { scoreLegalRecord } from "../core/relevance";
+
+const MAX_RESULTS = 100;
+
+export class LegalSearchService {
+  constructor(
+    private readonly repository: LegalRepository,
+    private readonly approvedSynonymGroups: readonly (readonly string[])[] = [],
+  ) {}
+
+  async search(request: LegalSearchRequest): Promise<LegalSearchResponse> {
+    const question = request.question?.trim() ?? "";
+    if (!question && !request.caseNumber) {
+      throw new Error("SEARCH_QUERY_REQUIRED");
+    }
+    if (!["om", "am", "en"].includes(request.language)) {
+      throw new Error("INVALID_LANGUAGE");
+    }
+
+    const requestedLimit = request.limit ?? 20;
+    if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > MAX_RESULTS) {
+      throw new Error("INVALID_SEARCH_LIMIT");
+    }
+
+    const normalizedRequest: LegalSearchRequest = {
+      ...request,
+      question,
+      limit: requestedLimit,
+    };
+
+    const candidateSet = await this.repository.searchCandidates(normalizedRequest);
+    const ranked: LegalSearchResult[] = candidateSet.records
+      .map((record) => scoreLegalRecord(record, normalizedRequest, this.approvedSynonymGroups))
+      .filter((item) => item.relevanceScore > 0)
+      .sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+    const relevantResults = ranked.slice(0, requestedLimit);
+    const exactMatches = relevantResults.filter((item) => item.matchType === "exact");
+    const relatedDecisions = relevantResults.filter((item) =>
+      item.record.recordType === "cassation_decision" && item.matchType !== "exact",
+    );
+
+    const warnings: string[] = [];
+    if (candidateSet.mayBeTruncated) {
+      warnings.push(
+        "Candidate search daangeffameera; bu'aan hundi argamuu dhiisuu danda'a. Search index bal'aa fayyadamuun barbaachisa.",
+      );
+    }
+    if (relevantResults.some((item) => !item.sourceVerified)) {
+      warnings.push(
+        "Bu'aawwan tokko tokko madda isaanii guutummaatti hin mirkanoofne.",
+      );
+    }
+    if (relevantResults.length === 0) {
+      warnings.push("Galmee gaaffii kana waliin wal simatu hin argamne.");
+    }
+
+    return {
+      query: question || request.caseNumber || "",
+      totalResults: ranked.length,
+      relevantResults,
+      exactMatches,
+      relatedDecisions,
+      insufficientEvidence: relevantResults.length === 0 ||
+        relevantResults.every((item) => item.relevanceScore < 30),
+      warnings,
+      searchedJurisdictions: [...new Set(
+        relevantResults.map((item) => item.record.jurisdiction),
+      )],
+      searchedAt: new Date().toISOString(),
+      candidateSetMayBeTruncated: candidateSet.mayBeTruncated,
+    };
+  }
+}
+
+================================================================
+FILE 8: src/modules/legal-database/api/legal.routes.ts
+================================================================
+
+import { Router, type Request, type Response, type RequestHandler } from "express";
+import type { LegalSearchRequest } from "../types/legal.types";
+import { LegalSearchService } from "../services/legal-search.service";
+import { LegalRepository, type LegalActor } from "../repositories/legal.repository";
+
+export interface LegalRouteDependencies {
+  searchService: LegalSearchService;
+  repository: LegalRepository;
+
+  /** Existing SEERAAI authentication middleware. */
+  requireAuth: RequestHandler;
+
+  /** Existing RBAC middleware: permission to read legal materials. */
+  requireLegalRead: RequestHandler;
+
+  /** Existing RBAC middleware: legal editor/admin only. */
+  requireLegalWrite: RequestHandler;
+
+  /** Existing RBAC middleware: designated source verifier only. */
+  requireLegalVerify: RequestHandler;
+
+  /** Resolve the authenticated uid/role/institution from the existing request. */
+  getActor: (req: Request) => LegalActor;
+}
+
+function parseSearchRequest(query: Request["query"]): LegalSearchRequest {
+  const language = String(query.language ?? "om");
+  if (!(["om", "am", "en"] as string[]).includes(language)) {
+    throw new Error("INVALID_LANGUAGE");
+  }
+
+  const jurisdiction = query.jurisdiction == null
+    ? undefined : String(query.jurisdiction);
+  if (jurisdiction && !(["federal", "oromia"] as string[]).includes(jurisdiction)) {
+    throw new Error("INVALID_JURISDICTION");
+  }
+
+  const rawLimit = query.limit == null ? 20 : Number(query.limit);
+  if (!Number.isInteger(rawLimit) || rawLimit < 1 || rawLimit > 100) {
+    throw new Error("INVALID_SEARCH_LIMIT");
+  }
+
+  const recordTypes = query.type == null
+    ? undefined
+    : String(query.type).split(",").map((value) => value.trim());
+  if (recordTypes?.some((value) =>
+    !["enactment", "cassation_decision"].includes(value),
+  )) throw new Error("INVALID_RECORD_TYPE");
+
+  const legislationType = query.legislationType == null ? undefined : String(query.legislationType);
+  const allowedLegislationTypes = ["constitution", "proclamation", "regulation", "directive", "amendment", "repeal"];
+  if (legislationType && !allowedLegislationTypes.includes(legislationType)) throw new Error("INVALID_LEGISLATION_TYPE");
+
+  const category = query.category == null ? undefined : String(query.category);
+  const allowedCategories = [
+    "labor", "property_land", "civil_contract", "commercial_tax", "criminal",
+    "family", "constitutional_admin", "procedure_evidence", "human_rights",
+    "investment", "environment", "other",
+  ];
+  if (category && !allowedCategories.includes(category)) throw new Error("INVALID_CATEGORY");
+
+  const status = query.status == null ? undefined : String(query.status);
+  const allowedStatuses = [
+    "draft", "published", "in_force", "partially_amended", "amended",
+    "repealed", "expired", "suspended", "unknown",
+  ];
+  if (status && !allowedStatuses.includes(status)) throw new Error("INVALID_STATUS");
+
+  const yearEC = query.yearEC == null ? undefined : Number(query.yearEC);
+  const yearGC = query.yearGC == null ? undefined : Number(query.yearGC);
+  if (yearEC !== undefined && (!Number.isInteger(yearEC) || yearEC < 1)) {
+    throw new Error("INVALID_YEAR_EC");
+  }
+  if (yearGC !== undefined && (!Number.isInteger(yearGC) || yearGC < 1)) {
+    throw new Error("INVALID_YEAR_GC");
+  }
+
+  return {
+    question: String(query.q ?? ""),
+    language: language as LegalSearchRequest["language"],
+    jurisdiction: jurisdiction as LegalSearchRequest["jurisdiction"],
+    recordTypes: recordTypes as LegalSearchRequest["recordTypes"],
+    legislationType: legislationType as LegalSearchRequest["legislationType"],
+    category: category as LegalSearchRequest["category"],
+    status: status as LegalSearchRequest["status"],
+    caseNumber: query.caseNumber == null ? undefined : String(query.caseNumber),
+    volume: query.volume == null ? undefined : String(query.volume),
+    yearEC,
+    yearGC,
+    applicableArticles: query.articles == null
+      ? undefined
+      : String(query.articles).split(",").map((item) => item.trim()).filter(Boolean),
+    verifiedOnly: query.verifiedOnly === "true",
+    limit: rawLimit,
+  };
+}
+
+export function createLegalRoutes(deps: LegalRouteDependencies) {
+  const router = Router();
+
+  router.get(
+    "/search",
+    deps.requireAuth,
+    deps.requireLegalRead,
+    async (req: Request, res: Response) => {
+      try {
+        const request = parseSearchRequest(req.query);
+        const result = await deps.searchService.search(request);
+        res.status(200).json(result);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "UNKNOWN_ERROR";
+        const badRequestCodes = [
+          "INVALID_LANGUAGE", "INVALID_JURISDICTION", "INVALID_SEARCH_LIMIT",
+          "INVALID_RECORD_TYPE", "INVALID_LEGISLATION_TYPE", "INVALID_CATEGORY", "INVALID_STATUS", "INVALID_YEAR_EC", "INVALID_YEAR_GC",
+          "SEARCH_QUERY_REQUIRED",
+        ];
+        if (badRequestCodes.includes(code)) {
+          res.status(400).json({ error: code });
+          return;
+        }
+        console.error("Legal search error", error);
+        res.status(500).json({ error: "LEGAL_SEARCH_FAILED" });
+      }
+    },
+  );
+
+  router.get(
+    "/enactments/:id",
+    deps.requireAuth,
+    deps.requireLegalRead,
+    async (req: Request, res: Response) => {
+      try {
+        const record = await deps.repository.getEnactment(req.params.id);
+        if (!record) {
+          res.status(404).json({ error: "LEGAL_RECORD_NOT_FOUND" });
+          return;
+        }
+        res.status(200).json(record);
+      } catch (error) {
+        console.error("Get enactment error", error);
+        res.status(500).json({ error: "LEGAL_RECORD_READ_FAILED" });
+      }
+    },
+  );
+
+  router.get(
+    "/cassation/:id",
+    deps.requireAuth,
+    deps.requireLegalRead,
+    async (req: Request, res: Response) => {
+      try {
+        const record = await deps.repository.getCassation(req.params.id);
+        if (!record) {
+          res.status(404).json({ error: "LEGAL_RECORD_NOT_FOUND" });
+          return;
+        }
+        res.status(200).json(record);
+      } catch (error) {
+        console.error("Get cassation error", error);
+        res.status(500).json({ error: "LEGAL_RECORD_READ_FAILED" });
+      }
+    },
+  );
+
+  // Create/update/verification endpoints are intentionally not exposed here
+  // until the current SEERAAI RBAC and trusted ingestion schema are connected.
+  // Use LegalRepository.createRecord/updateRecord from a backend-only service
+  // after strict runtime validation and role/institution authorization.
+  void deps.requireLegalWrite;
+  void deps.requireLegalVerify;
+  void deps.getActor;
+
+  return router;
+}
+
+================================================================
+FILE 9: src/modules/legal-database/index.ts
+================================================================
+
+export * from "./types/legal.types";
+export * from "./core/normalize";
+export * from "./core/search-index";
+export * from "./core/relevance";
+export * from "./core/verification";
+export * from "./repositories/legal.repository";
+export * from "./services/legal-search.service";
+export * from "./api/legal.routes";
+
+================================================================
+FILE 10: BACKEND INTEGRATION IN EXISTING server-app.ts
+================================================================
+
+Do not paste this as a replacement for server-app.ts. Add the relevant imports
+and route mount to your existing Express app after the existing authentication
+and middleware setup.
+
+import { createLegalRoutes, LegalRepository, LegalSearchService, APPROVED_LEGAL_SYNONYM_GROUPS } from
+  "../src/modules/legal-database";
+
+// IMPORTANT: `db` below must be exported by your existing firebaseAdmin.ts
+// and must point to the CURRENT SEERAAI Firestore database. Do not initialize
+// a new Firebase Admin app or silently switch to the default database.
+import { db } from "./firebaseAdmin";
+
+import {
+  requireAuth,
+  requireLegalRead,
+  requireLegalWrite,
+  requireLegalVerify,
+  getAuthenticatedActor,
+} from "./middleware/existingAuthorization";
+
+const legalRepository = new LegalRepository(db, APPROVED_LEGAL_SYNONYM_GROUPS);
+const legalSearchService = new LegalSearchService(legalRepository, APPROVED_LEGAL_SYNONYM_GROUPS);
+
+app.use(
+  "/api/legal",
+  createLegalRoutes({
+    repository: legalRepository,
+    searchService: legalSearchService,
+    requireAuth,
+    requireLegalRead,
+    requireLegalWrite,
+    requireLegalVerify,
+    getActor: getAuthenticatedActor,
+  }),
+);
+
+The import path `./middleware/existingAuthorization` is an EXAMPLE PLACEHOLDER.
+Replace it with the actual existing SEERAAI middleware export paths. Do not
+create a second auth system just to make this example compile.
+
+If your backend uses `server.ts` to create the Express app and `server-app.ts`
+to configure it, mount this route exactly once in the file where the Express
+app is assembled. Do not mount duplicate routes in both files.
+
+================================================================
+FILE 11: FRONTEND API CLIENT
+src/services/legalDatabaseClient.ts
+================================================================
+
+import type {
+  LegalSearchRequest,
+  LegalSearchResponse,
+} from "../modules/legal-database/types/legal.types";
+import { auth } from "../firebase";
+
+export async function searchLegalDatabase(
+  request: LegalSearchRequest,
+): Promise<LegalSearchResponse> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("LOGIN_REQUIRED");
+
+  const token = await user.getIdToken();
+  const params = new URLSearchParams({
+    q: request.question,
+    language: request.language,
+    limit: String(request.limit ?? 20),
+  });
+
+  if (request.jurisdiction) params.set("jurisdiction", request.jurisdiction);
+  if (request.recordTypes?.length) params.set("type", request.recordTypes.join(","));
+  if (request.caseNumber) params.set("caseNumber", request.caseNumber);
+  if (request.volume) params.set("volume", request.volume);
+  if (request.yearEC) params.set("yearEC", String(request.yearEC));
+  if (request.yearGC) params.set("yearGC", String(request.yearGC));
+  if (request.applicableArticles?.length) {
+    params.set("articles", request.applicableArticles.join(","));
+  }
+  if (request.verifiedOnly) params.set("verifiedOnly", "true");
+
+  // Prefer a same-origin /api route in production. If the app has a configured
+  // API base URL, use that non-secret URL; never place secret API keys here.
+  const response = await fetch(`/api/legal/search?${params.toString()}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error ?? `LEGAL_SEARCH_HTTP_${response.status}`);
+  }
+
+  return response.json() as Promise<LegalSearchResponse>;
+}
+
+================================================================
+FILE 12: FIRESTORE RULES INTEGRATION SNIPPET
+================================================================
+
+This is a narrow snippet, not a complete firestore.rules file. Merge it into
+the current SEERAAI rules and inspect EVERY other matching allow rule.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Legal records are read through authenticated application policy.
+    // Writes are backend-only via Admin SDK and IAM; clients cannot write.
+    match /legalEnactments/{recordId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if false;
+    }
+
+    match /cassationDecisions/{recordId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if false;
+    }
+
+    match /legalAuditLogs/{logId} {
+      allow read, write: if false;
+    }
+  }
+}
+
+CAUTION:
+- Firestore rules are not filters. If legal materials are institution-confidential,
+  replace the simple authenticated read condition with the actual institution
+  and role checks from SEERAAI.
+- A permissive broader match can still grant access because matching allow rules
+  are additive. Test the complete merged rules with the Firebase Emulator.
+- Firebase Admin/server SDK bypasses Firestore Security Rules. Protect backend
+  routes through authentication, authorization, input validation, and IAM.
+
+================================================================
+FILE 13: FIREBASE STORAGE RULES DESIGN
+================================================================
+
+Do not deploy this as a complete Storage rules file without merging current
+SEERAAI rules. Legal originals should not be publicly downloadable by default.
+Recommended policy:
+
+1. Store originals under a controlled path such as:
+   legal-originals/{jurisdiction}/{recordId}/{filename}
+2. Upload only through authenticated backend/admin workflow or a narrowly
+   scoped signed upload process.
+3. Verify role, institution access, MIME type, file size, and record linkage.
+4. Do not trust a client-supplied storagePath or documentHash.
+5. Keep document hash and audit entry on the backend.
+6. Do not expose permanent public download tokens for confidential court files.
+
+================================================================
+FILE 14: SEARCH INDEXING / MIGRATION
+================================================================
+
+Every record must have searchTokens, indexingVersion, and (for decisions)
+caseNumberNormalized. New records should be indexed on write using
+buildSearchIndexFields(). Old records need a one-time migration.
+
+Example migration function (run only from a secured admin script):
+
+import { FieldPath, type Firestore } from "firebase-admin/firestore";
+import { buildSearchIndexFields } from "../src/modules/legal-database/core/search-index";
+import type { LegalDatabaseRecord } from
+  "../src/modules/legal-database/types/legal.types";
+
+async function reindexCollection(
+  db: Firestore,
+  collectionName: "legalEnactments" | "cassationDecisions",
+): Promise<number> {
+  const pageSize = 300;
+  let lastDocument: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+  let updated = 0;
+
+  for (;;) {
+    let query = db.collection(collectionName)
+      .orderBy(FieldPath.documentId())
+      .limit(pageSize);
+    if (lastDocument) query = query.startAfter(lastDocument);
+
+    const page = await query.get();
+    if (page.empty) break;
+
+    const batch = db.batch();
+    for (const doc of page.docs) {
+      const record = doc.data() as LegalDatabaseRecord;
+      batch.set(doc.ref, buildSearchIndexFields(record), { merge: true });
+    }
+    await batch.commit();
+    updated += page.size;
+    lastDocument = page.docs[page.docs.length - 1];
+    if (page.size < pageSize) break;
+  }
+  return updated;
+}
+
+Run once for each collection:
+
+await reindexCollection(db, "legalEnactments");
+await reindexCollection(db, "cassationDecisions");
+
+Before migration:
+- Take a verified Firestore backup.
+- Test against a staging copy or emulator.
+- Confirm the imported legacy record shape. Legacy `verified: true` must NOT
+  automatically become `verificationStatus: "verified"` without source review.
+- Check for malformed/missing fields and records larger than Firestore limits.
+
+================================================================
+FILE 15: LEGACY DATA MIGRATION RULES
+================================================================
+
+The first version you supplied used these fields:
+- LegalSource.verified / verifiedDate
+- CassationDecision.verified
+- CassationBindingPrinciple.binding (boolean)
+- CassationArchiveRecord.applicableLaws / applicableArticles / verification
+- CassationArchiveRecord.fullText
+
+Migration mapping:
+
+1. LegalSource.verified === true becomes verificationStatus:
+   "partially_verified" until a reviewer confirms source, date, and evidence.
+2. CassationDecision.verified === true does NOT automatically prove the source
+   authentic or its binding status. Import as "unverified" unless evidence is
+   checked.
+3. binding === true becomes bindingStatus: "not_reviewed" initially unless a
+   legal reviewer verifies the applicable binding rule and documents its basis.
+4. Keep `applicableLaws`, `applicableArticles`, `fullText`, `telegramSource`, and
+   old verification notes when migrating archive records.
+5. Convert old `volume: number | string` to a normalized string for matching,
+   but preserve the original display value.
+6. Keep old IDs where unique. If duplicates exist, resolve them before import;
+   do not silently overwrite decisions.
+7. Save the original imported record in an export/backup before changing shape.
+
+================================================================
+FILE 16: SEARCH QUALITY AND LEGAL SAFETY RULES
+================================================================
+
+The relevance score is a retrieval aid, not a judicial conclusion and not a
+measure of precedential force. It must never say that a decision binds a court
+only because its score is high.
+
+Required behavior:
+- Exact case-number match is separated from subject-matter similarity.
+- Jurisdiction, volume, year, and article references affect ranking separately.
+- Unverified sources are visibly labelled and can be excluded with verifiedOnly.
+- A missing result is not proof that no decision or law exists.
+- Search across languages uses all available language fields but does not invent
+  missing translations.
+- Cross-language synonym groups must be reviewed and maintained by competent
+  legal language experts.
+- Distinguish the decision's actual holding from counsel's summaries, Telegram
+  captions, OCR text, or AI-generated explanations.
+- Keep pinpoint citations: court, case number, volume, decision date, page,
+  source document, and paragraph/page where available.
+- The AI answer generator must cite only records actually returned by search.
+- If evidence is insufficient or sources conflict, the response must say so.
+- Do not present a legal principle as binding unless bindingStatus is reviewed,
+  documented, and supported by applicable Ethiopian law / court rules.
+
+================================================================
+FILE 17: BASIC TESTS TO ADD
+================================================================
+
+Use the test runner already configured in SEERAAI. These are examples of the
+minimum behavior that should be tested, not a replacement for full integration
+tests.
+
+import { strict as assert } from "node:assert";
+import { test } from "node:test";
+import { normalizeSearchText, normalizeLegalReference,
+  extractSearchTerms } from "../core/normalize";
+
+test("normalizes Unicode without deleting Afaan Oromoo or Amharic", () => {
+  assert.equal(normalizeSearchText("  DHAALTUMMAA  "), "dhaaltummaa");
+  assert.ok(extractSearchTerms("ውርስ dhaaltummaa inheritance").includes("ውርስ"));
+});
+
+test("normalizes legal references consistently", () => {
+  assert.equal(normalizeLegalReference("Case No. 123/2018"), "caseno1232018");
+});
+
+Further tests required:
+- Exact case-number result ranks as `exact`.
+- A Federal record is not incorrectly filtered into an Oromia-only search.
+- `verifiedOnly` excludes records whose source is not verified.
+- Telegram-only provenance never becomes authoritative verification.
+- A changed original file fails expected SHA-256 comparison.
+- Article matches are normalized consistently.
+- An empty search request receives HTTP 400.
+- An ordinary user cannot use write/verify routes.
+- A stale update version is rejected.
+- Audit records are created in the same transaction as create/update.
+- Search pagination/candidate-limit warning is visible.
+- Firestore emulator tests cover the COMPLETE merged ruleset.
+
+NOTE: Fix the expected normalization string above if your test file uses a
+font/editor that changes Unicode formatting. Prefer comparing against the
+literal expected value "dhaaltummaa".
+
+================================================================
+FILE 18: API CONTRACT
+================================================================
+
+GET /api/legal/search?q=inheritance&language=en&jurisdiction=federal
+GET /api/legal/search?q=dhaaltummaa&language=om&type=cassation_decision
+GET /api/legal/search?q=ownership&language=en&articles=842,843
+GET /api/legal/search?caseNumber=1234/2018&language=om
+GET /api/legal/enactments/{id}
+GET /api/legal/cassation/{id}
+
+Supported query parameters:
+- q: question or keyword text
+- language: om | am | en
+- jurisdiction: federal | oromia
+- type: enactment,cassation_decision
+- legislationType: constitution,proclamation,regulation,directive,amendment,repeal
+- category: one of the LegalCategory values
+- status: one of the LegalStatus values (enactments)
+- caseNumber: exact case or enactment number
+- volume: cassation volume
+- yearEC / yearGC: integer year
+- articles: comma-separated legal article references
+- verifiedOnly: true | false
+- limit: integer from 1 to 100
+
+Responses include:
+- relevantResults
+- exactMatches
+- relatedDecisions
+- relevanceScore
+- matchType
+- matchedIssues / matchedArticles / matchedTerms
+- sourceVerified
+- citation
+- warnings
+- insufficientEvidence
+- candidateSetMayBeTruncated
+
+================================================================
+FILE 19: PRODUCTION DEPLOYMENT CHECKLIST
+================================================================
+
+[ ] Confirm the existing Firebase Admin initialization exports the correct db.
+[ ] Confirm the exact Firestore database ID from the current app configuration.
+[ ] Confirm the legal collections do not collide with existing collection names.
+[ ] Add module imports and mount /api/legal exactly once.
+[ ] Wire existing authentication and institution-based RBAC middleware.
+[ ] Restrict create/update to legal editor/admin permissions.
+[ ] Restrict verification to designated verifier roles.
+[ ] Add strict request-body validation for every write endpoint.
+[ ] Add API rate limiting and request-size limits at the backend/gateway.
+[ ] Keep API credentials in Secret Manager/backend environment only.
+[ ] Store originals in Firebase Storage, not Firestore document fields.
+[ ] Merge and test Firestore and Storage rules without broad allow statements.
+[ ] Create a backup before data migration.
+[ ] Migrate legacy data with explicit verification review.
+[ ] Rebuild searchTokens for old records.
+[ ] Test exact lookup, article lookup, filters, and three-language search.
+[ ] Test unverified / partially verified / verified source behavior.
+[ ] Test duplicate IDs, version conflicts, and audit trail.
+[ ] Test with Firebase Emulator and a staging environment.
+[ ] Run TypeScript type-check, lint, unit tests, and production build.
+[ ] Deploy to the existing backend service only after all tests pass.
+[ ] Verify Cloud Run service account uses least-privilege IAM.
+[ ] Confirm no OpenAI/Gemini secret appears in frontend bundle or Git history.
+
+================================================================
+FILE 20: KNOWN LIMITATIONS – READ BEFORE CALLING IT PRODUCTION-READY
+================================================================
+
+1. Firestore `array-contains-any` supports at most 30 comparison terms in a
+   query. The repository intentionally caps the term list and reports when
+   candidate coverage may be incomplete. See the official Firestore query docs.
+2. Firestore is not a full-text search engine. This starter uses token indexing
+   and relevance ranking. For a large archive, high recall, typo tolerance,
+   stemming, phrase search, or true multilingual semantic search, connect a
+   dedicated search provider (for example, a managed Typesense/Algolia/OpenSearch
+   index) through a backend-only adapter. Keep Firestore as the authoritative
+   record store.
+3. The current candidate scan is bounded at 250 candidate documents per
+   collection. If the limit is reached, the response warns that results may be
+   incomplete. Do not remove this warning or claim exhaustive search.
+4. The code does not automatically retrieve Telegram messages or verify live
+   URLs. Telegram import must preserve channel/message provenance, original
+   document, and hash; source verification requires human review against an
+   authoritative source.
+5. No scoring model can determine whether a cassation principle is binding
+   without legal analysis of the applicable law, court decision, panel, and
+   relevant legal framework.
+6. The backend integration imports placeholder middleware names. Replace them
+   with the actual SEERAAI exports after reviewing the existing project files.
+7. The Firestore and Storage rules are integration snippets. They must be
+   merged into the complete existing rules and tested; do not deploy them as
+   blind replacements.
+8. The code intentionally omits a public write endpoint. A secure ingestion
+   workflow must be connected to current SEERAAI admin/legal-editor roles and
+   validated against the actual court institution model.
+9. No package.json changes are required by this bundle beyond dependencies
+   already present in SEERAAI: firebase-admin, express, and TypeScript types.
+   Confirm installed versions and type-check them before build.
+10. This bundle must be adapted to the actual repository paths and existing
+    named-database initialization. No one can honestly guarantee a 10/10 or
+    compile success without running it in that repository.
+
+OFFICIAL TECHNICAL REFERENCES
+-----------------------------
+Firebase Firestore query operators / array-contains-any limits:
+https://firebase.google.com/docs/firestore/query-data/queries
+
+Firestore server SDKs bypass Security Rules; use IAM and backend authorization:
+https://firebase.google.com/docs/firestore/enterprise/security/insecure-rules
+
+Firestore document storage size details:
+https://firebase.google.com/docs/firestore/storage-size
+
+================================================================
+END OF SOURCE BUNDLE
+================================================================

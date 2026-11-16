@@ -190,7 +190,7 @@ export const ReferralAnalyticsView: React.FC<ReferralAnalyticsViewProps> = ({ cu
                       setPinInput(e.target.value);
                       if (pinError) setPinError('');
                     }}
-                    placeholder="PIN koodii galchaa (fkn: 2026)..."
+                    placeholder="PIN koodii galchaa..."
                     className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-amber-300 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono"
                   />
                 </div>

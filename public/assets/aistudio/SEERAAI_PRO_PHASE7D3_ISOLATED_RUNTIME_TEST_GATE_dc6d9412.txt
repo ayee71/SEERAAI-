@@ -1,0 +1,126 @@
+SEERAAI PRO — PHASE 7D.3: ISOLATED BROWSER & FIREBASE EMULATOR RUNTIME TEST GATE
+MODE: TEST ONLY — LOCALHOST / LOCAL EMULATORS — NO SOURCE IMPLEMENTATION — NO PRODUCTION ACCESS
+
+PURPOSE
+Execute the runtime tests explicitly approved by the Phase 7D.2 final readiness report. This phase verifies the existing Phase 7D.2 implementation in an isolated local environment. It is not an implementation, remediation, staging deployment, or production launch phase.
+
+CRITICAL SAFETY RULES
+1. Work only in the existing SEERAAI PRO repository. Do not create a replacement application.
+2. Do not edit, create, delete, rename, or overwrite application source files, configuration files, Firebase rules, tests, package files, lockfiles, build files, or user data.
+3. Do not install, upgrade, remove, or download packages, browsers, Firebase CLI, emulator binaries, or other dependencies. Use only tools and dependencies already present.
+4. Do not access or connect to production Firebase Auth, Firestore, Storage, Cloud Run, Hosting, DNS, or any live user account or dataset. Do not run `firebase deploy`, `firebase use` against a production project, or any production command.
+5. Do not read, print, copy, or expose API keys, tokens, passwords, environment secrets, or full `.env` contents. It is permissible to inspect only non-secret Firebase emulator configuration and to report whether emulator endpoints are configured without exposing secrets.
+6. Use only localhost, an ephemeral browser profile, synthetic test users, and synthetic test records. Never use real court files, real case information, real user data, or production credentials.
+7. Before starting any app or emulator, inspect the configuration and prove that Auth and Firestore are connected to local emulator endpoints. If this cannot be established with certainty, STOP and report NOT RUN. Never fall back to production endpoints.
+8. Do not alter `firestore.rules` in this phase. The known `signedIn()` versus `isSignedIn()` defect and custom-claim requirements must be tested/reported as known blockers, not silently fixed.
+9. Do not implement the missing OfflineCaseDraft cloud schema, endpoint, or service-worker handler in this phase. Record it as a blocker. Do not mark such drafts cloud-synced.
+10. Do not clear any pre-existing browser profile, IndexedDB, localStorage, sessionStorage, service-worker cache, or user files. Use a fresh disposable browser profile only.
+11. Do not run a production build if it writes build artifacts into the repository. Prefer the existing local dev/preview server. If the only available test command writes artifacts, do not run it; report the limitation.
+12. Clearly separate ACTUALLY EXECUTED tests, MOCKED/SIMULATED tests, STATIC INSPECTION, NOT RUN, and BLOCKED. Never infer a runtime PASS from code inspection or unit tests.
+
+TASK 0 — PRE-FLIGHT AND ENVIRONMENT ISOLATION
+A. Confirm repository identity from package.json without changing it.
+B. Inspect firebase.json and the existing Firebase initialization code (including src/services/firebase.ts) to identify whether Auth and Firestore Emulator connections are supported and configured.
+C. Confirm whether Firebase Emulator Suite and a Chromium-compatible browser are already installed/available. Do not install anything.
+D. Confirm the app can run on localhost with an ephemeral test profile and cannot silently fall back to live Firebase. If an emulator host, emulator config, browser, or safe test configuration is absent, stop that test category and report NOT RUN/BLOCKED.
+E. Do not echo .env values. If environment variables must be checked, report only variable names and whether a safe emulator value is configured.
+F. Save no test artifacts into the source repository. If temporary logs are necessary, put them only in an isolated OS temp directory and do not include secrets or personal data.
+
+TASK 1 — SINGLE-TAB CHROMIUM RUNTIME TESTS
+Use a fresh disposable browser profile and synthetic test account only. Verify actual UI behavior, not just source code.
+1. Open the local application and confirm the test account is authenticated against the Auth Emulator.
+2. Create synthetic local drafts and queued edits with clearly fake identifiers and content, for example `TEST-ONLY-DRAFT-001`.
+3. Open the sign-out modal. Verify inventory counts are populated from actual stores. If inventory cannot be verified, verify the UI enters SAFE_HOLD and does not silently purge.
+4. Test clean sign-out when inventory is empty.
+5. Test pending upload/local-only content: sign-out must prompt with correct counts and must not delete anything without explicit second-stage discard consent or verified cloud sync.
+6. Test backup export only as a test artifact. Confirm the UI clearly labels the JSON backup as unencrypted (`encrypted: false`). Do not describe it as secure/encrypted. Do not save the backup in a shared or source-controlled location.
+7. Test IndexedDB deletion success, onblocked, onerror, and timeout behavior using real browser IndexedDB. Confirm a non-success result causes persistent ISOLATION_LOCKDOWN and blocks another account from signing in. Confirm late request settlement cannot silently clear lockdown or be treated as success without recovery verification.
+8. Test Firebase Auth sign-out success and controlled failure/retry using only the Auth Emulator. Verify auth.currentUser state and React/UI state remain consistent.
+9. Verify no sensitive user data is left accessible after a successful shared-device sign-out. Verify allowlisted preferences only are preserved.
+
+TASK 2 — TWO-TAB / SERVICE-WORKER CHROMIUM RUNTIME TESTS
+Use two fresh tabs in the same disposable browser profile, with synthetic account A only.
+1. Verify the AuthSync BroadcastChannel receiver is actually mounted in both tabs.
+2. Verify PREPARE_SIGN_OUT, tab discovery/heartbeat, ACK_PREPARE, CLOSE_IDB, ACK_CLOSE_IDB, and SESSION_TERMINATED messages are actually received and correlated by correlationId and UID.
+3. Confirm each tab pauses writes and background sync, drains in-flight writes, and closes tracked IndexedDB connections before acknowledging.
+4. Confirm the service worker is actually registered and responds to SEERA_PAUSE_SYNC and SEERA_CLOSE_IDB_CONNECTIONS with the expected acknowledgements. Do not treat an absent/uncontrolled service worker as a pass.
+5. Keep an IndexedDB transaction open in the second tab and trigger sign-out in the first. Verify the close/blocked/retry path in real Chromium and confirm no second account can log in before isolation is verified.
+6. Test frozen/unresponsive or closed sibling-tab behavior. A timeout must fail closed; it must not be treated as an acknowledgement or successful cleanup.
+7. After verified sign-out, attempt to sign in as synthetic account B. Confirm no account A drafts, bookmarks, annotations, court cache, active court session, role, or credentials are accessible to B.
+8. Verify no false-positive lockdown occurs in the ordinary successful two-tab flow. If the browser cannot exercise a scenario reliably, mark it NOT RUN rather than infer success.
+
+TASK 3 — FIREBASE AUTH & FIRESTORE EMULATOR INTEGRATION
+Only proceed after proving the app is connected to localhost emulator endpoints. Never use production Firebase.
+1. Create synthetic Auth Emulator users A and B. Do not use real email addresses or personal data; use reserved test domains such as `example.invalid` where supported.
+2. Create only synthetic Firestore documents in the local emulator.
+3. Verify saveDocumentToFirestoreVerified() writes a test document and getDocFromServer() confirms exists(), !hasPendingWrites, !fromCache, matching userId and clientSyncNonce.
+4. Verify an unsuccessful write, offline network interruption, permission denial, missing auth, wrong UID, mismatched nonce, and stale revision do not receive server-confirmed markers and remain pending/local-only.
+5. Verify synthetic user A cannot read or write user B's private draft.
+6. Exercise courtOfflineStore sync only against the emulator. Record the actual result for cases/{id} and court_templates/{id}.
+7. Specifically reproduce and document the known firestore.rules helper defect: signedIn() is referenced at firestore.rules lines 36, 43, and 51 while isSignedIn() is defined. Do not edit the rules. Record the actual emulator error/permission result. Also document the institutionId/custom-claim requirements and the court_admin role gap.
+8. Verify auth signOut failure/retry recovery only with emulator-controlled network interruption or a safe test stub. Never revoke or disrupt a real account.
+9. Do not claim the OfflineCaseDraft mechanism is cloud-synced. It has no verified destination/schema/handler. Confirm its pending draft remains preserved and clearly reported as CLOUD_SYNC_DESTINATION_UNAVAILABLE.
+
+TASK 4 — REQUIRED TEST MATRIX
+For each test, report:
+- Test ID and exact scenario.
+- Whether it was executed in real Chromium, Firebase Emulator, a mock harness, or static inspection.
+- Exact safe command or manual steps used (no secret values).
+- Actual observed result/output.
+- PASS / FAIL / BLOCKED / NOT RUN.
+- Relevant file paths and line numbers.
+- Whether synthetic data was cleaned up from the emulator/test profile only.
+
+Required scenarios include:
+R01: Localhost emulator isolation preflight.
+R02: Single-tab clean sign-out.
+R03: Single-tab pending queue SAFE_HOLD.
+R04: Verified cloud sync before purge.
+R05: Explicit two-step discard path.
+R06: Real IndexedDB onblocked and retry/lockdown.
+R07: Real IndexedDB late settlement after timeout.
+R08: Firebase signOut failure and recovery.
+R09: Two-tab PREPARE/ACK/TERMINATED handshake.
+R10: Service-worker pause/close ACK handshake.
+R11: Unresponsive/frozen second tab fails closed.
+R12: User A to User B shared-device isolation.
+R13: Firestore verified write with matching UID and nonce.
+R14: Cross-user Firestore denial.
+R15: Court case/template sync against emulator and rules result.
+R16: OfflineCaseDraft remains pending and is never falsely marked synced.
+R17: Lockdown persistence across reload and recovery.
+R18: Preferences allowlist preserved and sensitive preference fields removed.
+
+TASK 5 — STOP CONDITIONS
+Stop immediately and report BLOCKED/NO-GO if:
+- The app could connect to production Firebase or the project/environment cannot be proven local-only.
+- Any real user/court data is present in the test browser profile.
+- Any unsynced/local-only draft is deleted without confirmed server acknowledgement or explicit second-stage discard consent.
+- Account B can access account A's data or institutional cache.
+- An IndexedDB deletion failure/timeout/blocked request is treated as success.
+- A sibling tab or service worker fails to acknowledge but account switching is still allowed.
+- The UI claims data is synced without the required server-side read-back verification.
+- Any command would deploy, mutate production, rewrite rules, alter DNS, or modify Cloud Run/Hosting.
+- Test execution requires installing dependencies or changing source/configuration files.
+
+TASK 6 — FINAL REPORT AND DECISION
+Produce a concise but evidence-rich report with these sections:
+A. Environment isolation proof (localhost and emulator endpoints; no secrets).
+B. Exact tests executed and actual outcomes.
+C. Real Chromium single-tab results.
+D. Real Chromium multi-tab and Service Worker results.
+E. Firebase Auth/Firestore Emulator results.
+F. Known blockers: OfflineCaseDraft missing cloud schema/endpoint; firestore.rules signedIn() typo; custom-claim lifecycle/role gap; `seera_device_auth_salt` versus `seera_device_salt` mismatch; unencrypted JSON backup; any other discovered issue.
+G. Data integrity and cross-user privacy results.
+H. Tests NOT RUN/BLOCKED and why.
+I. Go/No-Go decisions separately for Local Browser Gate, Firebase Emulator Gate, Staging, and Production.
+J. Exact next actions, clearly separated into source-code remediation, Firestore rules/custom-claims remediation, backend/schema work, and operational policy.
+
+DECISION RULES
+- Local Browser Gate: PASS only if real Chromium scenarios R02–R12 pass without data loss or cross-user exposure.
+- Firebase Emulator Gate: PASS only if R13–R18 are executed against local emulators; known rules defects must be reported as blockers, not ignored.
+- Staging: NO-GO until both runtime gates pass and the OfflineCaseDraft/cloud schema and Firestore rules/custom-claim blockers are resolved in separately authorized phases.
+- Production: NO-GO until staging sign-off, privacy/security QA, retention policy, and separate deployment approval.
+
+FINAL INSTRUCTION
+This is a TEST-ONLY verification phase. Do not implement any fix. Do not modify source, tests, Firebase rules, package files, or configuration. Do not deploy. Do not access production. If the environment cannot safely execute a test, report NOT RUN with the precise reason. Stop after delivering the final report and wait for separate human authorization.

@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import { Database, ExternalLink, X, Globe, Send, AlertTriangle } from 'lucide-react';
 import { Language } from '../i18n/translations';
 import { getBuildStatusSummary, VERIFIED_TELEGRAM_ARCHIVE_URL } from '../services/dynamicAssetLoader';
+import { useAuth } from '../context/AuthContext';
+import { isOwnerAccount } from '../services/ownerAuth';
+import { getStoredOwnerKey } from '../services/referralTracking';
+import { isCourtAccessAuthorized, getActiveCourtSession } from '../services/courtInstitutionService';
 
 interface ExternalDatasetNoticeBannerProps {
   currentLang: Language;
@@ -12,33 +16,46 @@ export const ExternalDatasetNoticeBanner: React.FC<ExternalDatasetNoticeBannerPr
   const [showOptionsModal, setShowOptionsModal] = useState<boolean>(false);
   const buildInfo = getBuildStatusSummary();
 
-  if (dismissed) return null;
+  const { user, profile } = useAuth();
+  const isOwner = isOwnerAccount(
+    user?.email || (profile as any)?.email,
+    profile?.visitorName || profile?.appUsername,
+    getStoredOwnerKey()
+  );
+  
+  const activeSession = getActiveCourtSession();
+  const isCourtAuthorized = isCourtAccessAuthorized();
+  const hasActiveCourtSession = Boolean(isCourtAuthorized && activeSession && activeSession.user && activeSession.institutionId);
+  const isAuthorizedOwnerOrAdmin = isOwner || (hasActiveCourtSession && (activeSession?.user?.role === 'court_admin' || activeSession?.user?.role === 'superadmin' || activeSession?.user?.role === 'judge'));
+
+  // STRICT PRIVACY SECURITY: Hide top dataset banner from public/unauthorized users entirely.
+  if (!isAuthorizedOwnerOrAdmin || dismissed) return null;
 
   const labels = {
     om: {
       tag: 'Kuusaa Sanadoota Alaa (1.45 GB)',
-      msg: `Hanga appii (${buildInfo.publishLimit}) eeguuf, galmeewwan seeraa 1,500+ Telegram Archive irratti qophaa'aniiru.`,
+      msg: "Galmeewwan seeraa 1,500+ (1.45 GB) Telegram Archive irratti qophaa'aniiru. Enterprise Storage Pro.",
       btnTelegram: 'Telegram Archive (1,500+)',
       btnOptions: 'Madda Filadhu',
       status: `Build: ${buildInfo.version} (${buildInfo.bundleSize})`,
     },
     am: {
       tag: 'የውጭ የሕግ መዛግብት (1.45 GB)',
-      msg: `የአፕሊኬሽኑን የ${buildInfo.publishLimit} ገደብ ለመጠበቅ፣ 1,500+ የሕግ ሰነዶች በቴሌግራም አርካይቭ ላይ ይገኛሉ።`,
+      msg: "1,500+ የሕግ ሰነዶች (1.45 GB) በቴሌግራም አርካይቭ ላይ ይገኛሉ። Enterprise Storage Pro.",
       btnTelegram: 'ቴሌግራም አርካይቭ (1,500+)',
       btnOptions: 'ምንጭ ምረጥ',
       status: `ስሪት: ${buildInfo.version} (${buildInfo.bundleSize})`,
     },
     en: {
       tag: 'External Legal Dataset (1.45 GB)',
-      msg: `To stay under the ${buildInfo.publishLimit} limit, 1,500+ legal documents are hosted on the Telegram Archive.`,
+      msg: "1,500+ legal documents (1.45 GB) are hosted on the Telegram Archive. Enterprise Storage Pro.",
       btnTelegram: 'Telegram Archive (1,500+)',
       btnOptions: 'Dataset Sources',
       status: `Build: ${buildInfo.version} (${buildInfo.bundleSize})`,
     },
   }[currentLang] || {
     tag: 'External Legal Dataset (1.45 GB)',
-    msg: `To stay under the ${buildInfo.publishLimit} limit, 1,500+ legal documents are hosted on the Telegram Archive.`,
+    msg: "1,500+ legal documents (1.45 GB) are hosted on the Telegram Archive. Enterprise Storage Pro.",
     btnTelegram: 'Telegram Archive (1,500+)',
     btnOptions: 'Dataset Sources',
     status: `Build: ${buildInfo.version} (${buildInfo.bundleSize})`,
@@ -122,7 +139,7 @@ export const ExternalDatasetNoticeBanner: React.FC<ExternalDatasetNoticeBannerPr
               {/* Option 1: Verified Telegram Channel */}
               <div className="p-3.5 rounded-xl bg-sky-950/60 border border-sky-500/40 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sky-200">1. Telegram Master Archive (@saiorethio1)</span>
+                  <span className="font-bold text-sky-200">1. Telegram Master Archive (@seeraai_ethio)</span>
                   <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono font-bold">100% Active</span>
                 </div>
                 <p className="text-slate-300 text-[11px]">
@@ -137,7 +154,7 @@ export const ExternalDatasetNoticeBanner: React.FC<ExternalDatasetNoticeBannerPr
                   className="w-full py-2 bg-sky-500 hover:bg-sky-400 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>Chaanala Telegram Bani (@saiorethio1)</span>
+                  <span>Chaanala Telegram Bani (@seeraai_ethio)</span>
                 </button>
               </div>
 
@@ -171,14 +188,14 @@ export const ExternalDatasetNoticeBanner: React.FC<ExternalDatasetNoticeBannerPr
                 </div>
               </div>
 
-              {/* Option 3: External Domain saorethio1.com */}
+              {/* Option 3: Custom Domain & DNS Explanation */}
               <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-400">3. Domain saorethio1.com</span>
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono">DNS Note</span>
+                  <span className="font-semibold text-amber-400">3. Custom Domain & DNS (mmurtii.aistudio)</span>
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono">DNS Fix</span>
                 </div>
-                <p className="text-slate-400 text-[10px]">
-                  Domain kun yeroof intarneeta irratti hin galmoofne (NXDOMAIN). Cuqaastiin isaa gara GitHub fi Telegram t.me/saiorethio1 tti isin qajeelcha.
+                <p className="text-slate-300 text-[10px] leading-relaxed">
+                  Lakkoofsi <strong>mmurtii.aistudio</strong> jedhu TLD (Top-Level Domain) ifaa miti; kanaafuu browseriinis <code>DNS_PROBE_FINISHED_NXDOMAIN</code> jedhee agarsiisa. Domain dhugaa Namecheap irraa bitachuudhaan (fakkeenyaaf <strong>mmurtii.et</strong>) Firebase Hosting irratti map gochuun qaba.
                 </p>
               </div>
             </div>

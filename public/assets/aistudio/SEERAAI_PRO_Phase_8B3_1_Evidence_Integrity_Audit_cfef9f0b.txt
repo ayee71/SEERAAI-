@@ -1,0 +1,132 @@
+SEERAAI PRO — PHASE 8B.3.1
+READ-ONLY EVIDENCE INTEGRITY AUDIT
+
+PROJECT PRESERVATION DIRECTIVE
+Work only in the existing SEERAAI PRO repository. Do not create a replacement app, Firebase project, database, repository, or production service. Do not publish or deploy anything. Do not modify Firestore/Storage Rules, Firebase configuration, authentication, IAM, custom claims, secrets, or production data. This is a read-only verification task. Do not claim a check passed unless actual source evidence or command output is shown.
+
+KNOWN PROJECT IDENTITY
+Product: SEERAAI PRO
+Repository: sai-ethio-legal-ai
+Firebase project ID: leafy-rush-xvd6f
+Firestore database: ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478
+Previously reported baseline: v4.1.0
+Latest audit report claims package.json version: 5.0.0
+
+1. RECONCILE THE ACTUAL FILES AUDITED
+The previous audit claimed to inspect firestore.rules (519 lines), storage.rules (37 lines), and firebase.json (38 lines), while earlier remediation reports named firestore.rules.candidate and storage.rules.candidate.
+
+Inspect and report the exact existence, tracked/untracked status, paths, line counts, and SHA-256 hashes (where available) for:
+- firestore.rules
+- storage.rules
+- firestore.rules.candidate
+- storage.rules.candidate
+- firebase.json
+
+Inspect firebase.json and state exactly which Firestore and Storage Rules files are configured for deployment. Do not assume the files with the simplest names are candidates or production files. If candidate files do not exist, say so. If both candidate and non-candidate files exist, compare their full contents and identify every difference.
+
+Provide actual command output or exact source excerpts. Do not silently substitute one file for another.
+
+2. VERIFY THE FIRESTORE CATCH-ALL SYNTAX
+The previous report quoted this line as:
+match /document=** { allow read, write: if isAdmin(); }
+
+Inspect the exact source text at the reported lines 514–516. Confirm whether it is literally written as /document=** or correctly written with a recursive wildcard such as /{document=**}. Report the exact syntax, rules_version, and whether the rules parser/compiler accepts the entire ruleset.
+
+Do not infer Rules compilation success from npm run build or tsc --noEmit. If the Firebase Rules compiler/emulator cannot run in this environment, mark compilation BLOCKED and explain why.
+
+3. EXPLAIN THE CATCH-ALL AND OVERLAPPING RULES CORRECTLY
+Enumerate every Firestore match block whose path can overlap the global recursive wildcard and every collection-specific Telegram match. For each sensitive collection, identify all matching allow statements and calculate the effective result as logical OR across matching allow expressions.
+
+Specifically inspect:
+- telegram_legal_documents
+- telegram_logs
+- every other telegram_* collection
+- legalDocuments and related legal knowledge collections
+- institutions/{institutionId}/courtDocuments and nested paths
+- court_documents
+- witness_schedules
+- witness_statements
+- court_audio_recordings
+- courtroom_sessions
+- auditLogs and admin_activity_logs
+- users/{userId}, admins, and court_users
+
+For every match, show path, operation (get/list/create/update/delete or read/write), condition, file and exact line range. Identify any public, signed-in-only, or broad admin access. A false condition in one matching block does not cancel another true condition.
+
+Do not label a collection “correctly isolated” merely because it has a specific match block. Explain whether another recursive or overlapping match grants broader access.
+
+4. REVIEW THE GLOBAL ADMIN FALLBACK
+Explain precisely what the global recursive match grants to an authenticated global admin and whether it makes the admin a superuser across every otherwise unmatched document path. Identify how isAdmin() is determined and whether it includes hard-coded email allowlists or client-writable admin documents. Do not disclose private emails or secrets in the report; redact them while identifying the code path.
+
+5. VERIFY STORAGE TENANT ISOLATION
+Inspect the complete storage.rules file, all match blocks, and the actual upload/download paths used by the application.
+
+For /legal_docs/{institutionId}/{userId}/{allPaths=**}, verify independently:
+- owner read, create, update, and delete permissions;
+- whether the owner must also have institutionId == request.auth.token.institutionId or another independently verified membership;
+- whether a user can write under another institutionId while keeping their own UID in the path;
+- institutional staff role checks and institution matching;
+- whether legal_expert or other actual app roles need access and whether granting it would be least-privilege;
+- global admin write access;
+- file size, contentType/MIME validation, metadata validation, and path traversal/ownership concerns;
+- whether each actual application Storage path is covered by exactly the intended rule.
+
+Explain that a catch-all allow false denies unmatched paths only when no other matching rule grants access; it does not override an overlapping allow true.
+
+Do not edit Storage Rules in this phase.
+
+6. CUSTOM CLAIMS CONSISTENCY — NO MIGRATION
+Inspect helper functions in both Firestore and Storage Rules and backend authorization code. Verify exact claim names used in code:
+- admin
+- role
+- courtRole
+- institutionId
+- legalContentManager
+
+Create a table showing each claim, exact code locations, expected type, fallback logic, and behavior when role and courtRole conflict or institutionId is absent/mismatched. The system must fail closed on conflicting or missing privileged claims. Do not assign, change, or delete any claims.
+
+7. BACKEND AUTHORIZATION EVIDENCE
+Do not rely only on the existence of a middleware function at server-app.ts lines 124–165. Enumerate the actual route registrations and middleware chains for:
+- legal answer / AI generation endpoints;
+- Telegram webhook and Mini App endpoints;
+- court document upload/download/delete endpoints;
+- witness/audio endpoints;
+- kiosk and deadline endpoints;
+- admin dashboard and other admin endpoints.
+
+For each route, report whether Firebase ID token verification, court_users membership/status verification, role authorization, institutionId authorization, and rate limiting are actually applied. Identify public routes and explain why they are public. A global rate limiter is not authentication or authorization.
+
+8. SECRETS — VERIFY REFERENCES, NOT VALUES
+Inspect server-side references and frontend build configuration for TELEGRAM_WEBHOOK_SECRET and MINIAPP_HMAC_SECRET. Confirm no VITE_ exposure, frontend imports, returned payloads, error messages, source maps, or logs expose values. Do not print or request secret values. Distinguish “referenced server-side” from “configured in production Secret Manager/runtime”; the latter remains NOT VERIFIED unless authoritative read-only evidence is available.
+
+9. VERSION AND CHANGE INVENTORY
+The previous report claimed package.json version 5.0.0, whereas the previously reported project baseline was 4.1.0. Inspect git status, git diff --stat, package.json, lockfile, and changelog/release notes if present. Report whether this is an intentional version bump and list the actual modified/untracked files. Do not revert or alter anything.
+
+10. FINAL OUTPUT — EVIDENCE-BASED ONLY
+Produce “SEERAAI PRO — PHASE 8B.3.1 EVIDENCE INTEGRITY REPORT”.
+For every finding use one status only:
+- VERIFIED PASS
+- VERIFIED FAIL
+- PARTIALLY VERIFIED
+- BLOCKED
+- NOT TESTED
+
+Include:
+A. Exact files and versions inspected.
+B. Actual Firebase Rules file paths configured in firebase.json.
+C. Exact Firestore catch-all source line and syntax validation status.
+D. Full overlapping-rule matrix for Telegram and sensitive court collections.
+E. Storage path/tenant-isolation matrix.
+F. Canonical claims consistency and fail-closed behavior.
+G. Route-by-route backend authorization matrix.
+H. Secret reference vs production configuration status.
+I. Actual package version and Git change inventory.
+J. Emulator and test status, with actual command outputs only.
+K. Release status and unresolved blockers.
+
+STRICT RELEASE GATE
+This phase is read-only. Do not publish Firestore Rules, publish Storage Rules, deploy Cloud Run or Functions, run production migration scripts, change custom claims, change IAM, rotate secrets, modify Auth, or access/alter production court data. Production remains NOT VERIFIED unless actual authorized read-only evidence proves otherwise.
+
+If any required file is missing, any source excerpt is unavailable, any rules overlap is unresolved, or Emulator execution is blocked, state that explicitly. Do not issue “VERIFIED PASS” or “CONDITIONALLY READY FOR HUMAN APPROVAL” as a substitute for missing evidence.
+
+BEGIN PHASE 8B.3.1 READ-ONLY EVIDENCE INTEGRITY AUDIT NOW.

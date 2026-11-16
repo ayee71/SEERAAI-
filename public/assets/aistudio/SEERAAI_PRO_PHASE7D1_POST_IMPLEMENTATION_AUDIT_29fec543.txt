@@ -1,0 +1,106 @@
+SEERAAI PRO — PHASE 7D.1
+POST-IMPLEMENTATION SAFETY AUDIT
+MODE: STRICT READ-ONLY — NO IMPLEMENTATION — NO DEPLOYMENT
+
+IMPORTANT CONTEXT
+The current project previously reported Phase 7D changes in these files:
+- /src/services/indexedDb.ts: safeDeleteOfflineDB() with IndexedDB request lifecycle handlers.
+- /src/context/AuthContext.tsx: logout() using BroadcastChannel coordination and awaiting safeDeleteOfflineDB().
+- /src/components/LogoutConfirmationModal.tsx: clearCache default changed to false.
+
+A later pasted Phase 7C.2 report describes older behavior (fire-and-forget deletion in AuthContext.tsx, no BroadcastChannel sign-out protocol, and clearCache default true). These reports conflict. DO NOT assume either report is correct. Establish which code is actually present in the CURRENT open repository before drawing conclusions.
+
+STRICT GUARDRAILS
+1. READ-ONLY ONLY. Do not edit, create, delete, rename, format, or overwrite any source/configuration files.
+2. Do not install/update packages or run commands that modify files.
+3. Do not access, write, delete, or alter production Firebase, Firestore, Storage, Authentication, Cloud Run, Hosting, DNS, or user data.
+4. Do not deploy anything.
+5. Do not print, request, or expose secrets, tokens, API keys, credentials, or private user data.
+6. Do not claim a test passed unless it was actually executed in this current run/environment. Static inspection is not a runtime test.
+7. If the currently open repository does not contain the reported Phase 7D changes, STOP and report the mismatch. Do not repair or implement anything.
+
+AUDIT TASK 0 — VERIFY CURRENT WORKSPACE IDENTITY
+- Identify the current project/repository and package.json version.
+- Identify the current source tree and whether the working copy contains the Phase 7D modifications.
+- Inspect the actual current contents of the files listed below. Do not rely on prior AI-generated reports.
+- Report exact file paths, relevant line ranges, and short code excerpts only (no secrets or private data).
+- Explicitly state whether the current code matches Phase 7D, matches the older Phase 7C implementation, or is inconsistent/unclear.
+
+AUDIT TASK 1 — INDEXEDDB DELETION CORRECTNESS
+Inspect /src/services/indexedDb.ts and every call site of safeDeleteOfflineDB(). Verify:
+- It attaches onsuccess, onerror, and onblocked handlers.
+- It treats onblocked as pending/failure, never as successful deletion.
+- Timeout does not report success and does not silently continue as if storage were deleted.
+- Every caller checks the returned {success, reason} result and enters a safe failure state on false.
+- Active IndexedDB connections have onversionchange handlers that close connections.
+- Broadcast messages to close connections are actually received and handled by every relevant tab/module; do not count merely posting a message as successful closure.
+- Multiple DB names are actually used by this app and are not guessed or deleted unnecessarily.
+
+AUDIT TASK 2 — SIGN-OUT AND FIREBASE AUTH ORDERING
+Inspect /src/context/AuthContext.tsx and all relevant sign-out call paths:
+- Confirm whether a real write lock prevents new local writes and queue additions.
+- Confirm background sync is paused and in-flight writes are awaited or safely handled.
+- Confirm queued edits and local-only drafts are inventoried before destructive actions.
+- Confirm server acknowledgement is based on successful cloud write completion and matching record identity/revision, not merely a local timestamp or queue removal.
+- Trace exact ordering between Firebase signOut(auth), localStorage cleanup, IndexedDB deletion, React auth-state reset, and final cross-tab notification.
+- Determine what happens if Firebase signOut fails, IndexedDB deletion fails/blocks/times out, or the browser goes offline.
+- Never classify the flow as safe if private plaintext data can remain accessible to a subsequent user or if unsynced data can be silently lost.
+
+AUDIT TASK 3 — REAL CROSS-TAB COORDINATION
+Inspect both sender and receiver implementations for BroadcastChannel('seera_ai_auth_sync'):
+- Confirm PREPARE_SIGN_OUT is received by other tabs for the same UID.
+- Confirm ACK_PREPARE is actually sent and awaited with correlation ID and tab ID validation.
+- Confirm tabs pause sync, reject new writes, close DB connections, clear in-memory credentials/privileges, and respond correctly.
+- Confirm timeout/unresponsive tabs result in a fail-closed isolation policy, not an automatic assumption that all tabs are safe.
+- Confirm SESSION_TERMINATED is received and processed by other tabs.
+- Distinguish BroadcastChannel behavior from same-window CustomEvent behavior.
+
+AUDIT TASK 4 — MODAL CONSENT AND DATA PRESERVATION
+Inspect /src/components/LogoutConfirmationModal.tsx:
+- Confirm destructive cache-clearing consent defaults to false.
+- Confirm live counts for queued edits and local-only drafts are actually loaded from authoritative stores.
+- Confirm user must explicitly confirm discard, and cancellation preserves data/session.
+- Confirm the app cannot sign out and leave sensitive plaintext drafts accessible to the next account on a shared device.
+- Confirm no local-only draft or queued edit is deleted without successful cloud acknowledgement or explicit informed discard consent.
+
+AUDIT TASK 5 — STORAGE AND SYNC INVENTORY
+Inspect /src/services/backgroundSync.ts, /src/services/storage.ts, /src/services/indexedDb.ts, and relevant service-worker/background handlers:
+- Verify actual DB name, version, object store names, localStorage keys, queue APIs, active sync timers, and open DB connections from current source.
+- Identify local-only drafts, queued edits, cloud-confirmed records, derived caches, preferences, and institutional records separately.
+- Confirm institution/court records and audit data are not accidentally purged with personal caches.
+- Identify unknown/corrupt schema cases and confirm they fail safely.
+
+AUDIT TASK 6 — TEST EVIDENCE
+Report a matrix with columns: test name, exact command or method, environment, actually executed in this run (YES/NO), result, evidence.
+At minimum assess:
+- TypeScript check and production build (only run if safe and non-mutating; do not claim prior output as current execution).
+- IndexedDB deletion success, onblocked, onerror, and timeout paths.
+- Pending queue preservation during offline sign-out.
+- Explicit discard confirmation.
+- Two-tab PREPARE/ACK/SESSION_TERMINATED protocol.
+- Firebase sign-out failure handling (mock/local test only).
+- Shared-device account-switch isolation.
+Do not connect to production services for tests. Do not create/modify test data in production.
+
+REQUIRED FINAL REPORT FORMAT
+1. Executive decision: GO / CONDITIONAL GO / NO-GO for LOCAL STAGING ONLY; separately state production status.
+2. Current repository identity and whether it truly contains Phase 7D changes.
+3. Exact files and line ranges inspected.
+4. Phase 7D claims verified, contradicted, or not verified.
+5. Critical/high/medium findings with concrete code evidence.
+6. Full sign-out control-flow sequence and failure paths.
+7. Cross-tab sender/receiver evidence.
+8. Queue and local-only data preservation evidence.
+9. Tests actually executed versus proposed/not run.
+10. Minimal remediation required, if any; do not implement it.
+11. Explicit statement confirming no files, dependencies, Firebase resources, production data, or deployment settings were changed.
+
+DECISION RULES
+- If the current repository is the old Phase 7C implementation rather than Phase 7D, report WORKSPACE MISMATCH and STOP.
+- If any unsynced/local-only data can be silently deleted, classify the affected flow as NO-GO.
+- If IndexedDB deletion failure is ignored by logout(), classify as NO-GO.
+- If cross-tab acknowledgement/receiver behavior is not implemented or not verified, do not claim multi-tab isolation.
+- If a nonresponsive tab can leave sensitive data available to another user, classify shared-device sign-out as NO-GO.
+- Do not authorize staging or production deployment. This task is an audit only.
+
+STOP after delivering the report. No implementation is authorized.

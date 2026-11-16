@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SAI Ethio (www.saorethio1.com) - SeeraAI Legal AI</title>
-    <meta name="description" content="SAI Ethio: Professional trilingual legal content, translation, and analysis platform for Afaan Oromoo, Amharic (አማርኛ), and English at www.saorethio1.com." />
+    <title>SAI Ethio (mmurtii.aistudio) - SeeraAI Legal AI</title>
+    <meta name="description" content="SAI Ethio: Professional trilingual legal content, translation, and analysis platform for Afaan Oromoo, Amharic (አማርኛ), and English at mmurtii.aistudio." />
     
     <!-- OpenGraph Meta Tags for Facebook & Social Sharing -->
-    <meta property="og:title" content="SAI Ethio (www.saorethio1.com) - SeeraAI Legal AI" />
-    <meta property="og:description" content="SAI Ethio: Professional trilingual legal content, translation, and analysis platform for Afaan Oromoo, Amharic (አማርኛ), and English at www.saorethio1.com." />
+    <meta property="og:title" content="SAI Ethio (mmurtii.aistudio) - SeeraAI Legal AI" />
+    <meta property="og:description" content="SAI Ethio: Professional trilingual legal content, translation, and analysis platform for Afaan Oromoo, Amharic (አማርኛ), and English at mmurtii.aistudio." />
     <meta property="og:image" content="https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app/src/assets/images/seeraai_authoritative_logo_1792935506374.jpg" />
     <meta property="og:image:secure_url" content="https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app/src/assets/images/seeraai_authoritative_logo_1792935506374.jpg" />
     <meta property="og:image:type" content="image/jpeg" />
@@ -25,7 +25,7 @@
     <meta name="twitter:description" content="Kuni link marsariitii hubannoo seeraa Ayyalaadha - Sirna Qorannoo fi Tajaajila Seeraa Afaan-Sadee (Afaan Oromoo • አማርኛ • English) • Aye Harmee Ayee Be" />
     <meta name="twitter:image" content="https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app/src/assets/images/seeraai_authoritative_logo_1792935506374.jpg" />
 
-    <meta name="keywords" content="SeeraAI, SAI Ethio, saorethio1.com, Ethiopian Law, Seera Deemsa Falmii Hariiroo Hawaasaa, Afaan Oromoo Legal AI, Amharic Law, Ethiopian Constitution, Cassation Bench, Legal Contract Generator, Abukaattoo AI" />
+    <meta name="keywords" content="SeeraAI, SAI Ethio, saiethio.com, Ethiopian Law, Seera Deemsa Falmii Hariiroo Hawaasaa, Afaan Oromoo Legal AI, Amharic Law, Ethiopian Constitution, Cassation Bench, Legal Contract Generator, Abukaattoo AI" />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
@@ -39,7 +39,7 @@
         {
           "@type": "WebApplication",
           "@id": "https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app/#webapp",
-          "name": "SAI Ethio (www.saorethio1.com) - SeeraAI Legal AI",
+          "name": "SAI Ethio (mmurtii.aistudio) - SeeraAI Legal AI",
           "alternateName": ["SeeraAI", "SAI Ethio", "Kuni link marsariitii hubannoo seeraa Ayyalaadha"],
           "url": "https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app",
           "applicationCategory": "LegalService",
@@ -127,7 +127,7 @@
             Kuni link marsariitii hubannoo seeraa Ayyalaadha
           </div>
           <div style="font-size: 12px; color: #94a3b8; font-weight: 500; line-height: 1.4;">
-            Sirna Qorannoo & Tajaajila Seeraa Afaan-Sadee • Aye Harmee Ayee Be (<a href="https://www.saorethio1.com" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: none;">www.saorethio1.com</a>)
+            Sirna Qorannoo & Tajaajila Seeraa Afaan-Sadee • Aye Harmee Ayee Be (<a href="https://mmurtii.aistudio" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: none;">mmurtii.aistudio</a>)
           </div>
 
           <!-- Loading progress bar and status -->
@@ -177,6 +177,28 @@
     <script>
       // Global Fail-Safe & Auto-Recovery Engine for all network types
       (function() {
+        // 2026 Legal Grounding Ticker in loading subtext
+        var groundingHeadlines = [
+          "🌐 Initializing SeeraAI Trilingual Legal Workspace (Oromoo • አማርኛ • English)",
+          "⚖️ Loading Federal & Oromia statutory reference modules",
+          "📜 Ethiopian Federal & Oromia regional enactments local module loading",
+          "⚖️ Preparing Ethiopian legal precedents and statutory guidelines workspace",
+          "🌐 Initializing legal research workspace and offline session checks"
+        ];
+        var hlIdx = 0;
+        var subtextEl = document.getElementById('seera-loading-subtext');
+        if (subtextEl) {
+          setInterval(function() {
+            hlIdx = (hlIdx + 1) % groundingHeadlines.length;
+            subtextEl.style.opacity = '0';
+            setTimeout(function() {
+              subtextEl.textContent = groundingHeadlines[hlIdx];
+              subtextEl.style.opacity = '1';
+              subtextEl.style.transition = 'opacity 0.4s ease-in-out';
+            }, 200);
+          }, 3200);
+        }
+
         // Fast launch timer: If React hasn't unmounted skeleton in 3.5s, reveal instant action
         var fallbackTimer = setTimeout(function() {
           var fallbackDiv = document.getElementById('seera-fallback-actions');

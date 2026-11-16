@@ -1,0 +1,118 @@
+SEERAAI PRO — PHASE 8B.6.9
+CANDIDATE GITHUB BRANCH SYNCHRONIZATION & EMULATOR CI VERIFICATION
+NO MERGE • NO PRODUCTION DEPLOYMENT
+
+PURPOSE
+The owner approved a 50 MB court-document upload limit and anonymous authentication for Guest access only. Phase 8B.6.8 implemented candidate changes, but emulator tests have not run and no Git commit or push was made because the prior workspace had no .git directory.
+
+IMPORTANT OWNER SAFETY RULES
+1. Work only in the existing SEERAAI PRO repository and a separate candidate branch named:
+   ci/rules-emulator-tests
+2. Start from the latest remote main branch and preserve all unrelated work.
+3. Do not commit directly to main.
+4. Do not merge, deploy, publish, or modify production Firebase resources.
+5. Never change production firestore.rules, storage.rules, firebase.json, live data, Storage objects, or the production Cloud Run service.
+6. Never put production credentials or secrets into the ZIP or test environment.
+7. Do not claim a branch, commit, push, or passing CI unless the GitHub repository itself confirms it.
+8. Do not upload the ZIP as a binary file into the repository as a substitute for applying its source files.
+
+PHASE A — VERIFY THE CANDIDATE HANDOFF
+Inspect the Phase 8B.6.8 candidate handoff ZIP and its SHA256SUMS.txt.
+Expected ZIP reported by the previous run:
+public/seeraai_phase_8b_6_2_handoff.zip
+Reported size: 204,139 bytes
+Reported SHA-256: 35bfe537b2171471a94e514436f649bf7fa02c78526dde2efc48e91e10164521
+
+The filename contains the older “8b_6_2” label even though the report calls it a Phase 8B.6.8 handoff. Do not assume it is current merely because it exists. Verify the actual ZIP contents and hashes against the latest Phase 8B.6.8 candidate files. Confirm that all 16 checksummed files are present and byte-for-byte match the current candidate workspace. If it is the correct ZIP, create a clearly named copy:
+seeraai_phase_8b_6_8_candidate_handoff.zip
+Do not change source files solely to rename the archive.
+
+PHASE B — DEPENDENCY COMPATIBILITY REVIEW (MANDATORY BEFORE PUSH)
+Inspect the exact package.json, package-lock.json, GitHub Actions workflow, Node version and installed dependency tree.
+The previous report states:
+- Firebase JavaScript SDK: ^13.2.0
+- @firebase/rules-unit-testing was changed to ^4.0.1
+- GitHub Actions was previously expected to use Node 20 and Temurin Java 17.
+
+Do not assume this combination is compatible. Check the official @firebase/rules-unit-testing release compatibility and actual package metadata. The upstream changelog records that v4.0.0 updated its Firebase dependency to Firebase 11.0.0, v5.0.0 updated to Firebase 12.0.0 and set a minimum Node 20 engine, and v6.0.0 updated to Firebase 13.0.0. Verify the exact published package engine and dependency requirements for the versions actually selected.
+
+Choose a dependency and Node-version combination that is officially compatible with the project's Firebase SDK and CI environment. Do not use --legacy-peer-deps merely to conceal incompatible versions. If Firebase 13.2.0 requires rules-unit-testing 6.x, verify its Node engine requirement and set a compatible Node version in CI (for example, only if package metadata confirms it). Do not downgrade the app's Firebase SDK without a separately documented compatibility assessment.
+
+Run a real npm ci where network access is available; npm ci --dry-run alone is not proof that dependencies install or tests run. Report the exact Node, npm, Firebase SDK, rules-unit-testing, firebase-tools, and Java versions.
+
+PHASE C — REVIEW TEST AND WORKFLOW INTEGRITY
+Inspect:
+- .github/workflows/rules-test.yml
+- firebase.emulator.test.json
+- tests/firestore.rules.test.ts
+- tests/storage.rules.test.ts
+- package.json scripts
+
+Confirm all of the following:
+1. The workflow runs on pushes to ci/rules-emulator-tests and/or can be safely triggered by workflow_dispatch. If necessary, adjust only the candidate workflow triggers.
+2. The workflow provisions a compatible Node version and Temurin Java 17 or another supported Java version required by the Firebase Emulator Suite.
+3. The workflow runs Firestore and Storage emulator tests only.
+4. The test project ID is demo-seeraai-test; no production project ID or production credentials are used.
+5. No job deploys Firebase rules, deploys Cloud Run, or publishes the app.
+6. A test failure causes the workflow to fail.
+7. Tests load the candidate rules files explicitly. Do not accidentally load production firestore.rules or storage.rules through firebase.json.
+8. Enumerate the actual individual test cases. Reconcile the earlier report's “21 Firestore + 8 Storage tests” with the Phase 8B.6.8 report's “17 Firestore groups + 10 Storage scenarios.” Do not count describe/group blocks as passed test cases.
+9. Ensure setup data uses emulator-only admin context and is cleaned up safely.
+
+PHASE D — REVIEW AUTHENTICATION EDGE CASES BEFORE PUSH
+Read the actual code, not only the previous report. Verify:
+- Anonymous Firebase users can access only approved public/Guest features.
+- Guest users cannot access private documents, court data, institutional dashboards, or admin logs.
+- `emailVerified` is never spoofed in React state.
+- Trusted admin and court staff permissions come from verified Firebase ID-token custom claims, not localStorage, PIN-only checks, email-string comparisons, or client role values.
+- Owner PIN is only a secondary UI confirmation after trusted server-admin claims are present.
+- Email Link sign-in has correct `handleCodeInApp`, action URL, authorized-domain assumptions, and email-link completion handling.
+- Claim refresh occurs after sign-in and after custom-claim changes.
+- Phone-authenticated users are not incorrectly described as having access to verified-email-only features. The report says phone users may have limited personal-document access, while `getCourtUserContext()` reportedly rejects users without verified email. Resolve this discrepancy explicitly in the access matrix and code. Do not weaken court or institutional access to accommodate it.
+- Existing users are not silently migrated, deleted, or locked out without a documented recovery path.
+
+Do not enable or change a production Firebase Authentication provider setting in this phase. Document any required Firebase Console configuration separately and identify whether it belongs in a staging/test project or the production project.
+
+PHASE E — GITHUB BRANCH SYNCHRONIZATION
+First check whether this workspace has valid Git metadata and a connected GitHub repository integration.
+
+IF a valid Git repository or supported GitHub integration is available:
+1. Fetch the latest remote main.
+2. Create or safely update ci/rules-emulator-tests from the latest main.
+3. Apply only the verified Phase 8B.6.8 candidate files, including the candidate Firestore and Storage rules, source changes, tests, package files, emulator config, and workflow.
+4. Review the complete diff for accidental production-file changes, deleted files, secrets, generated builds, or unrelated modifications.
+5. Commit with a clear message, for example:
+   `Phase 8B.6.8: enforce 50MB uploads and guest-only anonymous auth`
+6. Push only ci/rules-emulator-tests.
+7. Report the exact repository, branch, commit SHA, changed-file list, and GitHub Actions run URL.
+
+IF .git is absent and no supported GitHub integration is available:
+- Stop. Do not claim a push.
+- Do not overwrite main or upload only the ZIP binary.
+- Produce the verified candidate ZIP and a precise GitHub import handoff with the required folder structure and exact files.
+- State clearly that a GitHub-capable repository workspace or authorized human upload is still required.
+
+PHASE F — RUN AND REPORT CI
+If the branch push succeeds, trigger or verify the rules-test workflow on that branch. Wait for actual GitHub Actions results and inspect the logs.
+Report separately:
+- npm ci
+- TypeScript check
+- build
+- Firestore emulator test result and individual test count
+- Storage emulator test result and individual test count
+- any skipped tests
+- any warnings
+- actual GitHub Actions run URL and final status
+
+Do not label tests PASS if they were not executed. If Java, emulator downloads, dependency install, secrets, or workflow permissions block execution, label the exact check BLOCKED and explain why.
+
+PHASE G — FINAL DECISION
+Final status must be exactly one of:
+- BLOCKED — HANDOFF OR DEPENDENCY COMPATIBILITY ISSUE
+- BLOCKED — GITHUB ACTIONS TESTS FAILED
+- BLOCKED — GITHUB ACTIONS NOT EXECUTED
+- CANDIDATE CI PASSED — READY FOR HUMAN REVIEW
+
+Even if CI passes, this phase does NOT authorize merging or production deployment. The candidate must undergo human code review and explicit owner approval before any production change.
+
+Return evidence, not assurances. Include actual paths, versions, hashes, commit/branch details (if available), test totals, logs, and remaining manual actions.

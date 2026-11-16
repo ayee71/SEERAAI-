@@ -40,6 +40,8 @@ import { VoiceDictation, SUPPORTED_SPEECH_DIALECTS, SUPPORTED_SPEECH_DIALECTS_ST
 import { CourtFeeCalculator } from './CourtFeeCalculator';
 import { calculateOromiaCourtFee, CourtFeeCalculationResult } from '../services/courtFeeCalculatorService';
 import { useAuth } from '../context/AuthContext';
+import { CourtroomAudioRecorder } from './CourtroomAudioRecorder';
+import { CourtroomAudioRecordingRecord } from '../services/courtCaseService';
 
 export type CourtLevelMode = 'firstInstance' | 'highCourt' | 'cassation';
 
@@ -205,6 +207,9 @@ export const JudgeProceedingsWorkbench: React.FC<JudgeProceedingsWorkbenchProps>
   const [judgmentOperativeOrder, setJudgmentOperativeOrder] = useState('');
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Oral Hearing Recorder Mode: 'recorder' (Built-in Audio Recorder) or 'manual' (Simple console)
+  const [oralRecordMode, setOralRecordMode] = useState<'recorder' | 'manual'>('recorder');
 
   // AI Hearing Summary Generator State
   const [showDraftSummaryModal, setShowDraftSummaryModal] = useState(false);
@@ -1920,6 +1925,61 @@ Dhaddachi cufameera.`
               </div>
             )}
 
+            {/* Sub-mode Toggle: Built-in Audio Recorder vs Simple/Manual Console */}
+            <div className="flex flex-wrap items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setOralRecordMode('recorder')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  oralRecordMode === 'recorder'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Mic className="w-4 h-4" />
+                <span>🎙️ Waraabbata Sagalee Dhaddachaa (Built-in Audio Recorder)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOralRecordMode('manual')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  oralRecordMode === 'manual'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                <span>⌨️ Qaboo Yaa'ii Harkaa (Manual Text / Quick Voice)</span>
+              </button>
+            </div>
+
+            {oralRecordMode === 'recorder' && (
+              <CourtroomAudioRecorder
+                currentLang={currentLang}
+                activeCaseNumber={caseNo}
+                courtName={courtName}
+                courtLevel={activeCourtLevel}
+                onSavedToCase={(record) => {
+                  if (record.statements && record.statements.length > 0) {
+                    const mapped = record.statements.map(s => ({
+                      id: s.id,
+                      speakerRole: s.speakerRole as any,
+                      speakerName: s.speakerName,
+                      statement: s.statement,
+                      timestamp: s.timestamp,
+                      isAudioTranscribed: true
+                    }));
+                    setOralStatements(prev => [...prev, ...mapped]);
+                  }
+                  if (onSaveToCaseFile) {
+                    onSaveToCaseFile(record);
+                  }
+                }}
+              />
+            )}
+
+            {oralRecordMode === 'manual' && (
+              <>
             {/* Recording Console */}
             <div className="bg-slate-950 p-6 rounded-2xl border-2 border-amber-500/30 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2053,6 +2113,8 @@ Dhaddachi cufameera.`
                 ))}
               </div>
             </div>
+            </>
+            )}
           </div>
         </div>
       )}

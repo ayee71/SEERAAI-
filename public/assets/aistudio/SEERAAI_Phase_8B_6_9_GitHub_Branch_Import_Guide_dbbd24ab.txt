@@ -1,0 +1,169 @@
+SEERAAI PRO — PHASE 8B.6.9
+GITHUB BRANCH IMPORT & EMULATOR CI GUIDE
+
+GOAL
+Import the candidate handoff into a separate GitHub branch named:
+ci/rules-emulator-tests
+
+Do NOT merge into main and do NOT deploy production Firebase rules.
+
+IMPORTANT REPORT CORRECTION
+The report says “16 files” but its own path list contains 17 entries:
+- 16 files covered by SHA256SUMS.txt
+- plus SHA256SUMS.txt itself
+The ZIP should therefore contain 17 entries. Do not omit Navbar.tsx or any other listed file.
+
+EXPECTED CANDIDATE ZIP
+seeraai_phase_8b_6_8_candidate_handoff.zip
+Reported size: 204,547 bytes
+Reported SHA-256:
+31119addd0a766a1c73e5e19d6fb2cbd3b82ad3b6e2ce905827a113b06bc0d9b
+
+STEP 1 — DOWNLOAD THE ZIP
+In Google AI Studio, open the existing SEERAAI project and locate:
+public/seeraai_phase_8b_6_8_candidate_handoff.zip
+Download that exact file to the Android device.
+Do not download the older phase_8b_6_2 archive.
+
+STEP 2 — CREATE A NEW BRANCH FROM THE LATEST MAIN
+1. Open the correct SEERAAI GitHub repository.
+2. Confirm the repository name and that the default branch is main.
+3. Open the branch dropdown.
+4. Select main as the source branch.
+5. In “Find or create a branch”, enter:
+   ci/rules-emulator-tests
+6. Create the branch.
+7. Confirm the branch selector now displays ci/rules-emulator-tests.
+
+Do not upload anything to main.
+If this branch already exists, inspect it first. Do not overwrite it or force-push.
+
+STEP 3 — OPEN CODESPACES FOR THAT BRANCH
+1. Keep ci/rules-emulator-tests selected.
+2. Select Code > Codespaces.
+3. Create a Codespace for ci/rules-emulator-tests.
+4. Open the Codespace in the browser.
+5. In the Explorer, upload the downloaded ZIP into the repository root.
+   If the mobile interface does not expose Upload, use the Explorer menu/context
+   menu or a desktop browser. Do not commit the ZIP as the final source change.
+
+STEP 4 — VERIFY THE ZIP BEFORE EXTRACTING
+Open the Codespaces terminal and run:
+
+pwd
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+printf "Repository root: %s\n" "$REPO_ROOT"
+git status --short --branch
+git branch --show-current
+
+Keep using this same terminal session so REPO_ROOT remains defined. The current branch MUST be:
+ci/rules-emulator-tests
+
+Check the archive hash (change the filename only if the browser added a suffix):
+
+echo '31119addd0a766a1c73e5e19d6fb2cbd3b82ad3b6e2ce905827a113b06bc0d9b  seeraai_phase_8b_6_8_candidate_handoff.zip' | sha256sum -c -
+
+If this reports FAILED, STOP. Do not extract or commit a ZIP with a different hash.
+
+STEP 5 — EXTRACT TO A TEMPORARY FOLDER AND CHECK ALL FILES
+
+mkdir -p /tmp/seeraai-8b68
+unzip -q seeraai_phase_8b_6_8_candidate_handoff.zip -d /tmp/seeraai-8b68
+cd /tmp/seeraai-8b68
+find . -type f | sort
+sha256sum -c SHA256SUMS.txt
+
+All 16 checksum entries must show OK. The directory should contain 17 files total,
+including SHA256SUMS.txt. If any checksum fails or a file is missing, STOP.
+
+STEP 6 — COPY THE CANDIDATE FILES INTO THE REPOSITORY
+Return to the repository root using the variable captured in Step 4 (do not run git rev-parse from /tmp):
+
+cd "$REPO_ROOT"
+cp -a /tmp/seeraai-8b68/. .
+(cd "$REPO_ROOT" && sha256sum -c SHA256SUMS.txt)
+
+Verify the production rules/config have not changed relative to origin/main:
+
+git fetch origin
+git diff --exit-code origin/main -- firestore.rules storage.rules firebase.json
+
+This command must finish with exit code 0 and no diff output.
+If it shows any change to those three production files, STOP. Do not commit.
+
+STEP 7 — REVIEW THE EXACT FILE LIST BEFORE COMMIT
+
+ git status --short
+ git diff --check
+ git diff --stat
+
+Expected candidate paths (17 entries including the checksum manifest):
+.github/workflows/rules-test.yml
+firebase.emulator.test.json
+firestore.rules.phase8b5.3.integrated.candidate
+storage.rules.phase8b5.4.integrated.candidate
+package.json
+package-lock.json
+SHA256SUMS.txt
+tests/firestore.rules.test.ts
+tests/storage.rules.test.ts
+src/services/courtDocuments.ts
+src/components/CourtFolderExplorer.tsx
+src/services/ownerAuth.ts
+src/context/AuthContext.tsx
+src/views/LandingView.tsx
+src/App.tsx
+src/components/VisitorIdentityModal.tsx
+src/components/Navbar.tsx
+
+Do not proceed if unrelated files are modified or any of the production files are changed.
+
+Stage only the listed files:
+
+git add .github/workflows/rules-test.yml firebase.emulator.test.json firestore.rules.phase8b5.3.integrated.candidate storage.rules.phase8b5.4.integrated.candidate package.json package-lock.json SHA256SUMS.txt tests/firestore.rules.test.ts tests/storage.rules.test.ts src/services/courtDocuments.ts src/components/CourtFolderExplorer.tsx src/services/ownerAuth.ts src/context/AuthContext.tsx src/views/LandingView.tsx src/App.tsx src/components/VisitorIdentityModal.tsx src/components/Navbar.tsx
+
+git diff --cached --check
+git diff --cached --exit-code -- firestore.rules storage.rules firebase.json
+git diff --cached --name-only
+
+Confirm the staged list contains exactly the 17 paths shown above.
+
+STEP 8 — COMMIT AND PUSH THE CANDIDATE BRANCH ONLY
+
+ git commit -m "Add SEERAAI Phase 8B.6.9 candidate security and emulator CI"
+ git push -u origin ci/rules-emulator-tests
+
+Do not use --force. Do not merge. Do not deploy.
+
+STEP 9 — CHECK GITHUB ACTIONS
+1. Return to the GitHub repository.
+2. Open Actions.
+3. Open the workflow “Rules Emulator Tests” (rules-test.yml).
+4. Open the latest run triggered by the push to ci/rules-emulator-tests.
+5. Confirm the run used branch ci/rules-emulator-tests.
+6. Confirm Java 17 setup, Node 22, npm ci, TypeScript, production build,
+   Firestore emulator tests, and Storage emulator tests actually ran.
+7. Open each failing step and save/copy its complete log.
+
+A successful npm install/build alone is NOT a security-test PASS.
+Both emulator suites must complete successfully. If any job is skipped, cancelled,
+failed, or blocked, release remains BLOCKED.
+
+STOP CONDITIONS
+- ZIP hash mismatch.
+- Any SHA256SUMS.txt checksum failure.
+- Branch is not ci/rules-emulator-tests.
+- Production firestore.rules, storage.rules, or firebase.json differs from main.
+- Unrelated files are staged.
+- Any attempt to merge or deploy production rules.
+
+FINAL HANDOFF BACK TO REVIEW
+Send the following:
+1. GitHub repository URL (not a secret token).
+2. Candidate branch URL.
+3. Commit hash.
+4. GitHub Actions run URL.
+5. Full Firestore and Storage test summaries/logs.
+6. Confirmation that no merge or deployment was performed.
+
+Only after the emulator tests pass and the remaining rule findings are reviewed should a pull request be considered. Production merge/deployment requires separate explicit approval.

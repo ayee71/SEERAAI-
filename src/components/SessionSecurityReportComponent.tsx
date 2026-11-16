@@ -28,13 +28,20 @@ export const SessionSecurityReportComponent: React.FC = () => {
         orderBy('timestamp', 'desc')
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const logsData: AuthLog[] = [];
-      snapshot.forEach((doc) => {
-        logsData.push({ id: doc.id, ...doc.data() } as AuthLog);
-      });
-      setSuccessfulLogs(logsData);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const logsData: AuthLog[] = [];
+        snapshot.forEach((doc) => {
+          logsData.push({ id: doc.id, ...doc.data() } as AuthLog);
+        });
+        setSuccessfulLogs(logsData);
+      },
+      (error) => {
+        console.warn('SessionSecurityReportComponent onSnapshot notice:', error);
+        setSuccessfulLogs([]);
+      }
+    );
 
     return () => unsubscribe();
   }, [user]);

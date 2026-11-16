@@ -1,0 +1,142 @@
+SEERAAI PRO — PHASE 8B.5.4
+INTEGRATED FIRESTORE & STORAGE CANDIDATE EMULATOR TESTING, REGRESSION VALIDATION, AND RELEASE GATE
+
+PROJECT PRESERVATION DIRECTIVE
+Work ONLY in the existing SEERAAI PRO repository (sai-ethio-legal-ai), Firebase project leafy-rush-xvd6f, and existing application. Do not create a replacement app, Firebase project, database, repository, or migrate any data.
+
+This is a TESTING AND VERIFICATION phase only. Do not publish or deploy anything. Do not change production resources, active rules, live IAM, Auth, custom claims, secrets, Cloud Run, Functions, or production data.
+
+CRITICAL: Keep these active files unchanged:
+- firestore.rules
+- storage.rules
+- firebase.json
+
+Do not overwrite, rename, or copy candidate files over active files.
+
+1. VERIFY THE EXACT TEST TARGETS
+Inspect the repository and report the actual existence, exact paths, line counts, timestamps if available, and SHA-256 hashes for:
+- firestore.rules (active baseline)
+- storage.rules (active baseline)
+- firebase.json (active config)
+- firestore.rules.phase8b5.3.integrated.candidate
+- storage.rules.phase8b5.candidate
+- any newer integrated Storage candidate, if present
+- tests/firestore.rules.test.ts
+- tests/storage.rules.test.ts
+- package.json and the package lockfile
+
+Do not assume any filename exists. If a required file is missing, say so explicitly.
+
+Confirm that the integrated Firestore candidate preserves the complete active 519-line baseline and the proposed Telegram hardening. Verify the actual diff, not only the report. Check that all existing user, court case, court document, witness, courtroom session, notification, audit, payment, and other application collections still have their intended access behavior.
+
+The latest report identified an integrated Firestore candidate but did not clearly identify a matching integrated Storage candidate. If no complete integrated Storage candidate exists, prepare one as a NEW candidate file by combining the complete active storage.rules baseline with the reviewed tenant-boundary change. Preserve every existing Storage path and intended role access. Do not edit storage.rules.
+
+2. VERIFY CANDIDATE RULES LOAD CORRECTLY IN AN ISOLATED TEST
+The tests MUST exercise the candidate files, not accidentally load active production rules.
+
+Use @firebase/rules-unit-testing and the Firebase Emulator Suite. Prefer initializeTestEnvironment with the exact candidate rules read as text, for example:
+- firestore.rules: fs.readFileSync(candidateFirestorePath, 'utf8')
+- storage.rules: fs.readFileSync(candidateStoragePath, 'utf8')
+
+Use a clearly fake/demo project ID such as demo-seeraai-rules-tests. Do not use the production project ID leafy-rush-xvd6f for test data. Ensure test clients connect only to emulator endpoints and cannot fall back to production.
+
+Inspect the current test runner and package.json scripts before choosing commands. Do not invent a test command. If the current tests do not load the candidate paths, modify or add isolated test harness code without changing active rules/configuration.
+
+3. RUN FIRESTORE AND STORAGE EMULATOR TESTS
+First detect and report:
+- node --version
+- npm --version
+- firebase --version
+- java -version
+- installed @firebase/rules-unit-testing version
+- relevant test runner and scripts
+
+Java 17+ is the preferred environment for this project. If Java is absent in the current preview container, do not claim tests passed and do not waste time retrying the same blocked command. Do not install untrusted binaries or change the production environment.
+
+If Java exists, run the real tests against the candidate rules. Use firebase emulators:exec where appropriate so the emulators shut down after the tests. The test command inside emulators:exec must be the real script discovered from the repository. Verify that Firestore AND Storage emulators both start and that the test harness loads the candidate rules.
+
+If Java is absent, prepare a reviewable CI test workflow (for example, GitHub Actions) that uses a supported Node version, Java 17, the project's existing package manager/lockfile, Firebase CLI, and the actual test scripts. The workflow must run tests only; it must not deploy, publish, authenticate to production, or use production secrets. Do not push commits, trigger external workflows, or claim CI passed. Give exact manual steps to run the workflow.
+
+4. REQUIRED FIRESTORE SECURITY TEST CASES
+At minimum, test both allowed and denied outcomes for:
+- unauthenticated access to each public published feed collection
+- public read of published Telegram posts/archive/channel feed
+- public write denial on all Telegram collections
+- authenticated non-admin write denial
+- ordinary authenticated read/write behavior for telegram_polls and telegram_channels according to the intended policy
+- telegram_messages access according to its actual privacy requirements
+- subscriber, user stats, poll results, briefing logs, and telegram_logs restricted to authorized administrators or explicitly authorized service paths
+- legalContentManager/isLegalRepositoryManager authorization, including missing claim, false claim, and role mismatch cases
+- admin access using the intended canonical custom claims
+- conflicting role and courtRole claims fail closed; legacy alias behavior must be explicit and tested
+- users cannot self-promote by editing their profile document
+- court users cannot read or write another institution's records
+- existing court, witness, session, notification, audit, payment, and document collection permissions remain compatible with the preserved baseline
+- global recursive catch-all does not accidentally grant non-admin access
+- overlapping match blocks do not create an unintended allow
+
+Do not declare a test pass based only on rules compiling. Include explicit assertSucceeds and assertFails coverage (or equivalent) for both positive and negative cases.
+
+5. REQUIRED STORAGE SECURITY TEST CASES
+At minimum, test:
+- unauthenticated read/write denied
+- owner with matching UID AND matching institutionId can perform only the intended operations
+- owner with matching UID but missing institutionId denied
+- owner with matching UID but another institutionId denied
+- another user in same institution cannot write into the owner's userId path unless explicitly authorized
+- judge/registrar/court_admin from the matching institution can read only if the design grants it
+- institutional staff from a different institution denied
+- global admin access follows the explicit intended policy
+- unsupported MIME type and oversized file denied if these constraints are specified
+- existing court document, logo, audio, and other Storage paths retain their intended access
+- root/unmatched paths denied
+- create, read, update, and delete are tested separately where policy differs
+
+6. BACKEND AND APPLICATION REGRESSION CHECKS
+Do not treat Rules tests as a substitute for backend tests. Verify that Admin SDK routes independently authenticate and authorize because Admin SDK operations bypass Firestore Security Rules.
+
+Run the existing regression tests and build/type checks using the commands actually defined by the repository. In particular inspect the recent legalSearch.ts change (candidates.push({ ...data, id: d.id })) for correct precedence and search result behavior.
+
+Check that:
+- Telegram bot, Telegram Mini App, and published feed remain functional
+- court documents, evidence, witness schedules, courtroom sessions, notifications, and audio workflows remain functional
+- multilingual UI and existing sign-in/out flows remain intact
+- no new client bundle exposes server secrets
+- no document data has been moved to localStorage or embedded as base64 in Firestore
+
+Report each test suite independently. Do not combine lint/build checks with unit test counts.
+
+7. FINAL EVIDENCE REPORT
+Create:
+SEERAAI_PRO_PHASE_8B_5_4_EMULATOR_TEST_REPORT.md
+
+Include:
+- exact commit/hash or working tree state if available
+- exact active and candidate file paths, line counts, and hashes
+- exact candidate files loaded by each test
+- exact commands executed and exit codes
+- Java, Node, Firebase CLI, and dependency versions
+- passed/failed/skipped/blocked test counts separately for Firestore and Storage
+- a table of each security scenario and its actual result
+- CI workflow file path and manual trigger instructions if local Java is unavailable
+- build/lint/regression outcomes separately
+- unresolved risks and required remediation
+- explicit release decision
+
+Use only evidence from actual command outputs and actual source files. Do not fabricate logs, hashes, test counts, line references, successful test results, or CI runs.
+
+8. RELEASE GATE — NO PRODUCTION ACTION
+The final release status MUST remain BLOCKED unless all of the following are demonstrated:
+- integrated Firestore candidate is complete and preserves baseline behavior
+- integrated Storage candidate is complete and preserves baseline paths
+- Firestore emulator tests actually pass
+- Storage emulator tests actually pass
+- regression tests pass
+- candidate Rules have been reviewed for additive overlapping permissions
+- production live Rules have been independently inspected read-only and backed up
+- Custom Claims migration plan has a verified source of truth and a separate rollback plan
+- project owner gives explicit approval for a separately described production operation
+
+Even if all tests pass, STOP after producing the report. Do not publish rules, deploy services, modify production files, migrate custom claims, change IAM, or access production data.
+
+BEGIN PHASE 8B.5.4 TEST READINESS AND EXECUTION NOW.

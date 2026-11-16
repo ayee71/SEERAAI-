@@ -30,6 +30,7 @@ export const VoiceDictation: React.FC<VoiceDictationProps> = ({
 }) => {
   const [transcriptionHistory, setTranscriptionHistory] = useState<string>('');
   const [autoInsert, setAutoInsert] = useState<boolean>(true);
+  const [verbatimMode, setVerbatimMode] = useState<boolean>(false);
 
   const {
     isRecording,
@@ -45,6 +46,7 @@ export const VoiceDictation: React.FC<VoiceDictationProps> = ({
     language: dictationLang,
     speechDialect: dialectCode,
     legalMode: true,
+    verbatimMode: verbatimMode,
     onTranscriptionResult: (text, isFinal) => {
       if (text) {
         setTranscriptionHistory(text);
@@ -188,7 +190,17 @@ export const VoiceDictation: React.FC<VoiceDictationProps> = ({
             onChange={(e) => setAutoInsert(e.target.checked)}
             className="rounded border-slate-700 text-amber-500 focus:ring-0"
           />
-          <span>Gulaallitti ofumaan dabali / Auto-insert into editor</span>
+          <span>Auto-insert</span>
+        </label>
+
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={verbatimMode}
+            onChange={(e) => setVerbatimMode(e.target.checked)}
+            className="rounded border-slate-700 text-rose-500 focus:ring-0"
+          />
+          <span className={verbatimMode ? 'text-rose-300 font-bold' : ''}>Verbatim (Akkuma dubbatametti)</span>
         </label>
 
         {transcriptionHistory && (

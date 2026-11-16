@@ -163,7 +163,7 @@ export const PremiumSubscriberDashboardView: React.FC<PremiumSubscriberDashboard
     <div class="header">
       <div>
         <div class="logo">⚖️ SeeraAI Legal Tech</div>
-        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Addis Ababa, Ethiopia | www.saorethio1.com</div>
+        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Addis Ababa, Ethiopia | www.saiethio.com</div>
       </div>
       <div class="meta">
         <div><strong>Invoice Reference:</strong> ${tx.transactionReference}</div>

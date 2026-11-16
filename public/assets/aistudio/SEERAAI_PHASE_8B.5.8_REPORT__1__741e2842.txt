@@ -1,0 +1,100 @@
+SEERAAI PRO - PHASE 8B.5.8
+CI ARTIFACT RECOVERY AND REPOSITORY READINESS
+Report date: 2026-11-15
+Repository (per owner): sai-ethio-legal-ai
+Isolated project ID: demo-seeraai-test
+
+======================================================================
+FINAL STATUS:  BLOCKED
+======================================================================
+Per Task 2, work STOPPED because the candidate Rules files are missing.
+No tests ran. Nothing is verified. No production change, deployment, or
+credential use occurred.
+
+----------------------------------------------------------------------
+TASK 1 - REPOSITORY INSPECTION (what actually exists in this workspace)
+----------------------------------------------------------------------
+Uploads folder: EMPTY. Filesystem search (excluding system folders)
+found none of these:
+
+  firestore.rules.phase8b5.3.integrated.candidate   MISSING
+  storage.rules.phase8b5.4.integrated.candidate     MISSING
+  .github/workflows/rules-test.yml                  MISSING
+  firebase.emulator.test.json                       MISSING
+  firestore.rules / storage.rules / firebase.json   MISSING
+  package.json / package-lock.json                  MISSING
+  Any rules test files                              MISSING
+  Repository checkout "sai-ethio-legal-ai"          NOT PRESENT
+
+Whether these files exist in the GitHub repository is UNKNOWN to me.
+
+----------------------------------------------------------------------
+TASK 2 - STOP CONDITION
+----------------------------------------------------------------------
+The instruction says: if either candidate is missing, STOP and report;
+do not invent its contents or substitute production Rules.
+
+Tests for Firestore/Storage Rules must match the real collection names,
+paths, claim names (judge, registrar, court_admin, admin,
+legal-content-manager), institutionId fields, size and MIME limits that
+are written inside the candidate files. I cannot know these. Writing
+tests now would mean guessing the rules, and tests built on guesses could
+"pass" or "fail" without meaning anything. So I have not generated them.
+
+A generic CI workflow, firebase.emulator.test.json, and package.json
+script layout were already delivered in
+SEERAAI_PHASE_8B.5.7_REPORT.txt (section 3). That workflow is a proposal
+that has never run.
+
+----------------------------------------------------------------------
+WHAT THE OWNER MUST PROVIDE (any one of these)
+----------------------------------------------------------------------
+ A. Upload to this chat:
+    1. firestore.rules.phase8b5.3.integrated.candidate
+    2. storage.rules.phase8b5.4.integrated.candidate
+    3. package.json (+ package-lock.json if it exists)
+    4. Existing .github/workflows/rules-test.yml and
+       firebase.emulator.test.json, if they exist in GitHub
+    5. Existing rules test files, if any
+ B. OR a zip of the repository without secrets (.env, service account
+    JSON, keys must be removed).
+
+Check in GitHub first (branch list and Actions tab): the files may
+already exist on a branch such as the phase 8B.5.x branch. If they do,
+upload them rather than recreating them.
+
+----------------------------------------------------------------------
+WHAT I WILL PRODUCE AFTER THE FILES ARRIVE
+----------------------------------------------------------------------
+For each file: exact path, full contents or patch, dependencies and
+commands, branch/commit steps, how to run the workflow, and the evidence
+list:
+  .github/workflows/rules-test.yml
+  firebase.emulator.test.json
+  test/firestore.rules.test.js   (auth, ownership, tenant isolation,
+      claims incl. missing/invalid/conflicting, Telegram public-read vs
+      write, subscribers/polls/stats/briefing logs privacy, court
+      documents, overlapping match /{document=**} cases)
+  test/storage.rules.test.js     (logos, court documents, audio, MIME,
+      size just under/over limit, update/delete, institutionId change)
+  package.json scripts and pinned devDependencies
+
+----------------------------------------------------------------------
+COMMIT STEPS (generic, for later)
+----------------------------------------------------------------------
+  git checkout -b ci/rules-emulator-tests
+  git add .github/workflows/rules-test.yml firebase.emulator.test.json \
+          test/ package.json package-lock.json
+  git commit -m "Add isolated rules emulator tests (demo-seeraai-test)"
+  git push -u origin ci/rules-emulator-tests
+Do not stage firestore.rules, storage.rules, or firebase.json.
+
+----------------------------------------------------------------------
+EVIDENCE REQUIRED FOR ANY FUTURE PASS/FAIL
+----------------------------------------------------------------------
+GitHub Actions run URL; artifact "rules-test-evidence" containing
+test_output.txt, exit_code.txt, hashes_before.txt, hashes_after.txt,
+hash_check.txt, sizes.txt, tool_versions.txt, and emulator debug logs;
+counts of passed/failed/skipped tests.
+
+Status: BLOCKED. Stopped before any production change or deployment.

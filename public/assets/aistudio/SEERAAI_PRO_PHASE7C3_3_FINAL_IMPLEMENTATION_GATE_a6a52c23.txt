@@ -1,0 +1,87 @@
+SEERAAI PRO — PHASE 7C.3.3
+FINAL IMPLEMENTATION READINESS GATE
+MODE: STRICT READ-ONLY / PLAN ONLY
+NO IMPLEMENTATION AUTHORIZED
+
+CONTEXT
+Review the existing SEERAAI PRO v5.0.0 repository and the Phase 7C.2, 7C.3, 7C.3.1, and 7C.3.2 reports. The prior reports are claims, not proof. Independently inspect the actual current source code and identify whether the proposed sign-out/offline-data design is safe enough for a narrowly scoped implementation.
+
+ABSOLUTE GUARDRAILS
+- Do not edit, create, delete, rename, or overwrite any source/configuration file.
+- Do not install or upgrade dependencies.
+- Do not access, write, delete, or modify Firebase, Firestore, Storage, Auth, production data, or user records.
+- Do not deploy rules, hosting, Cloud Run, DNS, or any production/staging service.
+- Do not print or request secrets.
+- Do not claim a test was executed unless you actually ran it and provide the command and output.
+- Stop after delivering the report. No implementation is authorized.
+
+CRITICAL DESIGN GAPS TO RESOLVE
+1. SIGN-OUT / PURGE / FIREBASE ORDERING
+The Phase 7C.3.2 state machine currently places Firebase sign-out before IndexedDB purge. Analyze failure cases:
+- Firebase signOut succeeds but IndexedDB purge fails or remains blocked.
+- IndexedDB purge succeeds but Firebase signOut fails.
+- Browser closes or crashes between stages.
+- A stale authenticated tab continues to write or sync.
+Propose a single explicit sequence that preserves pending data while preventing the next user from accessing the prior user's plaintext data. Define precisely what the application does on every failure. Never label a failed or incomplete purge as success.
+
+2. UNSYNCED AND LOCAL-ONLY DATA ON SHARED DEVICES
+Inventory actual data stores and distinguish:
+- server-confirmed records;
+- queued edits awaiting server acknowledgement;
+- local-only drafts never uploaded;
+- disposable derived caches;
+- institutional/court-record replicas;
+- non-sensitive preferences.
+Explain the unavoidable trade-off: preserving plaintext local-only drafts after logout can expose them to the next user, while deleting them can cause data loss. Specify safe user choices and default behavior. Do not assume a draft is cloud-confirmed based only on a timestamp or local flag. Define verifiable server acknowledgement (server-committed write, authenticated owner, stable document ID, revision/version or content hash, and any necessary server read-back). If safe retention requires encryption or a secure export, specify the key lifecycle, recovery path, and how another account is prevented from decrypting it. If this cannot be implemented safely with current architecture, say so and keep that flow NO-GO.
+
+3. INDEXEDDB LIFECYCLE
+Inspect every code path that opens SeeraAIOfflineDB and every connection owner, including background sync, workers, and service workers if present.
+Specify:
+- onversionchange handlers that close connections;
+- cross-tab request/ack protocol for closing connections;
+- behavior when a tab is suspended, crashed, unresponsive, or fails to ACK;
+- deleteDatabase onsuccess/onerror/onblocked handling;
+- timeout semantics.
+Important: onblocked is not success. deleteDatabase requests cannot be cancelled. Do not launch a second deletion request while the first request is still pending. If a timeout occurs without a terminal request event, report an unresolved deletion and fail closed; do not claim the database is removed and do not permit another account to use the profile until isolation is verified.
+
+4. REAL CROSS-TAB COORDINATION
+A BroadcastChannel send alone does not prove all tabs received or completed the request. Define message fields including uid, correlationId, senderTabId, recipientTabId where relevant, message type, and timestamp. Explain how active tabs are discovered/registered, how ACKs are correlated, how duplicate/stale messages are ignored, and what happens if any tab does not ACK. Do not treat a timeout as permission to assume success. Inspect whether the existing app already has a tab registry or only a document-sync channel.
+
+5. BACKGROUND-SYNC AND WRITE LOCK
+Identify exact methods that enqueue writes, start/stop polling, process queued edits, and expose in-flight promises. A mutex only inside AuthContext is insufficient if storage/backgroundSync modules can still write. Specify the shared lock contract and how every write path respects it. Define bounded drain behavior without silently discarding jobs.
+
+6. INSTITUTIONAL COURT DATA / RETENTION
+Separate canonical server-side court records from local replicas/caches. “Do not delete the official server record” must not mean “retain plaintext court data on a shared browser after logout.” Specify tenant/role isolation and local-cache handling. Flag any retention/legal-policy question that must be decided by the competent judicial administrator; do not invent Ethiopian retention rules.
+
+REQUIRED OUTPUT
+A. Executive decision: READY FOR NARROW IMPLEMENTATION or NO-GO, with clear reasons.
+B. Actual repository identity and package/SDK versions from package.json and lockfile, noting discrepancies.
+C. Exact current functions, keys, DB names, object-store names, connection owners, and line ranges. If something cannot be verified, mark NOT VERIFIED.
+D. Corrected end-to-end state machine including success, cancellation, network failure, purge blocked/error, signOut failure, tab non-response, and crash recovery.
+E. Exact cross-tab protocol and IndexedDB lifecycle, including why the sequence cannot falsely report success.
+F. Safe handling policy for queued edits and local-only drafts on shared terminals.
+G. File-by-file minimal patch proposal with exact responsibilities, but no code modifications.
+H. Test plan distinguishing EXECUTED, PROPOSED, and NOT RUN. Include test names, commands, test framework/environment, expected results, and actual outputs only where genuinely executed. Include at least:
+   - zero-pending clean sign-out;
+   - pending queue with successful sync;
+   - offline/network loss;
+   - explicit discard consent;
+   - local-only draft preservation/recovery;
+   - IndexedDB onblocked and onerror;
+   - suspended/non-responsive second tab;
+   - concurrent write during sign-out;
+   - signOut failure;
+   - shared-device account switch;
+   - institutional data isolation.
+I. Explicit stop conditions and rollback/recovery plan.
+J. Final statement confirming no files or production resources were modified.
+
+QUALITY RULES
+- Do not merely repeat previous reports or mark every item PASS.
+- Challenge design assumptions. Distinguish code inspection from runtime evidence.
+- No fabricated file paths, functions, line numbers, test commands, or results.
+- If any unsynced-data-loss or cross-user-leak path remains possible, decision must be NO-GO.
+- A passing TypeScript build or Vite build is not proof of runtime security.
+- Do not propose a broad rewrite or replacement app. Preserve existing SEERAAI PRO, its users, documents, Firebase project, and court workflows.
+
+STOP: Deliver the read-only report only. Wait for separate explicit human approval before any implementation.

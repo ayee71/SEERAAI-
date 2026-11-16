@@ -1,0 +1,103 @@
+SEERAAI PRO — PHASE 7D.4A
+ISOLATED FIREBASE EMULATOR READINESS & INTEGRATION TEST PLAN
+MODE: PLAN ONLY — READ-ONLY — NO IMPLEMENTATION — NO INSTALLATION — NO DEPLOYMENT
+
+ROLE
+You are auditing the EXISTING SEERAAI PRO v5.0.0 repository. Do not create a replacement application. Preserve all current users, documents, court workflows, Firebase production resources, Storage buckets, Cloud Run service, and application features.
+
+PURPOSE
+Phase 7D.3 achieved real Chromium single-tab, multi-tab, IndexedDB, Service Worker, offline queue protection, shared-device isolation, and lockdown runtime checks. However, Auth/Firestore Emulator tests R04, R08, R13, R14, and R15 remain NOT RUN because Java is absent, Firebase emulators are not configured/cached, and the client/Admin SDK emulator connection hooks are absent.
+
+This phase must produce a safe, exact, evidence-backed plan to enable LOCAL-ONLY Firebase Auth and Cloud Firestore Emulator tests. It must not implement the plan.
+
+ABSOLUTE GUARDRAILS
+1. STRICT READ-ONLY. Do not edit, create, delete, rename, or overwrite any repository file, including firebase.json, firestore.rules, package.json, lockfiles, source files, tests, .gitignore, or environment files.
+2. Do not install packages, Java, Firebase emulator binaries, or download files.
+3. Do not run builds or commands that write artifacts.
+4. Do not run firebase deploy, firebase deploy --only, hosting deploy, rules deploy, Cloud Run deploy, DNS changes, or any production command.
+5. Do not access, read, write, or modify the production Firebase project, production Auth users, production Firestore, Storage, or real court records.
+6. Do not print or request API keys, tokens, secrets, .env contents, or service-account credentials.
+7. Do not run the app against production endpoints. No test may use project ID leafy-rush-xvd6f or any non-demo production project ID.
+8. If a command could contact a non-local Firebase endpoint, do not execute it. Describe it as proposed only.
+9. Use synthetic test users, synthetic court data, and an explicitly named demo project ID such as demo-seeraai-qa in any future proposed command.
+10. Do not fix Firestore rules, custom claims, or OfflineCaseDraft schema in this phase. Identify them and propose separate follow-up phases only.
+
+TASK 1 — CONFIRM CURRENT ENVIRONMENT (READ-ONLY)
+Inspect and report, without exposing secret values:
+- `firebase --version`
+- `node --version`
+- `java -version` / whether Java is available
+- whether Firebase emulator binaries are already cached
+- whether firebase.json has Auth and Firestore emulator configuration
+- whether the client SDK currently contains guarded connectAuthEmulator() and connectFirestoreEmulator() calls
+- whether the Admin SDK is protected by explicit local-only environment checks before using emulator host variables
+- whether any production project ID or production endpoint could be selected accidentally
+Do not run firebase emulators:start yet.
+
+TASK 2 — DESIGN A PRODUCTION-SAFE EMULATOR CONFIGURATION
+Produce a design for LOCAL TESTING ONLY that:
+- Uses a separate demo project ID `demo-seeraai-qa` (or another clearly fake `demo-*` ID).
+- Starts only Auth and Firestore emulators (no Hosting, Functions, Storage, or production services unless separately justified).
+- Uses documented local ports by default: Auth 9099, Firestore 8080, Emulator UI 4000, Hub 4400; confirm current repository requirements before recommending changes.
+- Does not overwrite production firebase.json. Prefer a separate ignored local config outside the tracked production configuration, or explain a safe reversible alternative and its Git implications.
+- Uses explicit localhost endpoints only (127.0.0.1 / localhost).
+- Ensures the client app can connect to emulators only under an explicit development/test switch, never merely because a hostname string happens to match in production.
+- Ensures server-side Firebase Admin SDK uses emulator environment variables only in a dedicated local test process, never in Cloud Run or production.
+- Defines fail-closed guards: if the demo project ID, local emulator endpoints, and explicit test flag do not all match, abort the test rather than falling back to production.
+- Includes safe start, health-check, test, export/cleanup, and stop commands as PROPOSED commands only. Make clear that test data is disposable emulator data.
+
+TASK 3 — CLIENT AND ADMIN SDK CONNECTION DESIGN
+Specify, but do not implement:
+- where connectAuthEmulator(auth, "http://127.0.0.1:9099") would be conditionally called exactly once before Auth operations;
+- where connectFirestoreEmulator(db, "127.0.0.1", 8080) would be conditionally called exactly once before Firestore operations;
+- which explicit environment flags and fake project ID are required;
+- how to prevent double initialization / emulator connection after SDK use;
+- how the Admin SDK would be isolated using FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 and FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 (without URL schemes), plus a demo project ID;
+- how to ensure those variables are absent from production Cloud Run configuration and never leak to client bundles.
+
+TASK 4 — DESIGN THE AUTH/FIRESTORE TEST MATRIX
+Give exact test names, setup, synthetic identities, expected behavior, and cleanup for:
+A. Auth emulator sign-in, sign-out, and signOut failure/retry path.
+B. saveDocumentToFirestoreVerified(): write, getDocFromServer(), matching UID, clientSyncNonce, server timestamp, hasPendingWrites false, fromCache false.
+C. Cross-user Firestore access denial (User A cannot read/write User B records).
+D. Public legal library read (anonymous read only where explicitly intended).
+E. Institutional court access by institutionId and roles (judge, assistant_judge, registrar, court_admin), with no cross-institution access.
+F. CourtCaseFile and CourtTemplateFile writes and deletes; include delete conflict/tombstone verification gap as a test requirement.
+G. Firebase Auth/Firestore offline/reconnect behavior and logout recovery.
+H. Negative test proving no test request can reach production project ID, production host, or Cloud Run API.
+Use the existing Firebase Rules test tooling if it is already installed; do not add dependencies. If unavailable, mark the test harness requirement and any proposed dependency separately, without installing it.
+
+TASK 5 — RECORD KNOWN BLOCKERS WITHOUT FIXING THEM
+The current Phase 7D.3 report established these blockers. Independently verify them from current files and quote exact paths/lines:
+1. firestore.rules calls undefined signedIn() while isSignedIn() is defined.
+2. firestore.rules references undefined isCourtReporterOrStaff().
+3. court_admin and institution custom-claim lifecycle are inconsistent/incompletely verified.
+4. OfflineCaseDraft in precedentOfflineSync.ts has no cloud collection/schema, ownership fields, or implemented service-worker upload handler. It must remain pending_sync and must never be labeled synced.
+5. seera_device_auth_salt vs seera_device_salt purge-key mismatch.
+6. Local backup is plaintext JSON (encrypted:false); shared-terminal export must be treated as sensitive.
+7. Firestore delete queue path lacks server conflict/tombstone verification if this remains true.
+Do not propose a production rules deploy. For rules, provide a separate future remediation plan that requires its own approval and emulator tests first.
+
+TASK 6 — PHASE SEQUENCING RECOMMENDATION
+Recommend a strict sequence and exit criteria for:
+- 7D.4B: local emulator environment setup (after approval; isolated demo project only).
+- 7D.4C: Auth/Firestore Emulator integration and security-rules tests.
+- 7D.5: Firestore rules and custom-claim remediation (separate approval; no production deployment).
+- 7D.6: OfflineCaseDraft schema/endpoint/service-worker destination design (design review before implementation; must include userId, institutionId/tenant scoping, retention, conflict/versioning, and audit requirements as appropriate).
+- 7D.7: residual privacy hygiene (salt-key alignment and encrypted backup design).
+- staging only after all hard blockers and required runtime tests pass.
+Do not assume all court workflows must be exposed to public users. Keep public legal AI features and institutional court workflows isolated by explicit authorization and data boundaries.
+
+REQUIRED REPORT FORMAT
+1. Executive readiness decision.
+2. Environment facts with exact command outputs (redact all sensitive values).
+3. Emulator configuration proposal (no edits made).
+4. Client/Admin SDK wiring proposal.
+5. Auth/Firestore integration test matrix.
+6. Verified remaining blockers with source path and line references.
+7. Proposed phases and acceptance criteria.
+8. Explicit list of tests NOT RUN and why.
+9. Confirmation: no files changed, no packages installed, no Firebase resources accessed, no production calls, no deployment.
+
+FINAL STOP CONDITION
+This is PLAN ONLY. Do not implement, install, download, run emulators, modify files, or deploy. Stop after delivering the report and wait for separate explicit human authorization for Phase 7D.4B.

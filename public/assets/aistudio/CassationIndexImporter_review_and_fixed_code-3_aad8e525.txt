@@ -1,0 +1,774 @@
+CASSATION INDEX IMPORTER — XIINXALA, MADAALLII FI KOODII SIRREEFFAME
+====================================================================
+
+1. MADAALLII KOODII JALQABAA
+-----------------------------
+Madaallii: 2/10 (sirna production keessatti amanamummaa data irratti).
+
+Sababni madaallii kanaa:
+- file.text() PDF fi DOCX irratti fayyadamuun sirrii miti. Isaan binary formats waan ta'aniif text extractor addaa barbaadu.
+- Case metadata sobaa dhaabbataa uuma: caseNumber='15493', decisionDate='2015 B.A.', volume=1, page=112, legalProvisions='የፍ/ብ/ህ/ቁ. 1845'. Faayila hundumaaf isaan kaa'uun data sobaa Master Index keessa galcha.
+- Faayila tokkoof galmee murtii tokko qofa uuma; index keessatti record hedduu jiraachuu ni danda'a.
+- verificationStatus='Verified' jechuun osoo namaan hin mirkanaa'in odeeffannoo mirkanaa'e fakkeessa.
+- selectedCategoryFilter fi searchQuery state qophaa'anii UI keessatti hin fayyadamne.
+- cases erga qophaa'anii booda UI keessatti hin mul'atan; delete, filter, download fi preview hojii hin qaban.
+- “Faayiloota asitti buusi” jedha, garuu drag-and-drop handlers hin jiru.
+- Faayila gosa hin deeggaramne/status irratti validation gahaan hin jiru; duplicate fi file-size checks hin jiru.
+- onImportComplete callback yoo database save irratti kufe, error handling isaa gahaa miti.
+- Imports hedduun hin fayyadamne; noUnusedLocals/noUnusedParameters setting irratti compiler warning/error fiduu danda'u.
+- Error file tokko irratti mudate batch guutuu dhaabuu danda'a.
+
+2. FOYYA'IINSOOTA VERSION HAARAA
+--------------------------------
+- Odeeffannoo hin argamne null godhe; lakkoofsa murtii/date/page/seera hin uumu.
+- Candidate records adda baasuuf basic pattern extraction dabale. Extraction kun heuristic qofa; human review barbaada.
+- Record hunda 'Needs Review' godhe; 'Verified' hin jedhu.
+- TXT/MD fi HTML/HTM browser keessatti dubbisa.
+- PDF/DOCX akka sirriitti dubbifamaniif extractTextFromFile prop (server-side parser) dabale. Prop hin kennamne taanaan ifatti error ibsa; binary file akka plain text hin dubbisu.
+- Scanned PDF OCR barbaachisuu akka danda'u ibsa.
+- Faayila 25 MB ol, gosa dogoggoraa fi duplicate ni dida.
+- Drag-and-drop, file removal, clear-selected-files, loading, status/error messages dabale.
+- Candidate entries agarsiisa; search, category filter, category edit, delete, raw-text preview fi JSON download dabale.
+- onImportComplete async callback ni eega; save kufe yoo ta'e success hin jedhu.
+- Existing CATEGORY_OPTIONS, ExtractedCaseEntry fields, CassationIndexImporter name, currentLang fi callback design ni eega. Props irratti extractTextFromFile dabalame; optional waan ta'eef existing usage isa TXT/HTML qofaaf ni hojjetti.
+
+3. FAAYILA FOYYA'AME
+--------------------
+Faayilli guutuu TSX:
+CassationIndexImporter_fixed.tsx
+
+Koodii isaa asii gadiitti guutuun jira.
+
+4. WALQABSIISA PDF/DOCX — BARBAACHISAA
+-------------------------------------
+PDF fi DOCX irratti parser server-side jiraachuu qaba. Koodii component kana keessatti dependency PDF/DOCX haaraa tokko illee hin tilmaamne; project package.json keessa hin mirkanoofne waan ta'eef.
+
+Fakkeenya walqabsiisaa:
+
+<CassationIndexImporter
+  currentLang={currentLang}
+  onImportComplete={async (entries) => {
+    // Existing secure backend/Firebase save action kee asitti waami.
+    await saveCassationCandidates(entries);
+  }}
+  extractTextFromFile={async (file) => {
+    // Backend endpoint kee kan PDF/DOCX gara text jijjiiru waami.
+    // Endpoint, auth header fi response schema project kee irratti hundaa'a.
+    return await existingDocumentExtractionService(file);
+  }}
+/>
+
+Maqaan saveCassationCandidates fi existingDocumentExtractionService fakkeenya qofa;
+project kee keessatti jiraachuu isaanii hin mirkaneessine. Maqaa function dhugaa project kee fayyadami.
+
+5. DAANGAA EXTRACTION
+---------------------
+- Case number patterns Afaan Oromoo/English/Amharic keessatti garaagarummaa qabaachuu danda'u.
+- Qaamolee himannaa, guyyaa murtii, jildii, fuulaa fi seerota hundumaa automatic extraction 100% sirrii ta'uu hin danda'u.
+- HTML table fi scanned PDF keessatti OCR/layout preservation barbaachisuu danda'a.
+- Candidate sirriitti bahe illee master index keessatti galchuu dura original file waliin namaan mirkaneessi.
+- JSON download keessatti rawText jira; kanaaf file output kana akka galmee iccitii seeraa eegumsa qabuutti kuusi.
+
+6. TEST LIST
+-------------
+[ ] TXT keessatti case number lama jiraachuun candidate lama uuma.
+[ ] HTML keessaa script/style hin galchine text baasa.
+[ ] PDF/DOCX extractor prop malee sirriitti error/status kenna; binary text hin fakkeessu.
+[ ] PDF/DOCX extractor prop waliin text qopheessa.
+[ ] Scanned PDF barruu hin qabneef OCR warning/error argama.
+[ ] Extension dogoggoraa ni didama.
+[ ] File 25 MB ol ni didama.
+[ ] Duplicate file hin dabalamu.
+[ ] Drag/drop fi file picker lamaan hojjetu.
+[ ] Search fi category filter sirriitti hojjetu.
+[ ] Candidate delete/category edit/raw preview ni hojjetu.
+[ ] JSON download rawText fi candidate fields qaba.
+[ ] onImportComplete reject yoo ta'e success hin mul'atu.
+[ ] npm run build fi project TypeScript checks milkaa'u.
+
+7. AMANAMUMMAA
+---------------
+Koodii jalqabaa keessatti master index sobaa uumamuun balaa guddaa dha. Version fooyya'e kana keessatti extraction heuristic qofa, verification namaan taasifamu, fi PDF/DOCX parser server irraa kennamu irratti hundaa'a. Koodii component kana qofaan Firebase security rules, backend API, OCR, authentication ykn permanent persistence hin mirkaneessine.
+
+
+======================= FULL REVISED TSX SOURCE =======================
+
+import React, { useMemo, useRef, useState } from 'react';
+import { Language } from '../i18n/translations';
+import {
+  Upload,
+  Trash2,
+  FileText,
+  Download,
+  CheckCircle,
+  AlertTriangle,
+  Search,
+  Filter,
+  Layers,
+  FileCheck2,
+  Database,
+  X,
+} from 'lucide-react';
+
+export const CATEGORY_OPTIONS = [
+  'የፍትሐ ብሔር ሥነ-ሥርዓት / Civil Procedure',
+  'የፍርድ አፈፃፀም / Execution',
+  'የማስረጃ ሕግ / Evidence',
+  'የይርጋ ጊዜ / Limitation',
+  'የዳኝነት ሥልጣን / Jurisdiction',
+  'የይግባኝ ሥርዓት / Appeal',
+  'የውልና ንብረት ሕግ / Contract & Property',
+  'የመሬት ሕግ / Land',
+  'የአሠሪና ሠራተኛ ሕግ / Labour',
+  'የወንጀል ሕግ / Criminal',
+  'የቤተሰብና ውርስ ሕግ / Family & Succession',
+  'የንግድና ባንክ ሕግ / Commercial & Banking',
+  'የአስተዳደር ሕግ / Administrative',
+  'ሌሎች / Other',
+  'ምደባ ያልተደረገ / Unclassified',
+] as const;
+
+export interface ExtractedCaseEntry {
+  entryNumber: number | null;
+  caseNumber: string | null;
+  parties: string | null;
+  decisionDate: string | null;
+  volume: number | null;
+  indexPageCandidate: number | null;
+  summary: string | null;
+  legalProvisions: string | null;
+  category: string;
+  verificationStatus: string;
+  sourceFile: string;
+  rawText: string;
+}
+
+interface CassationIndexImporterProps {
+  currentLang?: Language;
+  onImportComplete?: (cases: ExtractedCaseEntry[]) => void | Promise<void>;
+  /**
+   * Required to read binary PDF and DOCX files. Connect this to the project's
+   * existing server-side PDF/DOCX text extraction service. Do not use File.text()
+   * for these formats; scanned PDFs may additionally require OCR.
+   */
+  extractTextFromFile?: (file: File) => Promise<string>;
+}
+
+const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+const ALLOWED_FILE_EXTENSION = /\.(txt|md|docx|pdf|html?)$/i;
+const UNCLASSIFIED_CATEGORY = CATEGORY_OPTIONS[CATEGORY_OPTIONS.length - 1];
+
+type StatusKind = 'info' | 'success' | 'warning' | 'error';
+interface StatusMessage {
+  text: string;
+  kind: StatusKind;
+}
+
+const normalizeExtractedText = (value: string): string =>
+  value
+    .replace(/\u0000/g, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\t\f\v ]+/g, ' ')
+    .replace(/\n[ ]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+const htmlToPlainText = (html: string): string => {
+  if (typeof DOMParser === 'undefined') {
+    throw new Error('HTML parser browser keessatti hin argamne.');
+  }
+
+  const documentFromHtml = new DOMParser().parseFromString(html, 'text/html');
+  documentFromHtml
+    .querySelectorAll('script, style, noscript, svg, iframe, nav, footer')
+    .forEach((node) => node.remove());
+
+  return normalizeExtractedText(
+    documentFromHtml.body.innerText || documentFromHtml.body.textContent || '',
+  );
+};
+
+const getFileExtension = (fileName: string): string => {
+  const lastDot = fileName.lastIndexOf('.');
+  return lastDot >= 0 ? fileName.slice(lastDot).toLowerCase() : '';
+};
+
+const extractCaseNumber = (text: string): string | null => {
+  const labeled = text.match(
+    /(?:case\s*(?:no\.?|number)?|file\s*(?:no\.?|number)?|መ\.?\s*ቁ\.?|መዝገብ\s*(?:ቁጥር)?)\s*[:：#-]?\s*([A-Z0-9][A-Z0-9./-]{2,})/i,
+  );
+  if (labeled?.[1]) return labeled[1].trim();
+
+  // Common numeric court-file format. This is a candidate, not a verified ID.
+  const numeric = text.match(/\b\d{2,}\s*\/\s*(?:19|20)\d{2}\b/);
+  return numeric?.[0]?.replace(/\s+/g, '') ?? null;
+};
+
+const extractEntryNumber = (text: string): number | null => {
+  const match = text.match(/(?:entry|index|serial|no\.?|lakkoofsa)\s*[:：#-]?\s*(\d{1,6})/i);
+  return match?.[1] ? Number(match[1]) : null;
+};
+
+const extractParties = (text: string): string | null => {
+  const match = text.match(/^\s*([^\n]{2,100}?\s+(?:v\.?|vs\.?|versus)\s+[^\n]{2,100})\s*$/im);
+  return match?.[1]?.trim() ?? null;
+};
+
+const extractDecisionDate = (text: string): string | null => {
+  const patterns = [
+    /\b(?:19|20)\d{2}\s*(?:E\.?C\.?|B\.?A\.?|Ethiopian\s+Calendar)\b/i,
+    /\b(?:19|20)\d{2}[-/.]\d{1,2}[-/.]\d{1,2}\b/,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[0]) return match[0].trim();
+  }
+  return null;
+};
+
+const extractVolume = (text: string, fileName: string): number | null => {
+  const match = `${text}\n${fileName}`.match(/(?:volume|vol\.?|jildii)\s*[:#-]?\s*(\d{1,2})/i);
+  return match?.[1] ? Number(match[1]) : null;
+};
+
+const extractPageCandidate = (text: string): number | null => {
+  const match = text.match(/(?:index\s*)?(?:page|p\.?|fuula)\s*[:#-]?\s*(\d{1,5})/i);
+  return match?.[1] ? Number(match[1]) : null;
+};
+
+const extractLegalProvisions = (text: string): string | null => {
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  const provisionLine = lines.find((line) =>
+    /\b(?:proclamation|proc\.?|article|art\.?|regulation|directive|civil\s+code|criminal\s+code|law\s+no\.?|አዋጅ|ደንብ|መመሪያ)\b/i.test(line),
+  );
+  return provisionLine ? provisionLine.slice(0, 300) : null;
+};
+
+const classifyCategory = (text: string): string => {
+  const value = text.toLowerCase();
+  const rules: Array<{ category: string; pattern: RegExp }> = [
+    { category: CATEGORY_OPTIONS[0], pattern: /civil procedure|ፍትሐ ብሔር ሥነ|የፍትሐ ብሔር/ },
+    { category: CATEGORY_OPTIONS[1], pattern: /execution|enforcement|ፍርድ አፈፃፀም|አፈጻጸም/ },
+    { category: CATEGORY_OPTIONS[2], pattern: /evidence|evidentiary|ማስረጃ/ },
+    { category: CATEGORY_OPTIONS[3], pattern: /limitation|prescription|ይርጋ/ },
+    { category: CATEGORY_OPTIONS[4], pattern: /jurisdiction|competence|ዳኝነት ሥልጣን/ },
+    { category: CATEGORY_OPTIONS[5], pattern: /appeal|cassation|revision|ይግባኝ|ሰበር/ },
+    { category: CATEGORY_OPTIONS[6], pattern: /contract|property|ውል|ንብረት/ },
+    { category: CATEGORY_OPTIONS[7], pattern: /land|rural land|urban land|መሬት/ },
+    { category: CATEGORY_OPTIONS[8], pattern: /labou?r|employment|worker|ሠራተኛ|ሰራተኛ/ },
+    { category: CATEGORY_OPTIONS[9], pattern: /criminal|crime|offence|offense|ወንጀል/ },
+    { category: CATEGORY_OPTIONS[10], pattern: /family|succession|inheritance|ውርስ|ቤተሰብ/ },
+    { category: CATEGORY_OPTIONS[11], pattern: /commercial|banking|trade|ንግድ|ባንክ/ },
+    { category: CATEGORY_OPTIONS[12], pattern: /administrative|public administration|አስተዳደር/ },
+  ];
+
+  return rules.find((rule) => rule.pattern.test(value))?.category ?? UNCLASSIFIED_CATEGORY;
+};
+
+const splitIntoCandidateRecords = (text: string): string[] => {
+  const lines = text.split('\n');
+  const anchors: number[] = [];
+
+  lines.forEach((line, index) => {
+    if (extractCaseNumber(line)) anchors.push(index);
+  });
+
+  if (anchors.length === 0) return [text];
+
+  return anchors.map((anchor, index) => {
+    const start = index === 0 ? Math.max(0, anchor - 2) : anchor;
+    const end = index + 1 < anchors.length ? anchors[index + 1] : lines.length;
+    return normalizeExtractedText(lines.slice(start, end).join('\n'));
+  }).filter(Boolean);
+};
+
+const extractCandidateEntries = (text: string, sourceFile: string): ExtractedCaseEntry[] => {
+  const records = splitIntoCandidateRecords(text);
+
+  return records.map((record) => ({
+    entryNumber: extractEntryNumber(record),
+    caseNumber: extractCaseNumber(record),
+    parties: extractParties(record),
+    decisionDate: extractDecisionDate(record),
+    volume: extractVolume(record, sourceFile),
+    indexPageCandidate: extractPageCandidate(record),
+    summary: record.slice(0, 500) || null,
+    legalProvisions: extractLegalProvisions(record),
+    category: classifyCategory(record),
+    verificationStatus: 'Needs Review',
+    sourceFile,
+    rawText: record,
+  }));
+};
+
+const getEntrySearchText = (entry: ExtractedCaseEntry): string =>
+  [
+    entry.entryNumber,
+    entry.caseNumber,
+    entry.parties,
+    entry.decisionDate,
+    entry.volume,
+    entry.indexPageCandidate,
+    entry.summary,
+    entry.legalProvisions,
+    entry.category,
+    entry.sourceFile,
+  ].filter((value) => value !== null && value !== undefined).join(' ').toLowerCase();
+
+export const CassationIndexImporter: React.FC<CassationIndexImporterProps> = ({
+  currentLang = 'om',
+  onImportComplete,
+  extractTextFromFile,
+}) => {
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [cases, setCases] = useState<ExtractedCaseEntry[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<StatusMessage | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('');
+  const [showRawTextId, setShowRawTextId] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const showStatus = (text: string, kind: StatusKind = 'info') => {
+    setStatusMessage({ text, kind });
+  };
+
+  const handleAddFiles = (fileList: FileList | File[] | null) => {
+    if (!fileList) return;
+
+    const incoming = Array.from(fileList);
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+
+    for (const file of incoming) {
+      if (!ALLOWED_FILE_EXTENSION.test(file.name)) {
+        rejected.push(`${file.name}: gosa faayilaa hin deeggaramu`);
+        continue;
+      }
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        rejected.push(`${file.name}: 25 MB caalaa`);
+        continue;
+      }
+      const duplicate = selectedFiles.some(
+        (existing) => existing.name === file.name && existing.size === file.size && existing.lastModified === file.lastModified,
+      ) || accepted.some(
+        (existing) => existing.name === file.name && existing.size === file.size && existing.lastModified === file.lastModified,
+      );
+      if (duplicate) {
+        rejected.push(`${file.name}: duraan filatameera`);
+        continue;
+      }
+      accepted.push(file);
+    }
+
+    if (accepted.length > 0) {
+      setSelectedFiles((previous) => [...previous, ...accepted]);
+    }
+
+    if (accepted.length > 0 && rejected.length === 0) {
+      showStatus(`Faayiloota ${accepted.length} dabalaman.`, 'success');
+    } else if (accepted.length > 0 && rejected.length > 0) {
+      showStatus(`Faayiloota ${accepted.length} dabalaman; ${rejected.length} hin fudhatamne. ${rejected.join(' | ')}`, 'warning');
+    } else if (rejected.length > 0) {
+      showStatus(rejected.join(' | '), 'warning');
+    }
+  };
+
+  const readFileAsText = async (file: File): Promise<string> => {
+    const extension = getFileExtension(file.name);
+
+    if (extension === '.txt' || extension === '.md') {
+      return normalizeExtractedText(await file.text());
+    }
+    if (extension === '.html' || extension === '.htm') {
+      return htmlToPlainText(await file.text());
+    }
+    if (extension === '.pdf' || extension === '.docx') {
+      if (!extractTextFromFile) {
+        throw new Error(
+          `${file.name}: PDF/DOCX dubbisuuf extractTextFromFile service barbaachisa. File.text() fayyadamuun binary kana sirriitti hin dubbisu.`,
+        );
+      }
+      return normalizeExtractedText(await extractTextFromFile(file));
+    }
+
+    throw new Error(`${file.name}: gosa faayilaa hin deeggaramu.`);
+  };
+
+  const handleProcessFiles = async () => {
+    if (isProcessing) return;
+    if (selectedFiles.length === 0) {
+      showStatus('Dura faayila tokko ykn isaa ol filadhu.', 'warning');
+      return;
+    }
+
+    setIsProcessing(true);
+    showStatus('Faayiloota dubbisaa fi galmee tilmaamaa qopheessaa jira...', 'info');
+
+    const extracted: ExtractedCaseEntry[] = [];
+    const errors: string[] = [];
+
+    try {
+      for (const file of selectedFiles) {
+        try {
+          const fileText = await readFileAsText(file);
+          if (!fileText) {
+            errors.push(`${file.name}: barruun keessaa hin argamne. PDF suuraa/scanned ta'e OCR barbaachisuu danda'a.`);
+            continue;
+          }
+          extracted.push(...extractCandidateEntries(fileText, file.name));
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : `${file.name}: dubbisuun hin danda'amne.`);
+        }
+      }
+
+      if (extracted.length === 0) {
+        showStatus(
+          errors.length > 0
+            ? `Galmee candidate tokko illee hin qophoofne. ${errors.join(' | ')}`
+            : 'Galmee candidate tokko illee hin argamne.',
+          'error',
+        );
+        return;
+      }
+
+      // Persist/hand off first. Do not show success if the parent save operation fails.
+      if (onImportComplete) {
+        await onImportComplete(extracted);
+      }
+
+      setCases((previous) => [...previous, ...extracted]);
+      setSelectedFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+
+      if (errors.length > 0) {
+        showStatus(
+          `Candidate ${extracted.length} qophaa'eera; faayiloota tokko tokko irratti rakkoon mudate: ${errors.join(' | ')}`,
+          'warning',
+        );
+      } else {
+        showStatus(
+          `Candidate ${extracted.length} qophaa'aniiru. Hundumtuu “Needs Review” dha; osoo hin mirkaneessin Master Index keessatti murtii mirkanaa'eetti hin jijjiirin.`,
+          'success',
+        );
+      }
+    } catch (error) {
+      showStatus(
+        error instanceof Error
+          ? `Import/save hin milkoofne: ${error.message}`
+          : 'Import/save irratti rakkoon hin beekamne mudate.',
+        'error',
+      );
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const removeSelectedFile = (target: File) => {
+    setSelectedFiles((previous) => previous.filter((file) => file !== target));
+  };
+
+  const updateCaseCategory = (index: number, category: string) => {
+    setCases((previous) => previous.map((entry, entryIndex) =>
+      entryIndex === index ? { ...entry, category } : entry,
+    ));
+  };
+
+  const removeCase = (index: number) => {
+    setCases((previous) => previous.filter((_, entryIndex) => entryIndex !== index));
+  };
+
+  const filteredCases = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return cases
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry }) => !selectedCategoryFilter || entry.category === selectedCategoryFilter)
+      .filter(({ entry }) => !query || getEntrySearchText(entry).includes(query));
+  }, [cases, searchQuery, selectedCategoryFilter]);
+
+  const handleDownloadJson = () => {
+    if (cases.length === 0) {
+      showStatus('Download gochuuf galmeen hin jiru.', 'warning');
+      return;
+    }
+
+    try {
+      const blob = new Blob([JSON.stringify(cases, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `cassation-index-candidates-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showStatus('Galmeen JSON buufachuuf qophaaʼeera.', 'success');
+    } catch {
+      showStatus('Faayila JSON qopheessuun hin danda’amne.', 'error');
+    }
+  };
+
+  const languageCode = currentLang === 'am' || currentLang === 'en' ? currentLang : 'om';
+
+  return (
+    <section
+      lang={languageCode}
+      className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-5 sm:p-8 shadow-2xl space-y-6"
+      aria-labelledby="cassation-importer-title"
+    >
+      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
+            <Upload className="w-6 h-6" aria-hidden="true" />
+          </div>
+          <div>
+            <h3 id="cassation-importer-title" className="text-lg font-black text-white">
+              Cassation Intelligence Importer
+            </h3>
+            <p className="text-xs text-indigo-300 mt-1">
+              HTML, TXT, MD, PDF ykn DOCX irraa candidate index qopheessi.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <Database className="w-4 h-4" aria-hidden="true" />
+          <span>{cases.length} candidate kuufame</span>
+        </div>
+      </header>
+
+      {statusMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`p-4 rounded-2xl text-xs border break-words ${
+            statusMessage.kind === 'success' ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/30' :
+            statusMessage.kind === 'warning' ? 'bg-amber-950/40 text-amber-300 border-amber-500/40' :
+            statusMessage.kind === 'error' ? 'bg-rose-950/40 text-rose-300 border-rose-500/30' :
+            'bg-indigo-950/40 text-indigo-300 border-indigo-500/40'
+          }`}
+        >
+          <div className="flex items-start gap-2">
+            {statusMessage.kind === 'success' ? <CheckCircle className="w-4 h-4 shrink-0" /> :
+              statusMessage.kind === 'warning' || statusMessage.kind === 'error' ? <AlertTriangle className="w-4 h-4 shrink-0" /> :
+              <FileCheck2 className="w-4 h-4 shrink-0" />}
+            <span>{statusMessage.text}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
+          onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
+          onDragLeave={(event) => { event.preventDefault(); setIsDragging(false); }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setIsDragging(false);
+            handleAddFiles(event.dataTransfer.files);
+          }}
+          disabled={isProcessing}
+          className={`w-full border-2 border-dashed rounded-[2rem] p-8 text-center bg-slate-950/60 transition space-y-3 disabled:opacity-50 disabled:cursor-not-allowed ${
+            isDragging ? 'border-indigo-400 bg-indigo-950/30' : 'border-slate-700 hover:border-indigo-500'
+          }`}
+          aria-label="Faayila fe'uuf cuqaasi ykn asitti harkisi"
+        >
+          <span className="w-12 h-12 rounded-2xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center mx-auto">
+            <Upload className="w-6 h-6" aria-hidden="true" />
+          </span>
+          <span className="block text-sm font-bold text-slate-200">
+            Faayiloota asitti harkisi ykn cuqaasi filachuuf
+          </span>
+          <span className="block text-xs text-slate-500">
+            HTML, HTM, TXT, MD, PDF, DOCX • Faayila tokko 25 MB ol hin taane
+          </span>
+        </button>
+        <input
+          type="file"
+          ref={fileInputRef}
+          multiple
+          accept=".txt,.md,.docx,.pdf,.html,.htm"
+          onChange={(event) => {
+            handleAddFiles(event.target.files);
+            event.target.value = '';
+          }}
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden="true"
+        />
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          Hubachiisa: PDF/DOCX dubbisuuf `extractTextFromFile` prop irratti server-side extractor walqabsiisi. PDF suuraa irraa hojjetame OCR barbaada.
+        </p>
+      </div>
+
+      {selectedFiles.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Faayiloota filataman ({selectedFiles.length})
+            </h4>
+            <button
+              type="button"
+              onClick={() => setSelectedFiles([])}
+              disabled={isProcessing}
+              className="text-xs text-slate-400 hover:text-rose-300 disabled:opacity-50"
+            >
+              Hundaa haqi
+            </button>
+          </div>
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            {selectedFiles.map((file) => (
+              <div
+                key={`${file.name}-${file.size}-${file.lastModified}`}
+                className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs"
+              >
+                <div className="flex items-center gap-2 min-w-0 text-slate-300">
+                  <FileText className="w-4 h-4 text-indigo-400 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{file.name}</span>
+                  <span className="text-slate-500 shrink-0">({(file.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeSelectedFile(file)}
+                  disabled={isProcessing}
+                  aria-label={`${file.name} haqi`}
+                  className="text-slate-500 hover:text-rose-400 disabled:opacity-50 p-1"
+                >
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleProcessFiles}
+            disabled={isProcessing || selectedFiles.length === 0}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900 disabled:cursor-not-allowed text-white py-3.5 rounded-2xl font-black uppercase text-xs tracking-wider transition shadow-lg flex items-center justify-center gap-2"
+          >
+            {isProcessing
+              ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" />
+              : <Database className="w-4 h-4" aria-hidden="true" />}
+            <span>{isProcessing ? 'Faayila qopheessaa jira...' : 'Faayila qopheessi & candidate index dabali'}</span>
+          </button>
+        </div>
+      )}
+
+      {cases.length > 0 && (
+        <div className="space-y-4 border-t border-slate-800 pt-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Layers className="w-5 h-5 text-indigo-400" aria-hidden="true" />
+              <h4 className="text-sm font-black text-white">Candidate Master Index</h4>
+              <span className="text-xs text-slate-500">({filteredCases.length}/{cases.length})</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleDownloadJson}
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold"
+            >
+              <Download className="w-4 h-4" aria-hidden="true" /> JSON buusi
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="relative block">
+              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Galmee, qaama, faayila barbaadi..."
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+              />
+            </label>
+            <label className="relative block">
+              <Filter className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+              <select
+                value={selectedCategoryFilter}
+                onChange={(event) => setSelectedCategoryFilter(event.target.value)}
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-indigo-500"
+              >
+                <option value="">Ramaddii hunda</option>
+                {CATEGORY_OPTIONS.map((category) => <option key={category} value={category}>{category}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="space-y-3">
+            {filteredCases.map(({ entry, index }) => (
+              <article key={`${entry.sourceFile}-${entry.caseNumber ?? 'unknown'}-${index}`} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-white">{entry.caseNumber ?? 'Lakkoofsi galmee hin adda baane'}</span>
+                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-amber-950/50 border border-amber-500/30 text-amber-300">
+                        <AlertTriangle className="w-3 h-3" aria-hidden="true" /> {entry.verificationStatus}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 break-all">{entry.sourceFile}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeCase(index)}
+                    className="self-end sm:self-start p-1.5 text-slate-500 hover:text-rose-400"
+                    aria-label="Candidate haqi"
+                  >
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <p className="text-slate-400">Qaamolee: <span className="text-slate-200">{entry.parties ?? 'Hin adda baane'}</span></p>
+                  <p className="text-slate-400">Guyyaa: <span className="text-slate-200">{entry.decisionDate ?? 'Hin adda baane'}</span></p>
+                  <p className="text-slate-400">Jildii: <span className="text-slate-200">{entry.volume ?? 'Hin adda baane'}</span></p>
+                  <p className="text-slate-400">Fuula tilmaamaa: <span className="text-slate-200">{entry.indexPageCandidate ?? 'Hin adda baane'}</span></p>
+                </div>
+
+                <label className="block space-y-1">
+                  <span className="text-[11px] text-slate-500">Ramaddii (sirreessuu ni dandeessa)</span>
+                  <select
+                    value={entry.category}
+                    onChange={(event) => updateCaseCategory(index, event.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  >
+                    {CATEGORY_OPTIONS.map((category) => <option key={category} value={category}>{category}</option>)}
+                  </select>
+                </label>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowRawTextId(showRawTextId === `${index}` ? null : `${index}`)}
+                    className="text-xs text-indigo-300 hover:text-indigo-200 font-semibold"
+                  >
+                    {showRawTextId === `${index}` ? 'Barruu dhoksii' : 'Barruu madda agarsiisi'}
+                  </button>
+                  {entry.legalProvisions && <span className="text-[11px] text-slate-500">Seera: {entry.legalProvisions}</span>}
+                </div>
+
+                {showRawTextId === `${index}` && (
+                  <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] leading-relaxed text-slate-300">
+                    {entry.rawText}
+                  </pre>
+                )}
+              </article>
+            ))}
+            {filteredCases.length === 0 && (
+              <p className="text-center text-xs text-slate-500 py-6">Bu'aan barbaacha kanaa hin jiru.</p>
+            )}
+          </div>
+
+          <p className="text-[11px] leading-relaxed text-amber-300/80">
+            Hubachiisa seeraa: kun extraction tilmaamaa qofa. Lakkoofsa galmee, qaamolee, guyyaa, jildii, fuulaa fi seera hunda galmee jalqabaa waliin namaan mirkaneessi. “Needs Review” gara “Verified” jijjiiruun mirkaneessa dhugaa malee hin ta'in.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+};

@@ -1,0 +1,207 @@
+SEERAAI TRINGULAR — PHASE 8B.1
+
+PRE-PATCH LIVE SECURITY INSPECTION — READ-ONLY
+
+APPLICATION: SEERAAI PRO
+FIREBASE PROJECT DISPLAY NAME: SEERAAI TRINGULAR
+TECHNICAL PROJECT ID: leafy-rush-xvd6f
+FIRESTORE DATABASE ID: ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478
+STORAGE BUCKET: leafy-rush-xvd6f.firebasestorage.app
+REGION: europe-west3
+
+MISSION:
+
+Perform Phase 8B.1 ONLY. Inspect the actual live Firebase and Google Cloud security configuration of the EXISTING SEERAAI PRO application and EXISTING SEERAAI TRINGULAR project.
+
+This is strictly an authorized READ-ONLY inspection.
+
+ABSOLUTE RESTRICTIONS:
+
+1. Do not edit, create, delete, rename, or overwrite any file.
+2. Do not modify or publish Firestore Rules.
+3. Do not modify or publish Storage Rules.
+4. Do not change Firebase Authentication users, providers, or custom claims.
+5. Do not change IAM roles, service accounts, secrets, environment variables, or APIs.
+6. Do not deploy Cloud Run services or Cloud Functions.
+7. Do not create, update, delete, export, import, or migrate production data.
+8. Do not install packages or change dependencies.
+9. Do not start Phase 8B.2 or any implementation activity.
+10. Never expose passwords, tokens, API keys, private keys, or secret values.
+11. Do not access confidential court document contents, evidence, witness information, or courtroom audio.
+
+PROJECT IDENTITY:
+
+First verify that the active Firebase project ID is exactly:
+
+leafy-rush-xvd6f
+
+If it differs, STOP and report the mismatch. Do not switch projects or create another project.
+
+Keep these names separate:
+
+- Application: SEERAAI PRO
+- Firebase project: SEERAAI TRINGULAR
+
+REQUIRED INSPECTIONS:
+
+A. FIRESTORE RULES
+
+Inspect the currently published production Firestore Rules.
+
+Verify:
+
+- Whether a Rules release exists.
+- Active release identifier and publication date, if visible.
+- Whether the active rules compile.
+- Whether unconditional "if true" permissions exist.
+- Whether broad signed-in-user permissions exist.
+- Whether wildcard/admin overrides exist.
+- Whether institution/tenant isolation is enforced.
+- Whether users can modify their own roles or authorization fields.
+- Whether the active production Rules differ from workspace firestore.rules.
+
+Do not edit, save, test-deploy, or publish Rules.
+
+B. STORAGE RULES
+
+Inspect the currently published Storage Rules.
+
+Verify coverage of:
+
+- institutions/{institutionId}/courtDocuments/
+- court_logos/{institutionId}/
+- legal_docs/{institutionId}/{userId}/
+
+Check institution isolation, ownership, role restrictions, file-size limits, and content-type restrictions.
+
+Do not upload, download, delete, or modify Storage objects.
+
+C. FIREBASE AUTHENTICATION AND CUSTOM CLAIMS
+
+Inspect:
+
+- Enabled authentication providers.
+- Whether institutional users have Firebase Authentication accounts.
+- Whether representative user tokens contain institutionId, role, courtRole, or admin claims.
+- Email verification status and enforcement, where visible.
+- Whether custom-claims provisioning exists.
+
+Do not create users, sign in as users, reset passwords, mint tokens, or change claims.
+
+Redact all personal identifiers.
+
+D. CLOUD RUN AND CLOUD FUNCTIONS
+
+Inspect existing services in read-only mode.
+
+Verify:
+
+- Service names and regions.
+- Whether unauthenticated invocation is enabled.
+- IAM invoker policy.
+- Service identity and relevant permissions.
+- Presence of relevant environment-variable names and secret references.
+
+NEVER display secret values.
+
+Do not change IAM, secrets, configuration, revisions, or deployment state.
+
+E. PRODUCTION DATA METADATA
+
+Only inspect non-sensitive metadata if authorized.
+
+Determine whether institutionId is consistently represented and whether document metadata references Storage paths or embedded dataUrl/base64 content.
+
+Do not open or disclose confidential court records, evidence, witness details, or audio.
+
+COMPARISON WITH PHASE 8A.4:
+
+Compare live production evidence with the following reported source findings:
+
+1. Firestore undefined helper functions.
+2. Unconditional Firestore permissions.
+3. Wildcard/admin overrides.
+4. Weak institution/tenant isolation.
+5. Storage path mismatch.
+6. Missing Storage size/content-type restrictions.
+7. Institutional Firebase Authentication.
+8. Custom claims provisioning.
+9. Cloud Run unauthenticated access and IAM.
+10. Admin SDK endpoint authorization.
+11. Differences between workspace source and production deployment.
+
+For every finding, use one classification:
+
+- VERIFIED FROM SOURCE
+- VERIFIED FROM CONSOLE
+- VERIFIED BY READ-ONLY RUNTIME METADATA
+- REPORTED BUT NOT VERIFIED
+- NOT VERIFIED
+- RECOMMENDED ACTION
+
+Never claim a source-code finding is a production finding without live evidence.
+
+STOP CONDITIONS:
+
+Stop if the project ID is incorrect, read-only access is unavailable, an operation requires write permissions, or inspection risks exposing confidential data or secrets.
+
+Do not simulate Console access or invent evidence.
+
+FINAL REPORT:
+
+Produce a report titled:
+
+SEERAAI TRINGULAR — PHASE 8B.1 LIVE SECURITY CONFIGURATION INSPECTION REPORT
+
+Include:
+
+1. Executive Summary.
+2. Scope and Read-Only Authorization.
+3. Project Identity Verification.
+4. Live Firestore Rules Inspection.
+5. Live Storage Rules Inspection.
+6. Firebase Authentication and Custom Claims.
+7. Cloud Run and Cloud Functions IAM.
+8. Production Data Metadata and Storage Alignment.
+9. Phase 8A.4 vs Live Production Comparison Matrix.
+10. Confirmed Critical and High-Risk Findings.
+11. Items Not Verified and Why.
+12. Required Human Console Follow-Up.
+13. Recommended Remediation Order.
+14. Rollback and Data-Preservation Considerations.
+15. Explicit Zero-Change Attestation.
+
+ZERO-CHANGE ATTESTATION:
+
+Explicitly report whether:
+
+- Any source file was modified.
+- Any package was installed.
+- Any Firestore or Storage Rules were changed or published.
+- Any Firebase Auth user or custom claim was changed.
+- Any IAM role, service account, secret, or environment variable was changed.
+- Any production data or Storage object was modified.
+- Any confidential court content was accessed.
+- Any deployment occurred.
+
+If an item cannot be verified, mark it NOT VERIFIED.
+
+FINAL STATUS — SELECT ONE:
+
+PHASE 8B.1 COMPLETE — READ-ONLY INSPECTION VERIFIED
+
+OR
+
+PHASE 8B.1 PARTIALLY COMPLETE — SOME LIVE ITEMS NOT VERIFIED
+
+OR
+
+PHASE 8B.1 BLOCKED — SAFE READ-ONLY ACCESS UNAVAILABLE
+
+FINAL INSTRUCTION:
+
+Perform Phase 8B.1 ONLY. Return the evidence-based inspection report.
+
+Do not begin Phase 8B.2. Do not patch code, modify configuration, migrate data, change claims, publish Rules, or deploy anything.
+
+This instruction authorizes read-only inspection and reporting only. Any implementation requires separate explicit human approval.

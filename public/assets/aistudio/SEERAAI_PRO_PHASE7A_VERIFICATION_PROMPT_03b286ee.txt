@@ -1,0 +1,127 @@
+SEERAAI PRO — PHASE 7A: READ-ONLY VERIFICATION & REMEDIATION PLAN
+
+IMPORTANT CONTEXT
+You are working on the EXISTING SEERAAI PRO application. Do not create a new app, replace the current app, migrate the Firebase project, or remove any existing user, document, feature, database, collection, Storage object, Cloud Run service, or configuration.
+
+The previous Phase 7 report claims that public-platform preparation is complete. Treat every statement in that report as UNVERIFIED until you inspect the actual current source code and configuration. A successful compile_applet or lint_applet result (even 0 errors) is not proof of runtime security, Firebase access isolation, privacy, legal-source accuracy, or production readiness.
+
+CURRENT PHASE: READ-ONLY VERIFICATION ONLY.
+Do not edit files, apply fixes, change Firebase rules, deploy, publish, alter DNS, run destructive commands, write to production data, rotate secrets, or change environment variables. Do not print, reveal, or copy secret values. If a required test could change production data or configuration, do not run it; describe the safe test needed instead.
+
+A. VERIFY THE ACTUAL IMPLEMENTATION
+Inspect the current source tree and relevant files, including (where they exist):
+- firestore.rules and storage.rules
+- firebase.json and Firebase configuration
+- server.ts, server-app.ts, and every /api/* route
+- authentication and authorization services
+- document upload, download, sharing, annotation, and offline-sync services
+- IndexedDB/local cache/base64/compression utilities
+- Legal Chat/RAG and legal source retrieval services
+- #seera-loading-subtext / legal ticker data source and rendering code
+- VoiceRecordButton, /api/transcribe, and speech-to-text implementation
+- rate limiter, CORS, request validation, logging, and error handling
+- environment-variable usage and frontend build configuration
+
+For every claim in the previous Phase 7 report, classify it as VERIFIED, PARTIALLY VERIFIED, NOT VERIFIED, or FALSE/CONTRADICTED. Do not infer implementation from a component name, comment, prompt, or report statement.
+
+B. CRITICAL DATA-STORAGE REQUIREMENT
+The existing project requirement is that actual user/court documents must not be stored in localStorage, IndexedDB, GitHub, or browser base64 caches as their document repository. Firebase Storage must hold document binaries; Firestore must hold authorized metadata and references.
+
+Search the entire codebase for IndexedDB, localStorage, sessionStorage, base64, Blob, Cache API, service-worker caches, and offline sync. Return:
+1. Exact file paths and line numbers where document content or sensitive metadata is cached.
+2. What data is cached, for how long, and whether it is encrypted.
+3. Whether a public user can access a previously cached institutional/court document on a shared device or after signing out.
+4. A safe remediation plan that preserves existing records and functionality.
+
+Do not delete any existing cache or document. Distinguish harmless UI preferences from actual document content. If offline court-document access is required, do not assume ordinary IndexedDB caching is acceptable; identify the security design and obtain approval before implementation.
+
+C. PUBLIC VS INSTITUTIONAL ACCESS BOUNDARY
+Verify that public users, ordinary registered users, advocates/researchers, legal experts, judges, assistant judges, registrars, auditors, and administrators have only the intended permissions.
+
+Inspect every relevant Firestore collection and every Firebase Storage path. Do not accept a generic statement such as "request.auth.uid == resource.data.userId" as proof that the whole system is secure.
+
+Provide an access-control matrix covering at least:
+- Signed-out visitor
+- Public/ordinary user A
+- Public/ordinary user B
+- Legal expert/advocate role
+- Judge
+- Assistant judge
+- Registrar
+- Auditor
+- Administrator
+
+For each role, state permitted and denied read/write/list/delete access for:
+- Public legal library and public legal sources
+- Own private drafts and chat history
+- Another user's private drafts and chat history
+- Institutional court documents and case files
+- Court orders and judgments not explicitly public
+- Audit logs and internal court administration
+- Firebase Storage objects
+
+Verify both Firestore rules and Storage rules. Check for wildcard rules, overlapping match blocks, missing default-deny coverage, unsafe create/update ownership checks, role escalation, institutionId manipulation, and access through list/query operations.
+
+IMPORTANT: Verify backend routes independently. Firebase Admin SDK/server client libraries can bypass Firestore Security Rules. Therefore inspect each server endpoint for explicit authentication, authorization, ownership, institution/role checks, input validation, and safe error handling. Do not claim that Firestore rules protect server-side Admin SDK operations.
+
+D. AUTHENTICATION AND PUBLIC ACCESS MODEL
+Explain precisely whether the public app requires account registration, verified email, anonymous authentication, or no sign-in for each feature. The report currently claims signed-in and verified-email checks; determine whether this unintentionally blocks ordinary citizens from public legal information. Recommend a least-privilege access design, but do not change it.
+
+Confirm that a public user's access to public legal material does not grant access to private court or institutional data. Confirm sign-out/session-expiry behavior and private-data cleanup on shared devices.
+
+E. LEGAL SOURCE AND TICKER VERIFICATION
+Inspect the actual ticker data and legal retrieval pipeline.
+- Every displayed law must have a verifiable issuing authority, exact law type and number, year/calendar convention, title, publication date, Gazette or official source link, and status where available.
+- Every cassation decision must have a verifiable case/file number, decision identifier, date, and source location.
+- Distinguish Gregorian and Ethiopian-calendar numbering; never silently convert or mix them.
+- Do not present a model-generated example as a real law or decision.
+- Verify the report's example "Proclamation No. 1385/2026" against an official source. If no authoritative record supports that exact identifier, mark it NOT VERIFIED and recommend removing it from live ticker content until verified. Do not invent a replacement.
+- Check that Google Search grounding citations actually identify sources used for the answer and that the system distinguishes official law from secondary commentary, Telegram posts, and general web pages.
+- Test whether the app can say "I could not verify an authoritative source" rather than inventing article numbers, case numbers, holdings, or legal citations.
+
+F. VOICE TRANSCRIPTION VERIFICATION
+Trace the full path from microphone permission to MediaRecorder capture, upload, /api/transcribe, speech-to-text provider/model, returned transcript, and insertion into the correct field. MediaRecorder alone records audio; it does not transcribe speech.
+Report supported formats, actual payload size enforcement, timeout, authentication, rate limits, error handling, and whether Oromo, Amharic, and English are genuinely supported and tested. Do not claim "verbatim" without test evidence and measured results.
+
+G. API KEYS, MODEL IDs, AND COST CONTROLS
+Check that Gemini and Telegram secrets are server-only and never embedded in VITE_ variables or client bundles. Treat VITE_FIREBASE_API_KEY as frontend configuration rather than a private server secret; verify its allowed API/referrer restrictions and rely on correct Firebase Security Rules/App Check as appropriate. Never print any key value.
+
+Verify that the exact configured Gemini model IDs exist in the current official Gemini API model list and are supported by the code's API method. Report the actual configured names without changing them. Check rate limiting by user/IP, request quotas, maximum tokens, Search grounding frequency, audio limits, and cost monitoring. Do not make assumptions about monthly costs without measured usage and pricing inputs.
+
+H. REQUIRED SAFE TEST PLAN
+If Firebase Emulator Suite or an isolated staging environment already exists, identify it and specify tests that can be run there. Do not connect tests to production or modify production data.
+
+Provide test cases for:
+- Unauthenticated read/write attempts
+- User A attempting to read/update/delete User B's records
+- Ordinary user attempting to access an institutional document
+- Judge from institution A attempting to access institution B
+- Public user attempting to read audit logs
+- Storage URL/path guessing and unauthorized downloads
+- Server/Admin SDK endpoints with missing, expired, or wrong-role tokens
+- Ownership changes during update
+- Sign-out and shared-device cache access
+- Transcription endpoint abuse and oversized payloads
+- Legal ticker source/date/number validation
+
+For each test, give expected result and the actual result only if it was genuinely executed in an isolated environment. Never mark an unrun test PASS.
+
+I. DOMAIN AND DEPLOYMENT CONTROL
+Do not change DNS or deploy. The earlier planned domain was www.seorethio4.com, while the latest Phase 7 report mentions saiethio.com. Flag this discrepancy and ask for the confirmed owned domain before any future DNS work. Preserve the current Cloud Run service and URL unless separately approved.
+
+J. REQUIRED OUTPUT
+Return a factual report with:
+1. Files inspected and commit/version/build identifier if available.
+2. Evidence table: claim, status, exact file path, line number(s), and reason.
+3. Public/institutional permission matrix.
+4. IndexedDB/local-cache findings and document-storage compliance status.
+5. Legal ticker and source verification findings.
+6. Voice-transcription end-to-end findings.
+7. API-secret/model/rate-limit findings.
+8. Test matrix with PASS / FAIL / NOT RUN and evidence.
+9. Ranked vulnerabilities: Critical, High, Medium, Low.
+10. A minimal, non-destructive remediation plan in priority order.
+11. Exact files that would need modification in a later approved phase.
+12. Explicit statement of what remains unverified.
+
+Do not claim "public-ready", "secure", "verified", or "production-ready" unless supported by concrete evidence and successful isolated tests. End by waiting for approval. Do not implement any remediation or deploy in this phase.

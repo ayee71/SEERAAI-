@@ -1,5 +1,5 @@
-import { db, handleFirestoreError, OperationType } from './firebase';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { db, auth, handleFirestoreError, OperationType } from './firebase';
+import { doc, setDoc, getDoc, getDocFromServer, serverTimestamp } from 'firebase/firestore';
 
 export interface FirestoreDocumentData {
   id: string;
@@ -12,7 +12,69 @@ export interface FirestoreDocumentData {
   userEmail?: string;
   updatedAt?: string | any;
   createdAt?: string | any;
+  clientSyncNonce?: string;
   metadata?: Record<string, any>;
+}
+
+export interface VerifiedSyncResult {
+  confirmed: boolean;
+  serverConfirmedAt?: string;
+  serverSyncNonce?: string;
+  error?: string;
+}
+
+/**
+ * Writes a user document to Firestore under 'user_documents/{docId}' and verifies server persistence via getDocFromServer.
+ * Never claims cloud confirmation on cached/pending writes or swallowed errors.
+ */
+export async function saveDocumentToFirestoreVerified(
+  docId: string,
+  data: Partial<FirestoreDocumentData>
+): Promise<VerifiedSyncResult> {
+  const currentUser = auth.currentUser;
+  if (!docId || !currentUser?.uid) {
+    return { confirmed: false, error: 'AUTH_REQUIRED: No authenticated Firebase user for server write.' };
+  }
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return { confirmed: false, error: 'NETWORK_OFFLINE: Cannot verify Firestore server write while offline.' };
+  }
+
+  const nonce = `sync_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const docRef = doc(db, 'user_documents', docId);
+  const payload = {
+    ...data,
+    id: docId,
+    userId: currentUser.uid,
+    userEmail: currentUser.email || data.userEmail || '',
+    clientSyncNonce: nonce,
+    updatedAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(docRef, payload, { merge: true });
+    const serverSnap = await getDocFromServer(docRef);
+    if (!serverSnap.exists()) {
+      return { confirmed: false, error: 'SERVER_VERIFY_MISSING: Document not found on server after write.' };
+    }
+    if (serverSnap.metadata.hasPendingWrites || serverSnap.metadata.fromCache) {
+      return { confirmed: false, error: 'SERVER_VERIFY_PENDING: Write is still buffered locally, not committed on server.' };
+    }
+    const snapData = serverSnap.data();
+    if (snapData?.userId !== currentUser.uid || snapData?.clientSyncNonce !== nonce) {
+      return { confirmed: false, error: 'SERVER_VERIFY_MISMATCH: Owner UID or sync nonce mismatch on server.' };
+    }
+
+    return {
+      confirmed: true,
+      serverConfirmedAt: new Date().toISOString(),
+      serverSyncNonce: nonce,
+    };
+  } catch (err: any) {
+    return {
+      confirmed: false,
+      error: err?.message || 'FIRESTORE_WRITE_FAILED',
+    };
+  }
 }
 
 /**

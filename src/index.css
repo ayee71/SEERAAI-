@@ -143,8 +143,8 @@ html.light ::-webkit-scrollbar-thumb {
   --gadaa-yellow: #FFD700;
 
   /* Global Mappings - High Contrast */
-  --bg-primary: #001f3f; /* Lighter Deep Blue */
-  --bg-secondary: #002d5e;
+  --bg-primary: #002855; /* Lighter Deep Blue (was #001f3f) */
+  --bg-secondary: #003b7a; /* Lighter Navy Blue (was #002d5e) */
   --text-primary: #FFFFFF;
   --text-secondary: #F0F0F0;
 }
@@ -485,18 +485,36 @@ body {
   font-weight: 600;
   cursor: pointer;
   text-decoration: none;
-  transition: all 0.15s ease-in-out;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: text;
   vertical-align: baseline;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .legal-citation-badge:hover,
-.legal-citation-badge:focus-visible {
+.legal-citation-badge:focus-visible,
+.legal-citation-badge.highlight-linked {
   background-color: #334155;
   border-color: #f59e0b;
   color: #ffffff;
-  outline: 2px solid rgba(245, 158, 11, 0.5);
+  outline: 2px solid rgba(245, 158, 11, 0.4);
   outline-offset: 1px;
+  transform: translateY(-1.5px) scale(1.02);
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.6), 0 0 30px rgba(245, 158, 11, 0.25);
+  animation: citationPulseGlow 1.5s infinite alternate ease-in-out;
+  z-index: 10;
+}
+
+@keyframes citationPulseGlow {
+  0% {
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.3), 0 0 15px rgba(245, 158, 11, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.6), 0 0 30px rgba(245, 158, 11, 0.25);
+  }
+  100% {
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.3), 0 0 15px rgba(245, 158, 11, 0.1);
+  }
 }
 
 .legal-citation-popup-tooltip {
@@ -776,3 +794,87 @@ body {
 .animate-folder-fade-in {
   animation: folderFadeIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+/* ==========================================================================
+   Smooth Slide-In Animation for Live Courtroom Transcription Segments
+   ========================================================================== */
+@keyframes transcriptSegmentSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.985);
+    filter: drop-shadow(0 0 12px rgba(245, 158, 11, 0.28));
+  }
+  50% {
+    opacity: 0.92;
+    transform: translateY(2px) scale(1.004);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: none;
+  }
+}
+
+.animate-transcript-slide-in {
+  animation: transcriptSegmentSlideIn 0.44s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+/* ==========================================================================
+   Smooth Marquee Animation for Live Legal Feed Ticker (@seeraai_ethio)
+   ========================================================================== */
+@keyframes liveTickerMarquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-live-ticker {
+  animation: liveTickerMarquee var(--ticker-duration, 45s) linear infinite;
+  will-change: transform;
+}
+
+/* ==========================================================================
+   Smooth Fade-In Animations for Real-Time Streaming Legal Response UI
+   ========================================================================== */
+@keyframes streamPanelFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes streamLineFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-stream-panel-fade {
+  animation: streamPanelFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-stream-line-fade {
+  animation: streamLineFadeIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-stream-panel-fade,
+  .animate-stream-line-fade {
+    animation: none !important;
+  }
+}
+
+

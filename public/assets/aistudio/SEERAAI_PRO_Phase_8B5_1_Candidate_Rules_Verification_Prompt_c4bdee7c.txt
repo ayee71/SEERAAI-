@@ -1,0 +1,203 @@
+SEERAAI PRO — PHASE 8B.5.1
+CANDIDATE RULES INDEPENDENT REVIEW, DIFF VALIDATION & EMULATOR TEST EXECUTION
+
+PROJECT: Existing SEERAAI PRO
+REPOSITORY: sai-ethio-legal-ai
+CURRENT REPORTED PACKAGE VERSION: 5.0.0
+FIREBASE PROJECT ID: leafy-rush-xvd6f
+FIRESTORE DATABASE: ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478
+
+============================================================
+1. NON-NEGOTIABLE SAFETY BOUNDARIES
+============================================================
+This is a candidate-code review and local testing phase ONLY.
+
+Preserve the existing SEERAAI PRO application, repository, Firebase project, users, authentication, documents, collections, Storage objects, integrations, Cloud Run services, and all existing features.
+
+DO NOT:
+- Create a new app, repository, Firebase project, database, or replacement system.
+- Change active firestore.rules, active storage.rules, or firebase.json.
+- Copy candidate rules over active rules.
+- Publish or deploy Firestore Rules or Storage Rules.
+- Deploy Cloud Run, Firebase Functions, or any production service.
+- Change production IAM, Auth settings, Custom Claims, secrets, user roles, or production data.
+- Delete, migrate, or rewrite any existing production resource.
+- Treat a successful build as proof that security rules are correct.
+
+Use only local/static inspection and Firebase Emulator Suite. If an operation could affect production, stop and report it for separate human authorization.
+
+============================================================
+2. VERIFY THE ACTUAL CANDIDATE FILES AND ACTIVE FILES
+============================================================
+Locate and inspect these exact files if present:
+- firestore.rules.phase8b5.candidate
+- storage.rules.phase8b5.candidate
+- firestore.rules
+- storage.rules
+- firebase.json
+
+Confirm which files firebase.json currently references. Do not infer this from filenames.
+
+Produce:
+- Exact repository-relative paths.
+- File sizes and line counts.
+- SHA-256 hashes where available.
+- Git status and unified diff between each active rules file and its corresponding Phase 8B.5 candidate.
+- Confirmation that active files and firebase.json are unchanged from the start of this phase, based on Git diff/status or equivalent evidence.
+
+If candidate files are missing, ambiguous, or not actually generated, stop and report that. Do not invent candidate content.
+
+============================================================
+3. FIRESTORE CANDIDATE RULES DEEP REVIEW
+============================================================
+Review the entire candidate file, not excerpts. Check every match block and every allow expression.
+
+Specifically verify:
+- All matching Firestore rule blocks and additive permissions (OR semantics).
+- Recursive wildcard syntax and catch-all behavior.
+- No accidental public read/write access to private or institutional data.
+- No unintended global-admin access expansion.
+- No privilege escalation through users/{userId} or profile updates.
+- Institution/tenant isolation on get, list, create, update, and delete.
+- Institution IDs cannot be changed by an untrusted client.
+- Role and Custom Claims consistency: admin, role, courtRole, institutionId, legalContentManager.
+- Conflicting role and courtRole claims fail closed; do not grant the union of conflicting privileges.
+- Missing, malformed, or stale claims fail closed for privileged operations.
+- Server-only writes are properly protected from client writes.
+- Audit logs cannot be modified or deleted by ordinary users.
+
+TELEGRAM COLLECTIONS:
+Inspect each separately:
+- telegram_polls
+- telegram_channels
+- telegram_posts
+- telegram_archive
+- telegram_messages
+- telegram_channel_feed
+- telegram_subscribers
+- telegram_user_stats
+- telegram_poll_results
+- telegram_briefing_logs
+- telegram_legal_documents
+
+For every collection, provide a matrix with:
+- Public get/list permission.
+- Authenticated user permission.
+- legalContentManager permission.
+- Admin permission.
+- Create/update/delete permission.
+- Whether writes are intended to be server-only.
+- Whether stored records may contain personal, subscriber, moderation, internal, or unpublished data.
+
+Do not assume every Telegram collection is safe for public reading. Public read may be retained only for verified published/public content. Public create, update, and delete must not remain unless a specifically justified, abuse-resistant public workflow is documented and tested. Prefer trusted server-side Admin SDK writes with explicit backend authorization.
+
+IMPORTANT: Admin SDK bypasses Firestore Security Rules. Every server-side write route must independently authenticate and authorize the caller, verify role and institution, validate input, and prevent cross-tenant writes.
+
+============================================================
+4. STORAGE CANDIDATE RULES DEEP REVIEW
+============================================================
+Review the full Storage candidate file and compare it with actual upload/download paths used by the application.
+
+For /legal_docs/{institutionId}/{userId}/{allPaths=**}, verify:
+- Authenticated user is required.
+- Owner access requires request.auth.uid == userId AND request.auth.token.institutionId == institutionId, unless a documented and separately tested exception applies.
+- Institutional staff access requires matching institutionId and an explicitly permitted role.
+- Global administrator access is narrowly defined and server/client behavior is consistent.
+- Owner writes cannot cross institution boundaries.
+- Create, read, update, and delete are evaluated separately.
+- Content type, size limits, and path validation are appropriate to the actual document workflow.
+- No unintended public access exists through another matching Storage rule.
+- Default-deny rules do not get incorrectly described as overriding another permissive matching rule.
+
+Inspect other real application paths, including any institution court-document paths, audio paths, logos, and user uploads. Report every app path not covered by the candidate rules and every Rules path that has no corresponding legitimate application use.
+
+Do not break existing court document upload, witness audio, evidence, or institutional workflows. Identify required access before proposing restrictions.
+
+============================================================
+5. TEST SUITE QUALITY AND EMULATOR EXECUTION
+============================================================
+Inspect existing Firestore and Storage rules tests. Confirm that tests load the Phase 8B.5 candidate files, not active production rules or an unintended path.
+
+Required positive and negative test groups include:
+A. Unauthenticated reads and writes.
+B. Ordinary authenticated user attempting public/private Telegram writes.
+C. Public reads of only approved published Telegram feed documents.
+D. Subscriber, user-statistics, message, poll-result, and briefing-log privacy.
+E. legalContentManager allowed and denied operations.
+F. Admin allowed operations and non-admin denial.
+G. Institution A user attempting to access Institution B data.
+H. Owner with correct UID but wrong/missing institutionId.
+I. Staff with correct institution and allowed role.
+J. Staff with wrong institution or disallowed role.
+K. User attempting to change institutionId or role.
+L. Missing, malformed, conflicting, or stale claims.
+M. Storage owner read/write within own institution.
+N. Storage owner read/write across another institution.
+O. File type and file-size validation.
+P. Audit log tampering and deletion.
+Q. Existing legitimate app workflows that must remain available.
+
+Run the relevant tests with Firebase Emulator Suite in an isolated local environment. Java 17+ may be used. Verify the test scripts and config actually target emulators (not production). Never place production credentials in test configuration.
+
+Report exact commands, exit codes, test counts, pass/fail details, and relevant logs. If Java, Emulator binaries, dependencies, or another prerequisite are missing, report BLOCKED and provide exact setup steps. Do not say tests passed unless they were executed successfully.
+
+Do not weaken tests, skip failing tests silently, or modify them merely to obtain a green result. Explain every skipped test and why.
+
+============================================================
+6. BUILD AND REGRESSION CHECKS
+============================================================
+The prior report states npm run build passed. Independently verify only if safe and practical:
+- npm run lint or the project's actual TypeScript check.
+- npm run build.
+- Security test scripts.
+
+Report build and type-check results separately from security test results. A build passing does not mean rules are secure or production-ready.
+
+Check that the candidate restrictions do not break existing SEERAAI PRO features: Telegram bot and Mini App, published feeds, legal knowledge base, court document management, evidence, witness audio, and institutional dashboards.
+
+============================================================
+7. REQUIRED OUTPUT — PHASE 8B.5.1 REPORT
+============================================================
+Return a detailed report containing:
+1. Executive summary.
+2. Exact files and hashes inspected.
+3. Active-vs-candidate diff summary.
+4. Firestore Rules findings by collection and line number.
+5. Telegram access matrix for all collections listed above.
+6. Storage access matrix and actual application path mapping.
+7. Custom Claims consistency findings.
+8. Backend Admin SDK authorization findings.
+9. Test suite mapping and test quality assessment.
+10. Actual Emulator test commands, exit codes, and results.
+11. Build/type-check results, separately identified.
+12. Regressions or possible lockout risks.
+13. Unresolved vulnerabilities and blockers.
+14. Recommended next phase and exact approval requirements.
+
+Use these statuses accurately:
+- VERIFIED PASS: supported by actual source evidence and/or executed test output.
+- VERIFIED FAIL: a concrete defect is demonstrated.
+- PARTIALLY VERIFIED: some but not all required evidence is available.
+- BLOCKED: could not be verified or executed due to an identified blocker.
+- NOT TESTED: no test was run.
+
+For each finding, include exact file path, line range, and evidence. Distinguish source inspection from actual emulator tests and production verification.
+
+============================================================
+8. RELEASE GATE
+============================================================
+This phase is NOT authorized to publish or deploy.
+
+Final release status must remain BLOCKED unless all of the following have been independently completed:
+- Full candidate rules and active/candidate diff review.
+- Firestore and Storage Emulator tests actually executed and passed.
+- No unresolved public write or cross-tenant access issue.
+- Backend Admin SDK routes independently authorized.
+- Regression testing for existing app workflows.
+- Read-only inspection of actual production Rules and a verified backup/rollback plan.
+- Custom Claims migration plan validated against a trusted role source, with dry-run and rollback (no claims changes in this phase).
+- Separate explicit human approval for each production operation.
+
+Do not recommend publishing immediately after this audit. Present a separate release checklist for future review.
+
+BEGIN PHASE 8B.5.1 NOW. READ-ONLY INSPECTION AND LOCAL EMULATOR TESTING ONLY.

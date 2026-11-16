@@ -19,13 +19,22 @@ import {
   Bookmark,
   Sparkles,
   Info,
-  RefreshCw
+  RefreshCw,
+  Plus
 } from 'lucide-react';
 import { Language } from '../types';
+import { useAuth } from '../context/AuthContext';
 import { useBookmarks } from '../context/BookmarkContext';
 import { AudioSpeakButton } from './AudioSpeakButton';
 import { TelegramImportModal } from './TelegramImportModal';
 import { ArchiveAssistantWidget } from './ArchiveAssistantWidget';
+import { DownloadBookmarksButton } from './DownloadBookmarksButton';
+import { 
+  retrieveStoredTelegramLegalDocs, 
+  subscribeToStoredTelegramDocs,
+  ParsedTelegramLegalContent,
+  storeTelegramLegalContentInFirestore
+} from '../services/telegramLegalService';
 import { MasterLegalFile, MASTER_FILES, generateMasterFiles } from '../data/telegramMasterArchive';
 export type { MasterLegalFile };
 export { MASTER_FILES, generateMasterFiles };
@@ -45,12 +54,55 @@ export const TelegramArchiveSearch: React.FC<TelegramArchiveSearchProps> = ({ la
   const [syncStatusMessage, setSyncStatusMessage] = useState<string>('');
   const [activeTabMode, setActiveTabMode] = useState<'files' | 'assistant'>('files');
   const [assistantInitialQuery, setAssistantInitialQuery] = useState<string>('');
+  const [dynamicFiles, setDynamicFiles] = useState<ParsedTelegramLegalContent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { user, profile } = useAuth();
   const { toggleBookmark, isBookmarked } = useBookmarks();
+
+  const institutionId = (profile as any)?.courtId || (profile as any)?.institutionId || null;
+
+
+  React.useEffect(() => {
+    setIsLoading(true);
+    const unsubscribe = subscribeToStoredTelegramDocs((docs) => {
+      setDynamicFiles(docs);
+      setIsLoading(false);
+    }, institutionId);
+    return () => unsubscribe();
+  }, [institutionId]);
 
   const langKey = language === 'om' ? 'om' : 'en';
 
+  const combinedFiles = useMemo(() => {
+    // Convert dynamic files to MasterLegalFile format if needed, or just use them
+    // For simplicity, we'll map dynamic files to a consistent view format
+    const dynamicMapped: MasterLegalFile[] = dynamicFiles.map(df => ({
+      id: df.id,
+      fileNumber: df.referenceNumber.replace(/[^0-9]/g, '') || df.id,
+      postNumber: 0, // Placeholder
+      volume: `${df.type.toUpperCase()} / ${df.jurisdiction.toUpperCase()}`,
+      category: df.category === 'property_land' ? 'land' : 
+                df.category === 'labor' ? 'labor' : 
+                df.category === 'family' ? 'family' : 
+                df.category === 'criminal' ? 'criminal' : 'civil',
+      fileType: 'PDF',
+      fileSize: 'DYN',
+      title: df.title,
+      summary: df.summary,
+      principle: df.keyPrinciples,
+      keyArticles: {
+        om: df.keyArticles.join(', '),
+        en: df.keyArticles.join(', ')
+      }
+    }));
+
+    // Combine static master files with dynamic ones
+    // Filter static files to be public (static files don't have institutionId, so they are public)
+    return [...dynamicMapped, ...MASTER_FILES];
+  }, [dynamicFiles, langKey]);
+
   const filteredFiles = useMemo(() => {
-    return MASTER_FILES.filter((f) => {
+    return combinedFiles.filter((f) => {
       const matchesCat = selectedCategory === 'all' || f.category === selectedCategory;
       const q = query.toLowerCase().trim();
       if (!q) return matchesCat;
@@ -61,12 +113,11 @@ export const TelegramArchiveSearch: React.FC<TelegramArchiveSearchProps> = ({ la
         f.summary[langKey].toLowerCase().includes(q) ||
         f.principle[langKey].toLowerCase().includes(q) ||
         (f.keyArticles?.[langKey]?.toLowerCase().includes(q) ?? false) ||
-        f.volume.toLowerCase().includes(q) ||
-        f.postNumber.toString().includes(q);
+        f.volume.toLowerCase().includes(q);
 
       return matchesCat && matchesQ;
     });
-  }, [query, selectedCategory, langKey]);
+  }, [combinedFiles, query, selectedCategory, langKey]);
 
   // 1. Download as Microsoft Word (.doc)
   const downloadAsWord = (file: MasterLegalFile) => {
@@ -265,13 +316,13 @@ Hubannoo fi Qorannoo Seeraa MMWF fi Oromiyaa
               {language === 'om' ? 'Kuusaa Galmee Maastarii (1,500+ Files)' : 'Master Legal Archive (1,500+ Files)'}
             </span>
             <a
-              href="https://t.me/saiorethio1"
+              href="https://t.me/seeraai_ethio"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-500/40 transition-colors"
             >
               <span>✈️</span>
-              <span>Telegram @saiorethio1 (Master Archive)</span>
+              <span>Telegram @seeraai_ethio (Official Channel)</span>
             </a>
           </div>
 
@@ -310,6 +361,7 @@ Hubannoo fi Qorannoo Seeraa MMWF fi Oromiyaa
         </div>
 
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <DownloadBookmarksButton currentLang={language as any} variant="secondary" />
           <button
             type="button"
             onClick={() => setShowImportModal(true)}
@@ -380,7 +432,7 @@ Hubannoo fi Qorannoo Seeraa MMWF fi Oromiyaa
             <BookOpen className="w-4 h-4" />
             <span>{language === 'om' ? '📁 Kuusaa Galmee 1,500+' : '📁 Master Files (1,500+)'}</span>
             <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-950/60 text-slate-200">
-              {MASTER_FILES.length}
+              {combinedFiles.length}
             </span>
           </button>
 
@@ -399,6 +451,17 @@ Hubannoo fi Qorannoo Seeraa MMWF fi Oromiyaa
               4 Headings
             </span>
           </button>
+
+          {profile?.role === 'court_admin' && (
+            <button
+              type="button"
+              onClick={() => setShowImportModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-blue-600 text-white hover:bg-blue-500 transition-all cursor-pointer shadow-md"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{language === 'om' ? 'Galmee Mana Murtii Dabali' : 'Add Court Document'}</span>
+            </button>
+          )}
         </div>
 
         <div className="text-xs text-slate-400 flex items-center gap-2 pr-2">

@@ -172,7 +172,7 @@ export const LegalFAQSupportView: React.FC<LegalFAQSupportViewProps> = ({ curren
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
           <a
-            href="https://t.me/ayelebeharmee"
+            href="https://t.me/seeraai_ethio"
             target="_blank"
             rel="noopener noreferrer"
             className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-amber-500/50 flex items-center gap-3 transition-all group"
@@ -182,7 +182,7 @@ export const LegalFAQSupportView: React.FC<LegalFAQSupportViewProps> = ({ curren
             </div>
             <div>
               <div className="text-xs font-bold text-slate-200">Telegram Support</div>
-              <div className="text-[11px] text-sky-400 font-mono">@ayelebeharmee</div>
+              <div className="text-[11px] text-sky-400 font-mono">@seeraai_ethio</div>
             </div>
           </a>
 

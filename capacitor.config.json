@@ -4,7 +4,7 @@
   "webDir": "dist",
   "server": {
     "url": "https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app",
-    "cleartext": true
+    "cleartext": false
   },
   "ios": {
     "contentInset": "automatic"

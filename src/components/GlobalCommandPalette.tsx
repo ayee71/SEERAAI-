@@ -145,6 +145,26 @@ export const GlobalCommandPalette: React.FC<CommandPaletteProps> = ({
         action: () => onNavigateTab('templates'),
       },
       {
+        id: 'nav-courtroom',
+        category: 'nav',
+        categoryLabel: 'Kallattii (Navigation)',
+        title: currentLang === 'om' ? 'Gargaaraa Dhaddachaa (Courtroom Assistant)' : currentLang === 'am' ? 'የችሎት ረዳት' : 'Courtroom Assistant',
+        subtitle: 'Hordoffii dhaddachaa fi galmeessa ragaa',
+        emoji: '👨‍⚖️',
+        shortcut: 'Alt+8',
+        action: () => onNavigateTab('courtroomAssistant'),
+      },
+      {
+        id: 'nav-library',
+        category: 'nav',
+        categoryLabel: 'Kallattii (Navigation)',
+        title: currentLang === 'om' ? 'Mana Kitaabaa Seeraa (Legal Library)' : currentLang === 'am' ? 'የሕግ ቤተ-መጽሐፍት' : 'Legal Library',
+        subtitle: 'Kitaabolee fi barruulee seeraa dubbisuuf',
+        emoji: '📖',
+        shortcut: 'Alt+9',
+        action: () => onNavigateTab('library'),
+      },
+      {
         id: 'nav-integration',
         category: 'nav',
         categoryLabel: 'Kallattii (Navigation)',
@@ -198,6 +218,24 @@ export const GlobalCommandPalette: React.FC<CommandPaletteProps> = ({
         action: () => {
           if (onTriggerPrint) onTriggerPrint();
         },
+      },
+      {
+        id: 'action-summarize-evidence',
+        category: 'action',
+        categoryLabel: 'Tarkaanfii (Actions)',
+        title: currentLang === 'om' ? 'Ragaa Gabaabsi (Summarize Evidence)' : currentLang === 'am' ? 'ማስረጃን አጭር አድርግ' : 'Summarize Evidence AI',
+        subtitle: 'Ragaalee dhaddachaa fi sanadoota gabaabsi',
+        emoji: '📊',
+        action: () => onNavigateTab('docAnalysis', 'Summarize this legal evidence: '),
+      },
+      {
+        id: 'action-find-citations',
+        category: 'action',
+        categoryLabel: 'Tarkaanfii (Actions)',
+        title: currentLang === 'om' ? 'Keeyyata Barbaadi (Find Citations)' : currentLang === 'am' ? 'የሕግ ጥቅሶችን ፈልግ' : 'Find Legal Citations',
+        subtitle: 'Labsii fi keeyyata dhimma keessaniif barbaadi',
+        emoji: '🔎',
+        action: () => onNavigateTab('citation'),
       },
       {
         id: 'action-shortcuts',

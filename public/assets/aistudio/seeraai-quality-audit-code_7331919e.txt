@@ -1,0 +1,673 @@
+SEERAAI - QUALITY AUDIT MODULE (Koodii walitti qabame)
+=====================================================
+Faayiloota:
+  1. server/quality_audit/quality-audit.engine.ts   (createQualityAuditReport)
+  2. src/components/.../QualityAuditDashboard.tsx   (UI dashboard)
+  3. server/quality_audit/source-scan.converter.ts  (convertSourceScan)
+  4. Firestore caasaa (quality_audits)
+  5. server/quality_audit/quality-audit.storage.ts  (saveQualityAudit)
+
+Yaada: Faayiloonni maqaa isaanii guutuu hin qaban turan; maqaan armaan olii
+tilmaama qofa. Maqaa pirojektii kee keessaa waliin sirreessi.
+Dashboard faayilli lama (document 3 fi 4) tokko ta'uun isaanii mirkanaa'ee,
+al tokko qofa kaa'ameera.
+
+
+=====================================================
+FILE 1: quality-audit.engine.ts
+=====================================================
+
+import {
+  AuditCategory,
+  AuditEvidence,
+  AuditFinding,
+  AuditInput,
+  CategoryScore,
+  ExpertReview,
+  QualityAuditReport
+} from "./quality-audit.types";
+
+const CATEGORY_WEIGHTS: Record<AuditCategory, number> = {
+  architecture: 5,
+  backend: 8,
+  firebase_security: 12,
+  api_security: 10,
+  legal_engine: 15,
+  ocr: 10,
+  citations: 10,
+  telegram: 5,
+  build: 5,
+  tests: 10,
+  privacy: 7,
+  documentation: 3
+};
+
+const ALL_CATEGORIES = Object.keys(CATEGORY_WEIGHTS) as AuditCategory[];
+
+const STATUS_POINTS: Record<AuditEvidence["status"], number | null> = {
+  verified: 10,
+  failed: 0,
+  not_tested: null,
+  not_available: null,
+  inconclusive: null
+};
+
+function average(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function roundScore(value: number | null): number | null {
+  return value === null ? null : Math.round(value * 10) / 10;
+}
+
+function scoreCategory(
+  category: AuditCategory,
+  evidence: AuditEvidence[],
+  findings: AuditFinding[]
+): CategoryScore {
+  const categoryEvidence = evidence.filter(
+    item => item.category === category
+  );
+
+  const usable = categoryEvidence
+    .filter(item => item.status === "verified" || item.status === "failed")
+    .map(item => STATUS_POINTS[item.status])
+    .filter((value): value is number => value !== null);
+
+  if (usable.length === 0) {
+    return {
+      category,
+      score: null,
+      status: "not_assessed",
+      evidenceCount: categoryEvidence.length,
+      findingsCount: findings.filter(f => f.category === category).length,
+      explanation: "Ragaan gahaan hin dhihaanne; qabxiin hin kennamne."
+    };
+  }
+
+  const baseScore = average(usable) ?? 0;
+
+  const categoryFindings = findings.filter(
+    f => f.category === category && f.verified
+  );
+
+  const penalties: Record<string, number> = {
+    critical: 5,
+    high: 2.5,
+    medium: 1,
+    low: 0.25,
+    info: 0
+  };
+
+  const penalty = categoryFindings.reduce(
+    (sum, finding) => sum + penalties[finding.severity],
+    0
+  );
+
+  const score = Math.max(0, Math.min(10, baseScore - penalty));
+
+  return {
+    category,
+    score: roundScore(score),
+    status: "assessed",
+    evidenceCount: categoryEvidence.length,
+    findingsCount: categoryFindings.length,
+    explanation:
+      `Ragaa madaalame ${usable.length}; hanqina mirkanaa'e ${categoryFindings.length}.`
+  };
+}
+
+function weightedScore(categories: CategoryScore[]): number | null {
+  let weightedTotal = 0;
+  let availableWeight = 0;
+
+  for (const item of categories) {
+    if (item.score === null) continue;
+
+    const weight = CATEGORY_WEIGHTS[item.category];
+    weightedTotal += item.score * weight;
+    availableWeight += weight;
+  }
+
+  if (availableWeight === 0) return null;
+
+  return roundScore(weightedTotal / availableWeight);
+}
+
+function calculateExpertScore(
+  reviews: ExpertReview[]
+): number | null {
+  const approved = reviews.filter(
+    review =>
+      review.approved &&
+      Number.isFinite(review.score) &&
+      review.score >= 0 &&
+      review.score <= 10
+  );
+
+  return roundScore(average(approved.map(r => r.score)));
+}
+
+export function createQualityAuditReport(
+  input: AuditInput
+): QualityAuditReport {
+  const expertReviews = input.expertReviews ?? [];
+
+  const categories = ALL_CATEGORIES.map(category =>
+    scoreCategory(category, input.evidence, input.findings)
+  );
+
+  const automaticScore = weightedScore(categories);
+  const expertScore = calculateExpertScore(expertReviews);
+
+  // Expert score and automatic score are shown separately.
+  // Combined score is calculated only when both are available.
+  const combinedScore =
+    automaticScore !== null && expertScore !== null
+      ? roundScore((automaticScore * 0.6) + (expertScore * 0.4))
+      : null;
+
+  const assessedCategories = categories.filter(
+    category => category.score !== null
+  ).length;
+
+  const criticalFindings = input.findings.filter(
+    finding => finding.verified && finding.severity === "critical"
+  );
+
+  const limitations: string[] = [];
+
+  if (assessedCategories < ALL_CATEGORIES.length) {
+    limitations.push(
+      "Kutaan tokko tokko ragaa gahaa waan hin qabneef hin madaalamne."
+    );
+  }
+
+  if (input.evidence.length === 0) {
+    limitations.push(
+      "Ragaan qorannoo hin dhihaanne; madaalliin amanamaa kennamuu hin danda'u."
+    );
+  }
+
+  if (expertScore === null) {
+    limitations.push(
+      "Madaalliin ogeessaa hin jiru; qabxiin ofumaan shallagame qofa agarsiifama."
+    );
+  }
+
+  let overallStatus: QualityAuditReport["overallStatus"];
+
+  if (automaticScore === null) {
+    overallStatus = "insufficient_evidence";
+  } else if (criticalFindings.length > 0) {
+    overallStatus = "high_risk";
+  } else if (automaticScore >= 8) {
+    overallStatus = "good";
+  } else {
+    overallStatus = "needs_improvement";
+  }
+
+  return {
+    id: crypto.randomUUID(),
+    projectId: input.projectId,
+    version: input.version,
+    createdAt: new Date().toISOString(),
+    createdBy: input.createdBy,
+    sourceRevision: input.sourceRevision,
+    categories,
+    findings: input.findings,
+    evidence: input.evidence,
+    expertReviews,
+    automaticScore,
+    expertScore,
+    combinedScore,
+    overallStatus,
+    limitations
+  };
+}
+
+
+=====================================================
+FILE 2: QualityAuditDashboard.tsx
+=====================================================
+
+import React from "react";
+import type {
+  QualityAuditReport,
+  AuditCategory,
+  ExpertReview
+} from "../../server/quality_audit/quality-audit.types";
+
+interface Props {
+  report: QualityAuditReport;
+  currentUser: {
+    uid: string;
+    role: string;
+  };
+  onSaveReview: (review: ExpertReview) => Promise<void>;
+}
+
+const labels: Record<AuditCategory, string> = {
+  architecture: "Caasaa pirojektii",
+  backend: "Backend",
+  firebase_security: "Nageenya Firebase",
+  api_security: "Nageenya API",
+  legal_engine: "Legal Research Engine",
+  ocr: "OCR fi document extraction",
+  citations: "Citations fi madda seeraa",
+  telegram: "Telegram indexing",
+  build: "Build",
+  tests: "Automated tests",
+  privacy: "Iccitii fi eegumsa odeeffannoo",
+  documentation: "Documentation"
+};
+
+export default function QualityAuditDashboard({
+  report,
+  currentUser,
+  onSaveReview
+}: Props) {
+  const [category, setCategory] =
+    React.useState<AuditCategory>("legal_engine");
+
+  const [score, setScore] = React.useState(5);
+  const [comments, setComments] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState("");
+
+  const canReview = [
+    "admin",
+    "chief_judge",
+    "it_auditor",
+    "legal_expert"
+  ].includes(currentUser.role);
+
+  async function saveReview() {
+    if (!canReview || comments.trim().length < 5) {
+      setError("Yaada madaallii gabaabaa fi ifa ta'e galchi.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+
+    try {
+      await onSaveReview({
+        reviewerId: currentUser.uid,
+        reviewerRole: currentUser.role,
+        reviewedAt: new Date().toISOString(),
+        category,
+        score,
+        evidenceIds: report.evidence
+          .filter(item => item.category === category)
+          .map(item => item.id),
+        comments: comments.trim(),
+        recommendations: [],
+        approved: true
+      });
+
+      setComments("");
+    } catch {
+      setError("Madaalliin hin kuufamne. Irra deebi'i.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <main className="space-y-6">
+      <header>
+        <h1 className="text-2xl font-bold">
+          SEERAAI Quality Assurance Center
+        </h1>
+        <p className="text-sm text-gray-500">
+          Version: {report.version} · Project: {report.projectId}
+        </p>
+      </header>
+
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <ScoreCard
+          title="Automatic Audit"
+          score={report.automaticScore}
+        />
+        <ScoreCard
+          title="Expert Assessment"
+          score={report.expertScore}
+        />
+        <ScoreCard
+          title="Combined Score"
+          score={report.combinedScore}
+        />
+      </section>
+
+      <section className="rounded-xl border p-4">
+        <h2 className="mb-3 font-semibold">
+          Madaallii category tokkoon tokkoon
+        </h2>
+
+        <div className="space-y-3">
+          {report.categories.map(item => (
+            <div key={item.category}
+              className="border-b pb-3 last:border-0">
+              <div className="flex justify-between gap-3">
+                <span>{labels[item.category]}</span>
+                <strong>
+                  {item.score === null
+                    ? "Hin madaalamne"
+                    : `${item.score}/10`}
+                </strong>
+              </div>
+
+              <p className="text-xs text-gray-500">
+                Ragaa: {item.evidenceCount} · Hanqina:
+                {" "}{item.findingsCount}
+              </p>
+
+              {item.score !== null && (
+                <div className="mt-2 h-2 rounded bg-gray-200">
+                  <div
+                    className="h-2 rounded bg-blue-600"
+                    style={{ width: `${item.score * 10}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-xl border p-4">
+        <h2 className="font-semibold">Hanqina argame</h2>
+
+        {report.findings.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            Hanqinni mirkanaa'e hin jiru; kun hanqinni hin jiru
+            jechuu miti.
+          </p>
+        ) : (
+          report.findings.map(finding => (
+            <article key={finding.id}
+              className="my-3 rounded-lg bg-gray-50 p-3">
+              <strong>{finding.title}</strong>
+              <p className="text-sm">{finding.description}</p>
+              <p className="text-xs text-gray-500">
+                Sadarkaa: {finding.severity}
+              </p>
+              <p className="text-sm">
+                Furmaata: {finding.recommendation}
+              </p>
+              <p className="text-xs">
+                Faayila: {finding.affectedFiles.join(", ")}
+              </p>
+            </article>
+          ))
+        )}
+      </section>
+
+      <section className="rounded-xl border p-4 space-y-3">
+        <h2 className="font-semibold">
+          Madaallii ogeessaa galchi
+        </h2>
+
+        {!canReview ? (
+          <p className="text-sm text-red-600">
+            Hayyamni madaallii kennuu siif hin kennamne.
+          </p>
+        ) : (
+          <>
+            <select
+              className="w-full rounded border p-2"
+              value={category}
+              onChange={e =>
+                setCategory(e.target.value as AuditCategory)
+              }
+            >
+              {Object.entries(labels).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+
+            <label className="block text-sm">
+              Qabxii: {score}/10
+              <input
+                type="range"
+                min="0"
+                max="10"
+                step="0.5"
+                value={score}
+                onChange={e => setScore(Number(e.target.value))}
+                className="w-full"
+              />
+            </label>
+
+            <textarea
+              className="w-full rounded border p-3"
+              rows={4}
+              value={comments}
+              onChange={e => setComments(e.target.value)}
+              placeholder="Ragaa irratti hundaa'uun yaada kee barreessi..."
+            />
+
+            {error && (
+              <p className="text-sm text-red-600">{error}</p>
+            )}
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={saveReview}
+              className="rounded-lg bg-blue-700 px-4 py-2 text-white disabled:opacity-50"
+            >
+              {saving ? "Kuusaa jira..." : "Madaallii kuusi"}
+            </button>
+          </>
+        )}
+      </section>
+
+      <section className="rounded-xl border p-4">
+        <h2 className="font-semibold">Daangaa qorannoo</h2>
+        {report.limitations.map((item, index) => (
+          <p key={index} className="text-sm text-amber-700">
+            • {item}
+          </p>
+        ))}
+      </section>
+    </main>
+  );
+}
+
+function ScoreCard({
+  title,
+  score
+}: {
+  title: string;
+  score: number | null;
+}) {
+  return (
+    <div className="rounded-xl border p-4">
+      <p className="text-sm text-gray-500">{title}</p>
+      <p className="text-3xl font-bold">
+        {score === null ? "N/A" : `${score}/10`}
+      </p>
+    </div>
+  );
+}
+
+
+=====================================================
+FILE 3: source-scan.converter.ts
+=====================================================
+
+import {
+  AuditEvidence,
+  AuditFinding,
+  AuditCategory
+} from "./quality-audit.types";
+
+export interface SourceScanResult {
+  filePath: string;
+  checkId: string;
+  category: AuditCategory;
+  passed: boolean | null;
+  title: string;
+  details: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  recommendation: string;
+  lineStart?: number;
+  lineEnd?: number;
+}
+
+export interface SourceAuditBundle {
+  revision: string;
+  scannedFiles: string[];
+  scanResults: SourceScanResult[];
+  build: {
+    executed: boolean;
+    passed: boolean | null;
+    logReference?: string;
+  };
+  tests: {
+    executed: boolean;
+    passed: boolean | null;
+    total?: number;
+    failed?: number;
+    logReference?: string;
+  };
+}
+
+export function convertSourceScan(
+  bundle: SourceAuditBundle,
+  actorId: string
+): {
+  evidence: AuditEvidence[];
+  findings: AuditFinding[];
+} {
+  const evidence: AuditEvidence[] = [];
+  const findings: AuditFinding[] = [];
+
+  for (const result of bundle.scanResults) {
+    const evidenceId = crypto.randomUUID();
+
+    evidence.push({
+      id: evidenceId,
+      category: result.category,
+      title: result.title,
+      description: result.details,
+      status:
+        result.passed === true
+          ? "verified"
+          : result.passed === false
+            ? "failed"
+            : "inconclusive",
+      sourceFile: result.filePath,
+      lineStart: result.lineStart,
+      lineEnd: result.lineEnd,
+      verifiedAt: new Date().toISOString(),
+      verifiedBy: actorId
+    });
+
+    if (result.passed === false) {
+      findings.push({
+        id: crypto.randomUUID(),
+        category: result.category,
+        severity: result.severity,
+        title: result.title,
+        description: result.details,
+        affectedFiles: [result.filePath],
+        recommendation: result.recommendation,
+        evidenceIds: [evidenceId],
+        verified: true
+      });
+    }
+  }
+
+  evidence.push({
+    id: crypto.randomUUID(),
+    category: "build",
+    title: "Build verification",
+    description: bundle.build.logReference ?? "Build log hin dhihaanne.",
+    status: !bundle.build.executed
+      ? "not_tested"
+      : bundle.build.passed === true
+        ? "verified"
+        : bundle.build.passed === false
+          ? "failed"
+          : "inconclusive",
+    verifiedAt: new Date().toISOString(),
+    verifiedBy: actorId
+  });
+
+  evidence.push({
+    id: crypto.randomUUID(),
+    category: "tests",
+    title: "Automated test verification",
+    description: bundle.tests.logReference ??
+      "Test log hin dhihaanne.",
+    status: !bundle.tests.executed
+      ? "not_tested"
+      : bundle.tests.passed === true
+        ? "verified"
+        : bundle.tests.passed === false
+          ? "failed"
+          : "inconclusive",
+    verifiedAt: new Date().toISOString(),
+    verifiedBy: actorId
+  });
+
+  return { evidence, findings };
+}
+
+
+=====================================================
+FILE 4: Firestore caasaa
+=====================================================
+
+quality_audits/
+  {auditId}/
+    metadata
+    categories/
+    findings/
+    evidence/
+    expert_reviews/
+
+
+=====================================================
+FILE 5: quality-audit.storage.ts
+=====================================================
+
+import {
+  Firestore,
+  doc,
+  setDoc,
+  getDoc,
+  serverTimestamp
+} from "firebase/firestore";
+
+import type { QualityAuditReport } from "./quality-audit.types";
+
+export async function saveQualityAudit(
+  db: Firestore,
+  report: QualityAuditReport,
+  authenticatedUserId: string
+) {
+  if (!authenticatedUserId) {
+    throw new Error("Authentication barbaachisa.");
+  }
+
+  const ref = doc(db, "quality_audits", report.id);
+
+  const existing = await getDoc(ref);
+
+  if (existing.exists()) {
+    throw new Error("Audit ID duraan jira. Version haaraa uumi.");
+  }
+
+  await setDoc(ref, {
+    ...report,
+    ownerId: authenticatedUserId,
+    createdAt: serverTimestamp()
+  });
+
+  return report.id;
+}

@@ -147,3 +147,5 @@ export const PlayStorePublishGuideModal: React.FC<PlayStorePublishGuideModalProp
     </div>
   );
 };
+
+export default PlayStorePublishGuideModal;

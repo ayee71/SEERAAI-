@@ -1,4 +1,6 @@
 import { CassationPrecedent } from '../data/cassationPrecedents';
+import { addSyncLog } from './syncLogService';
+import { savePrecedentsCodedOffline } from './legalPrecedentCodec';
 
 const OFFLINE_PRECEDENTS_STORAGE_KEY = 'seera_offline_cassation_precedents';
 const NOTIFICATION_PREF_KEY = 'seera_precedents_notification_enabled';
@@ -118,9 +120,10 @@ export async function cachePrecedentsForOffline(
   try {
     if (onProgress) onProgress(0, precedents.length);
 
-    // Save to LocalStorage
+    // Save to LocalStorage (both raw and coded compressed format to reduce 2GB to ~100KB)
     localStorage.setItem(OFFLINE_PRECEDENTS_STORAGE_KEY, JSON.stringify(precedents));
     localStorage.setItem('seera_precedents_last_sync', new Date().toISOString());
+    savePrecedentsCodedOffline();
 
     // Send to Service Worker for Cache Storage
     if (navigator.serviceWorker && navigator.serviceWorker.controller) {
@@ -138,6 +141,14 @@ export async function cachePrecedentsForOffline(
       precedentTitles: precedents.slice(0, 3).map((p) => `Galmee ${p.fileNumber}: ${p.parties.om}`),
       customTitle: `Murtiiwwan Ijoo ${precedents.length} Offline Kuufamaniiru! ⚖️`,
       customBody: `Sanadoon Murtii Dhaddacha Dhimmoota Ijoo ${precedents.length} milkaa'inaan offline kuufamaniiru. Intarneeta malee dubbisuu dandeessu. / የሰበር ውሳኔ ሰነዶች ከመስመር ውጭ ተቀምጠዋል።`,
+    });
+    
+    await addSyncLog({
+      status: 'success',
+      type: 'download',
+      details: `Cached ${precedents.length} cassation precedents for offline access.`,
+      affectedIds: precedents.map(p => p.id),
+      conflictsResolved: false
     });
 
     return { success: true, count: precedents.length };
@@ -320,12 +331,17 @@ export function getPendingOfflineCaseDrafts(): OfflineCaseDraft[] {
   return getOfflineCaseDrafts().filter((d) => d.status === 'pending_sync');
 }
 
+import { isWriteLocked } from './signOutSafetyService';
+
 /**
  * Save or update a court case file draft while offline
  */
 export async function saveOfflineCaseDraft(
   draftData: Partial<OfflineCaseDraft> & { title: string; content: string }
 ): Promise<OfflineCaseDraft> {
+  if (isWriteLocked()) {
+    throw new Error('SIGN_OUT_WRITE_LOCKED:saveOfflineCaseDraft');
+  }
   const existingList = getOfflineCaseDrafts();
   const draftId = draftData.id || `draft_case_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
@@ -380,11 +396,6 @@ export async function saveOfflineCaseDraft(
     );
   }
 
-  // If online right now, attempt immediate background sync
-  if (typeof navigator !== 'undefined' && navigator.onLine) {
-    syncOfflineCaseDraftsToServer().catch(() => {});
-  }
-
   return newDraft;
 }
 
@@ -392,7 +403,7 @@ export async function saveOfflineCaseDraft(
  * Delete an offline draft
  */
 export function deleteOfflineCaseDraft(draftId: string): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || isWriteLocked()) return;
   const list = getOfflineCaseDrafts().filter((d) => d.id !== draftId);
   try {
     localStorage.setItem(OFFLINE_CASE_DRAFTS_KEY, JSON.stringify(list));
@@ -420,64 +431,39 @@ export async function registerBackgroundSyncForCaseDrafts(): Promise<boolean> {
 }
 
 /**
- * Synchronize all pending offline case drafts to the server / Firestore when online
+ * Offline case drafts currently have NO verified Firestore/backend sync destination matching
+ * their schema in this codebase. Previously this function simulated sync by flipping local status='synced'.
+ * It now preserves all pending drafts untouched and fails closed without claiming cloud confirmation.
  */
 export async function syncOfflineCaseDraftsToServer(): Promise<{
   success: boolean;
   syncedCount: number;
+  pendingCount: number;
   errors: any[];
 }> {
   const pending = getPendingOfflineCaseDrafts();
   if (pending.length === 0) {
-    return { success: true, syncedCount: 0, errors: [] };
+    return { success: true, syncedCount: 0, pendingCount: 0, errors: [] };
   }
 
-  let syncedCount = 0;
-  const errors: any[] = [];
-  const allDrafts = getOfflineCaseDrafts();
+  const blockerMsg =
+    'CLOUD_SYNC_DESTINATION_UNAVAILABLE: No verified server schema/endpoint exists for offline court case drafts; records remain preserved locally.';
 
-  for (const draft of pending) {
-    try {
-      // Simulate/execute server synchronization
-      draft.status = 'synced';
-      draft.updatedAt = new Date().toISOString();
-      syncedCount++;
+  await addSyncLog({
+    status: 'failed',
+    type: 'upload',
+    details: `Deferred ${pending.length} offline court case drafts: ${blockerMsg}`,
+    affectedIds: pending.map((p) => p.id),
+    conflictsResolved: false,
+    errorMessage: blockerMsg,
+  });
 
-      const idx = allDrafts.findIndex((d) => d.id === draft.id);
-      if (idx !== -1) {
-        allDrafts[idx] = draft;
-      }
-    } catch (err) {
-      console.error(`Failed to sync case draft ${draft.id}:`, err);
-      errors.push(err);
-    }
-  }
-
-  // Save updated statuses to localStorage
-  try {
-    localStorage.setItem(OFFLINE_CASE_DRAFTS_KEY, JSON.stringify(allDrafts));
-    localStorage.setItem(LAST_CASE_SYNC_KEY, new Date().toISOString());
-  } catch (e) {
-    console.warn('Failed saving synced draft statuses:', e);
-  }
-
-  if (syncedCount > 0) {
-    // Notify user via browser notification
-    await triggerPrecedentNotification({
-      count: syncedCount,
-      customTitle: `Murtii/Galmee Offline ${syncedCount} Milkaa'inaan Sync Ta'ee Ergameera! 🏛️`,
-      customBody: `Waraqoonni murtii fi wixineen galmee offline irratti qophaa'an ${syncedCount} intarneetiin erga deebi'ee booda gara server mana murtiitti ergamaniiru. / ከባዶ መስመር የተዘጋጁት ሰነዶች ተሰምተዋል።`,
-    });
-
-    // Notify UI components
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('seera_case_drafts_synced', { detail: { syncedCount } })
-      );
-    }
-  }
-
-  return { success: errors.length === 0, syncedCount, errors };
+  return {
+    success: false,
+    syncedCount: 0,
+    pendingCount: pending.length,
+    errors: [blockerMsg],
+  };
 }
 
 /**
@@ -486,7 +472,7 @@ export async function syncOfflineCaseDraftsToServer(): Promise<{
 export async function cacheCourtCaseFilesForOffline(
   caseFiles: OfflineCaseFile[]
 ): Promise<{ success: boolean; count: number }> {
-  if (typeof window === 'undefined') return { success: false, count: 0 };
+  if (typeof window === 'undefined' || isWriteLocked()) return { success: false, count: 0 };
   try {
     localStorage.setItem(OFFLINE_CASE_FILES_KEY, JSON.stringify(caseFiles));
     localStorage.setItem(LAST_CASE_SYNC_KEY, new Date().toISOString());

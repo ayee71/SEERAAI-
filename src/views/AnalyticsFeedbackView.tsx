@@ -997,7 +997,7 @@ export const AnalyticsFeedbackView: React.FC<AnalyticsFeedbackViewProps> = ({
                       setOwnerPin(e.target.value);
                       if (pinError) setPinError('');
                     }}
-                    placeholder="PIN koodii (fkn: 2026)..."
+                    placeholder="PIN koodii galchaa..."
                     className="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-amber-300 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono"
                   />
                   <button

@@ -1,0 +1,97 @@
+SEERAAI PRO — PHASE 7C.2: SIGN-OUT, OFFLINE DATA & MULTI-TAB FORENSIC AUDIT
+MODE: STRICT READ-ONLY — NO CODE CHANGES
+
+CONTEXT
+The existing SEERAAI PRO application has completed a reported Phase 7C narrow implementation affecting:
+- /src/context/AuthContext.tsx
+- /index.html
+The Phase 7C.1 report claims the sign-out flow safely purges app-owned localStorage keys and IndexedDB databases, preserves preferences, handles in-flight sync, handles deletion errors, and coordinates multi-tab sign-out. These claims must be independently verified against the actual source code. Do not accept the previous report's conclusions as evidence.
+
+ABSOLUTE GUARDRAILS
+1. Inspect the existing repository only. Do not create, edit, delete, rename, format, or overwrite any file.
+2. Do not install or upgrade dependencies.
+3. Do not access, read, write, delete, or modify production Firebase, Firestore, Storage, Authentication, or user data.
+4. Do not deploy rules, hosting, Cloud Run, DNS, or any other production resource.
+5. Do not print or request secrets, credentials, tokens, or API keys.
+6. Do not run tests that mutate real user or production data. Use only safe local tests or Firebase Emulator if already available and configured.
+7. If the repository or a referenced file is unavailable, say NOT VERIFIED. Never invent file contents, line numbers, test results, or successful behavior.
+
+MANDATORY FILES TO INSPECT
+- src/context/AuthContext.tsx
+- LogoutConfirmationModal.tsx (locate the actual path)
+- src/services/backgroundSync.ts
+- src/services/storage.ts
+- src/services/indexedDb.ts (or the actual IndexedDB implementation)
+- all helpers called by logout(), requestLogout(), clearOwnerPrivileges(), or the modal
+- any code listening for seera_privacy_cleared / seera_court_session_changed
+- any BroadcastChannel or storage-event listeners
+- relevant tests and package scripts
+
+REQUIRED FORENSIC QUESTIONS — ANSWER EACH WITH EXACT CODE EVIDENCE
+A. QUEUE AND LOCAL-ONLY DATA PROTECTION
+1. Does logout inspect every relevant queue and every local-only draft store before deleting anything?
+2. Does it distinguish (i) cloud-confirmed data, (ii) queued/unacknowledged writes, and (iii) local-only drafts?
+3. Is there an actual server/Firestore acknowledgement for every pending write before its local copy is purged? Identify the awaited promise and success condition. A boolean such as clearCache=true or a user checkbox is NOT proof of sync.
+4. If the network is unavailable, a write rejects, a timeout occurs, or the tab closes, are unsynced drafts preserved and is the user kept informed?
+5. Can a broad localStorage prefix deletion remove queue entries or drafts before their sync state is confirmed?
+
+B. IN-FLIGHT OPERATIONS AND RACE CONDITIONS
+1. Does the logout flow acquire a real lock that prevents new writes and pauses background sync?
+2. Does it await every in-flight sync/write operation, or safely cancel it with a documented recovery path?
+3. Show the exact await chain from logout initiation through queue flush, acknowledgement, cache purge, Firebase signOut, and React state reset.
+4. If Firebase signOut fails after local cache purge, what exact state results? Can the previous account remain authenticated while its local data has been deleted?
+5. Does the implementation avoid a race between a queued write, a retry timer, a service worker, and sign-out?
+
+C. INDEXEDDB DELETION SEMANTICS
+1. Is indexedDB.deleteDatabase() awaited through its IDBOpenDBRequest events (onsuccess/onerror/onblocked), or is it merely called?
+2. A synchronous try/catch does not catch asynchronous IDB request errors. Determine whether errors and blocked events are actually handled.
+3. Are all database names and object stores enumerated from the actual code? Could deleting any database remove unrelated or still-unsynced information?
+4. Does the application confirm deletion success before allowing another user/account to sign in?
+5. What happens when another tab or an open database connection blocks deletion?
+
+D. MULTI-TAB ISOLATION
+1. window.dispatchEvent(new CustomEvent(...)) only notifies listeners in the same window. Is there an actual cross-tab mechanism (BroadcastChannel, storage event caused by another document, or SharedWorker/service worker coordination)?
+2. Show the sender and receiver code, message payload, listener registration, and cleanup.
+3. Test or explain whether tabs on the same origin but different accounts can see each other's cached data during account switching.
+4. What happens if a tab is suspended, offline, or opened after the broadcast?
+
+E. MODAL AND USER CONSENT
+1. Inspect LogoutConfirmationModal and prove exactly what each checkbox/button does.
+2. Is “Discard Unsynced Changes & Sign Out” a distinct, explicit action from ordinary sign-out?
+3. Does the modal show the number/list/type of unsynced items and explain irreversible loss?
+4. Can the modal accidentally select clearCache=true by default without meaningful consent?
+5. Does cancellation truly leave the user signed in and preserve all local data?
+
+F. ERROR HANDLING AND AUTH STATE
+1. Do not label a purge as successful when IndexedDB deletion is blocked or fails.
+2. Does a failure keep the user from switching to a different account on that browser profile until isolation is guaranteed?
+3. Are user/profile/accessToken resets sequenced consistently with Firebase signOut and successful cleanup?
+4. Are owner privileges and cached identity tokens removed only after the necessary checks, without breaking recovery of unsynced work?
+
+G. TICKER
+Verify /index.html no longer displays the unverified Proclamation No. 1385/2026 or Cassation File No. 248912/2026 as established law/decisions. Confirm all remaining wording is neutral and does not imply a repository is active or synchronized unless that is evidenced.
+
+REQUIRED OUTPUT FORMAT
+1. Executive decision: GO / CONDITIONAL GO / NO-GO for a local staging test only. Do not make a production launch decision from this audit.
+2. Evidence table: claim, exact file/path, line range, code excerpt or behavior, verdict (VERIFIED / PARTIALLY VERIFIED / NOT VERIFIED / FALSE).
+3. Exact asynchronous control-flow explanation for sign-out.
+4. Queue/local-only data-loss analysis.
+5. IndexedDB request lifecycle analysis.
+6. Multi-tab mechanism analysis.
+7. Modal/consent analysis.
+8. A corrected PASS / FAIL / NOT RUN test matrix. Separate code inspection from tests actually executed. Include exact commands and test output only when genuinely executed.
+9. Prioritized minimal remediation recommendations. Do not implement them.
+10. Exact files and functions that would require a future approved patch.
+11. Explicit limitations and unresolved questions.
+
+IMPORTANT TECHNICAL CHECKS
+- Do not treat calling signOut(auth) after deleting caches as proof that in-flight Firestore writes completed.
+- Do not treat matching localStorage key prefixes as proof that every queued/local-only item was inspected.
+- Do not treat a user checkbox or clearCache parameter as proof of successful cloud synchronization.
+- Do not treat indexedDB.deleteDatabase() inside try/catch as proof that asynchronous deletion succeeded.
+- Do not treat window.dispatchEvent() as cross-tab communication.
+- Do not claim tests passed merely because TypeScript compilation or Vite build succeeds.
+- If actual evidence shows any unsynced/local-only data may be deleted without explicit informed discard or confirmed sync, classify that path as NO-GO.
+
+STOP CONDITION
+If any critical implementation detail cannot be proven from actual source code, label it NOT VERIFIED and do not infer success. Do not modify anything. End by waiting for separate human approval for any future remediation.

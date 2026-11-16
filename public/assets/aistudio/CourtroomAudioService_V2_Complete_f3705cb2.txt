@@ -1,0 +1,812 @@
+COURTROOM AUDIO SERVICE V2 – COMPLETE TYPESCRIPT PACKAGE
+=======================================================
+
+Purpose
+-------
+A browser-side audio recording service for a courtroom application.
+It supports start, pause, resume, stop, elapsed-time tracking, a dBFS
+volume meter, MIME-type selection, optional chunk upload callbacks, and
+resource cleanup.
+
+IMPORTANT DEPLOYMENT NOTES
+-------------------------
+1. Microphone access normally requires HTTPS (localhost is also treated
+   as a secure context by modern browsers).
+2. MediaRecorder timeslices are not exact timing guarantees. Elapsed time
+   is measured independently with performance.now().
+3. The default retainChunks=true keeps chunks in browser memory so that
+   stopRecording() can return one complete Blob. For long recordings,
+   consider retainChunks=false and upload each chunk through onChunk.
+4. With retainChunks=false, stopRecording() returns null. Your backend
+   must persist and assemble the uploaded chunks in the correct order.
+   Do not treat a recording as safely stored until the backend confirms
+   that every chunk has been received and persisted.
+5. Browser recording formats differ. Store the returned MIME type with
+   the file; do not assume every browser creates WebM.
+6. This is a recording component, not a complete evidence-management
+   system. Add authentication, authorization, server-side audit logs,
+   encryption, case/recording IDs, retention controls, integrity hashes,
+   and applicable court approval procedures in the backend.
+
+
+PART 1 – COURTROOM AUDIO SERVICE
+================================
+
+export type RecordingState =
+  | "idle"
+  | "recording"
+  | "paused"
+  | "stopped";
+
+export interface CourtroomAudioCallbacks {
+  onStateChange?: (state: RecordingState) => void;
+  onDurationChange?: (seconds: number) => void;
+  onVolumeChange?: (dbFS: number) => void;
+  onChunk?: (chunk: Blob, index: number) => void | Promise<void>;
+  onRecordingComplete?: (blob: Blob | null) => void;
+  onError?: (error: Error) => void;
+  onWarning?: (message: string) => void;
+}
+
+export interface CourtroomAudioOptions {
+  /** MediaRecorder chunk interval request; actual delivery may vary. */
+  timesliceMs?: number;
+  audioBitsPerSecond?: number;
+  audioConstraints?: MediaTrackConstraints;
+  callbacks?: CourtroomAudioCallbacks;
+
+  /**
+   * true (default): keep chunks in memory and return a complete Blob.
+   * false: do not retain chunks locally; use onChunk for backend upload.
+   * When false, stopRecording() returns null.
+   */
+  retainChunks?: boolean;
+}
+
+type WindowWithWebkitAudioContext = Window & {
+  webkitAudioContext?: typeof AudioContext;
+};
+
+export class CourtroomAudioService {
+  private mediaStream: MediaStream | null = null;
+  private mediaRecorder: MediaRecorder | null = null;
+
+  private audioChunks: Blob[] = [];
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private sourceNode: MediaStreamAudioSourceNode | null = null;
+
+  private durationTimer: ReturnType<typeof setInterval> | null = null;
+  private volumeFrame: number | null = null;
+
+  private elapsedMilliseconds = 0;
+  private activeSegmentStartedAt: number | null = null;
+
+  private chunkIndex = 0;
+  private chunkUploadQueue: Promise<void> = Promise.resolve();
+  private chunkUploadError: Error | null = null;
+
+  private completionPromise: Promise<Blob | null> | null = null;
+  private resolveCompletion: ((blob: Blob | null) => void) | null = null;
+
+  private finalizingRecorder: MediaRecorder | null = null;
+  private lastBlob: Blob | null = null;
+  private recordingMimeType = "";
+
+  private callbacks: CourtroomAudioCallbacks;
+  private options: CourtroomAudioOptions;
+
+  public state: RecordingState = "idle";
+  public durationSeconds = 0;
+  public activeSpeakerRole = "Abbaa Seeraa";
+
+  constructor(options: CourtroomAudioOptions = {}) {
+    this.options = {
+      timesliceMs: 1000,
+      audioBitsPerSecond: 128000,
+      retainChunks: true,
+      ...options,
+    };
+
+    this.callbacks = options.callbacks ?? {};
+  }
+
+  /** Replace callbacks, for example when connecting to a React UI. */
+  public setCallbacks(callbacks: CourtroomAudioCallbacks): void {
+    this.callbacks = callbacks;
+  }
+
+  private safelyCall<T>(callback: (() => T) | undefined): T | undefined {
+    if (!callback) return undefined;
+    try {
+      return callback();
+    } catch (error) {
+      // A UI callback should not unexpectedly crash the recorder.
+      if (callback !== undefined) {
+        const callbackError = this.toError(error);
+        if (this.callbacks.onError && callback !== this.callbacks.onError) {
+          try {
+            this.callbacks.onError(callbackError);
+          } catch {
+            // Ignore errors thrown by the error callback itself.
+          }
+        }
+      }
+      return undefined;
+    }
+  }
+
+  private setState(state: RecordingState): void {
+    this.state = state;
+    this.safelyCall(() => this.callbacks.onStateChange?.(state));
+  }
+
+  private toError(error: unknown): Error {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+
+  private reportError(error: unknown): void {
+    const normalized = this.toError(error);
+    this.safelyCall(() => this.callbacks.onError?.(normalized));
+  }
+
+  private reportWarning(message: string): void {
+    this.safelyCall(() => this.callbacks.onWarning?.(message));
+  }
+
+  /** Choose a supported recording format where possible. */
+  private createRecorder(stream: MediaStream): MediaRecorder {
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/mp4;codecs=mp4a.40.2",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg;codecs=opus",
+    ];
+
+    const selectedType = candidates.find((type) => {
+      try {
+        return MediaRecorder.isTypeSupported(type);
+      } catch {
+        return false;
+      }
+    });
+
+    const recorderOptions: MediaRecorderOptions = {};
+
+    if (this.options.audioBitsPerSecond) {
+      recorderOptions.audioBitsPerSecond = this.options.audioBitsPerSecond;
+    }
+
+    if (selectedType) {
+      try {
+        return new MediaRecorder(stream, {
+          ...recorderOptions,
+          mimeType: selectedType,
+        });
+      } catch {
+        // Fall back to the browser's default recording format.
+      }
+    }
+
+    return new MediaRecorder(stream, recorderOptions);
+  }
+
+  /** Set up the analyser used by the live volume meter. */
+  private async setupAnalyser(stream: MediaStream): Promise<void> {
+    const AudioContextConstructor =
+      window.AudioContext ||
+      (window as WindowWithWebkitAudioContext).webkitAudioContext;
+
+    if (!AudioContextConstructor) {
+      this.reportWarning(
+        "Browser kun AudioContext hin deeggaru. Waraabbiin itti fufa; volume meter hin hojjetu."
+      );
+      return;
+    }
+
+    try {
+      this.audioContext = new AudioContextConstructor();
+
+      if (this.audioContext.state === "suspended") {
+        await this.audioContext.resume();
+      }
+
+      this.sourceNode = this.audioContext.createMediaStreamSource(stream);
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 2048;
+      this.analyser.smoothingTimeConstant = 0.8;
+      this.sourceNode.connect(this.analyser);
+    } catch (error) {
+      this.reportWarning(
+        `Audio analyser qopheessuun hin danda'amne. Waraabbiin itti fufa. ${this.toError(error).message}`
+      );
+      await this.closeAudioContext();
+    }
+  }
+
+  /** Start a new recording session. */
+  public async startRecording(): Promise<void> {
+    if (this.state === "recording" || this.state === "paused") {
+      throw new Error("Waraabbiin duraanuu adeemaa jira.");
+    }
+
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      throw new Error(
+        "Microphone hin deeggaramu. Browser ammayyaa fi HTTPS fayyadami."
+      );
+    }
+
+    if (typeof MediaRecorder === "undefined") {
+      throw new Error("Browser kun MediaRecorder hin deeggaru.");
+    }
+
+    if (!window.isSecureContext) {
+      throw new Error("Microphone fayyadamuuf HTTPS barbaachisa.");
+    }
+
+    if (this.options.retainChunks === false && !this.callbacks.onChunk) {
+      throw new Error(
+        "retainChunks=false yoo ta'e onChunk callback backend upload'f kennuu qabda."
+      );
+    }
+
+    await this.cleanupResources();
+
+    this.audioChunks = [];
+    this.chunkIndex = 0;
+    this.elapsedMilliseconds = 0;
+    this.durationSeconds = 0;
+    this.lastBlob = null;
+    this.finalizingRecorder = null;
+    this.recordingMimeType = "";
+    this.chunkUploadQueue = Promise.resolve();
+    this.chunkUploadError = null;
+    this.completionPromise = null;
+    this.resolveCompletion = null;
+    this.setState("idle");
+
+    try {
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: this.options.audioConstraints ?? {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      await this.setupAnalyser(this.mediaStream);
+
+      const recorder = this.createRecorder(this.mediaStream);
+      this.mediaRecorder = recorder;
+      this.recordingMimeType = recorder.mimeType || "application/octet-stream";
+
+      this.completionPromise = new Promise<Blob | null>((resolve) => {
+        this.resolveCompletion = resolve;
+      });
+
+      recorder.addEventListener("dataavailable", (event: BlobEvent) => {
+        const chunk = event.data;
+        if (!chunk || chunk.size === 0) return;
+
+        if (this.options.retainChunks !== false) {
+          this.audioChunks.push(chunk);
+        }
+
+        const index = this.chunkIndex++;
+        const uploadCallback = this.callbacks.onChunk;
+
+        if (uploadCallback) {
+          // Chain uploads to preserve chunk order.
+          this.chunkUploadQueue = this.chunkUploadQueue
+            .then(() => uploadCallback(chunk, index))
+            .catch((error: unknown) => {
+              const uploadError = new Error(
+                `Audio chunk ${index} upload failed: ${this.toError(error).message}`
+              );
+              this.chunkUploadError = uploadError;
+              this.reportError(uploadError);
+            });
+        }
+      });
+
+      recorder.addEventListener("error", (event: Event) => {
+        const recorderError = (event as Event & { error?: DOMException }).error;
+        this.reportError(recorderError ?? new Error("MediaRecorder error."));
+
+        // Attempt to finish the recorder cleanly after a recorder error.
+        if (recorder.state !== "inactive") {
+          try {
+            recorder.stop();
+          } catch (stopError) {
+            this.reportError(stopError);
+          }
+        }
+      });
+
+      recorder.addEventListener(
+        "stop",
+        () => {
+          void this.finalizeRecording(recorder);
+        },
+        { once: true }
+      );
+
+      // If the microphone track ends unexpectedly, stop the session.
+      this.mediaStream.getAudioTracks().forEach((track) => {
+        track.addEventListener(
+          "ended",
+          () => {
+            if (this.state === "recording" || this.state === "paused") {
+              this.reportError(new Error("Microphone connection addaan cite."));
+              void this.stopRecording().catch((error) => this.reportError(error));
+            }
+          },
+          { once: true }
+        );
+      });
+
+      const timeslice = Math.max(250, this.options.timesliceMs ?? 1000);
+      recorder.start(timeslice);
+
+      this.elapsedMilliseconds = 0;
+      this.activeSegmentStartedAt = performance.now();
+      this.setState("recording");
+      this.startDurationTimer();
+      this.startVolumeMonitoring();
+    } catch (error) {
+      await this.cleanupResources();
+      const resolveFailedStart = this.resolveCompletion as
+        | ((blob: Blob | null) => void)
+        | null;
+      if (resolveFailedStart) resolveFailedStart(null);
+      this.resolveCompletion = null;
+      this.completionPromise = null;
+      this.mediaRecorder = null;
+      this.setState("idle");
+      this.reportError(error);
+      throw this.toError(error);
+    }
+  }
+
+  /** Pause recording. The paused interval is excluded from elapsed time. */
+  public pauseRecording(): void {
+    if (!this.mediaRecorder || this.state !== "recording") return;
+
+    try {
+      this.mediaRecorder.pause();
+      this.finishActiveSegment();
+      this.stopDurationTimer();
+      this.stopVolumeMonitoring();
+      this.setState("paused");
+    } catch (error) {
+      this.reportError(error);
+      throw this.toError(error);
+    }
+  }
+
+  /** Resume a paused recording. */
+  public resumeRecording(): void {
+    if (!this.mediaRecorder || this.state !== "paused") return;
+
+    try {
+      this.mediaRecorder.resume();
+      this.activeSegmentStartedAt = performance.now();
+      this.setState("recording");
+      this.startDurationTimer();
+      this.startVolumeMonitoring();
+    } catch (error) {
+      this.reportError(error);
+      throw this.toError(error);
+    }
+  }
+
+  /** Stop recording and resolve with a Blob when retainChunks=true. */
+  public stopRecording(): Promise<Blob | null> {
+    const recorder = this.mediaRecorder;
+
+    if (!recorder) {
+      return this.completionPromise ?? Promise.resolve(this.lastBlob);
+    }
+
+    this.finishActiveSegment();
+    this.stopDurationTimer();
+    this.stopVolumeMonitoring();
+
+    try {
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+      }
+    } catch (error) {
+      this.reportError(error);
+      return Promise.reject(this.toError(error));
+    }
+
+    return this.completionPromise ?? Promise.resolve(this.lastBlob);
+  }
+
+  /** Finalize the session after MediaRecorder fires its stop event. */
+  private async finalizeRecording(recorder: MediaRecorder): Promise<void> {
+    if (this.finalizingRecorder === recorder) return;
+    this.finalizingRecorder = recorder;
+
+    this.finishActiveSegment();
+    this.stopDurationTimer();
+    this.stopVolumeMonitoring();
+
+    try {
+      // Wait until queued onChunk upload callbacks have completed.
+      await this.chunkUploadQueue;
+
+      const mimeType = recorder.mimeType || this.recordingMimeType;
+      const blob =
+        this.options.retainChunks !== false && this.audioChunks.length > 0
+          ? new Blob(this.audioChunks, { type: mimeType })
+          : null;
+
+      this.lastBlob = blob;
+      await this.cleanupResources();
+      this.mediaRecorder = null;
+      this.setState("stopped");
+
+      this.safelyCall(() => this.callbacks.onRecordingComplete?.(blob));
+
+      if (this.options.retainChunks === false && !this.callbacks.onChunk) {
+        this.reportError(
+          new Error(
+            "retainChunks=false dha; garuu onChunk callback hin kennamne. Chunks hin kuufamne."
+          )
+        );
+      }
+
+      if (this.chunkUploadError && this.options.retainChunks === false) {
+        this.reportError(
+          new Error(
+            "Chunk upload tokko yookaan isaa ol hin milkoofne. Waraabbii guutuu server irratti kuufame jedhanii hin mirkaneessinaa."
+          )
+        );
+      }
+
+      this.resolveCompletion?.(blob);
+    } catch (error) {
+      this.reportError(error);
+      await this.cleanupResources();
+      this.mediaRecorder = null;
+      this.setState("stopped");
+      this.resolveCompletion?.(null);
+    } finally {
+      this.resolveCompletion = null;
+      this.completionPromise = null;
+      this.finalizingRecorder = null;
+    }
+  }
+
+  /** Update elapsed seconds using a monotonic clock. */
+  private updateDuration(): void {
+    const activeTime =
+      this.activeSegmentStartedAt !== null
+        ? performance.now() - this.activeSegmentStartedAt
+        : 0;
+
+    const totalMilliseconds = this.elapsedMilliseconds + activeTime;
+    const nextSeconds = Math.floor(totalMilliseconds / 1000);
+
+    if (nextSeconds !== this.durationSeconds) {
+      this.durationSeconds = nextSeconds;
+      this.safelyCall(() => this.callbacks.onDurationChange?.(nextSeconds));
+    }
+  }
+
+  private finishActiveSegment(): void {
+    if (this.activeSegmentStartedAt !== null) {
+      this.elapsedMilliseconds += performance.now() - this.activeSegmentStartedAt;
+      this.activeSegmentStartedAt = null;
+    }
+    this.updateDuration();
+  }
+
+  private startDurationTimer(): void {
+    this.stopDurationTimer();
+    this.durationTimer = setInterval(() => this.updateDuration(), 250);
+  }
+
+  private stopDurationTimer(): void {
+    if (this.durationTimer !== null) {
+      clearInterval(this.durationTimer);
+      this.durationTimer = null;
+    }
+  }
+
+  /** Return current input level in dBFS (not calibrated acoustic dB SPL). */
+  public getVolumeDbFS(): number {
+    if (!this.analyser) return -60;
+
+    const samples = new Float32Array(this.analyser.fftSize);
+    this.analyser.getFloatTimeDomainData(samples);
+
+    let sumSquares = 0;
+    for (const sample of samples) {
+      sumSquares += sample * sample;
+    }
+
+    const rms = Math.sqrt(sumSquares / samples.length);
+    const dbFS = 20 * Math.log10(Math.max(rms, 0.000001));
+
+    return Math.max(-60, Math.min(0, dbFS));
+  }
+
+  private monitorVolume = (): void => {
+    if (!this.analyser || typeof window === "undefined") return;
+
+    const dbFS = this.getVolumeDbFS();
+    this.safelyCall(() => this.callbacks.onVolumeChange?.(dbFS));
+
+    this.volumeFrame = window.requestAnimationFrame(this.monitorVolume);
+  };
+
+  private startVolumeMonitoring(): void {
+    if (!this.analyser || typeof window === "undefined") return;
+    this.stopVolumeMonitoring();
+    this.volumeFrame = window.requestAnimationFrame(this.monitorVolume);
+  }
+
+  private stopVolumeMonitoring(): void {
+    if (this.volumeFrame !== null && typeof window !== "undefined") {
+      window.cancelAnimationFrame(this.volumeFrame);
+      this.volumeFrame = null;
+    }
+  }
+
+  private async closeAudioContext(): Promise<void> {
+    this.sourceNode?.disconnect();
+    this.sourceNode = null;
+    this.analyser = null;
+
+    const context = this.audioContext;
+    this.audioContext = null;
+
+    if (context && context.state !== "closed") {
+      try {
+        await context.close();
+      } catch {
+        // The context may already have been closed by the browser.
+      }
+    }
+  }
+
+  /** Stop microphone tracks and release analyser resources. */
+  private async cleanupResources(): Promise<void> {
+    this.stopDurationTimer();
+    this.stopVolumeMonitoring();
+
+    const stream = this.mediaStream;
+    this.mediaStream = null;
+
+    stream?.getTracks().forEach((track) => {
+      if (track.readyState !== "ended") track.stop();
+    });
+
+    await this.closeAudioContext();
+  }
+
+  /** Dispose the service; stops an active recording before cleanup. */
+  public async dispose(): Promise<void> {
+    if (this.mediaRecorder) {
+      try {
+        await this.stopRecording();
+      } catch (error) {
+        this.reportError(error);
+      }
+    }
+
+    await this.cleanupResources();
+  }
+
+  public get mimeType(): string {
+    return this.recordingMimeType;
+  }
+
+  /** Error from the most recent chunk upload, if any. */
+  public get uploadError(): Error | null {
+    return this.chunkUploadError;
+  }
+}
+
+
+PART 2 – REACT INTEGRATION EXAMPLE
+==================================
+
+The example below shows how to create one service instance, connect its
+callbacks to React state, and release it when the component unmounts.
+
+import React, { useEffect, useRef, useState } from "react";
+import {
+  CourtroomAudioService,
+  RecordingState,
+} from "./CourtroomAudioService";
+
+export function CourtroomAudioControls() {
+  const serviceRef = useRef<CourtroomAudioService | null>(null);
+
+  const [recordingState, setRecordingState] = useState<RecordingState>("idle");
+  const [duration, setDuration] = useState(0);
+  const [audioLevel, setAudioLevel] = useState(-60);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [recordedAudioURL, setRecordedAudioURL] = useState<string | null>(null);
+
+  useEffect(() => {
+    const service = new CourtroomAudioService({
+      timesliceMs: 1000,
+      audioBitsPerSecond: 128000,
+      retainChunks: true,
+      callbacks: {
+        onStateChange: (state) => setRecordingState(state),
+        onDurationChange: (seconds) => setDuration(seconds),
+        onVolumeChange: (dbFS) => setAudioLevel(dbFS),
+        onError: (error) => setAudioError(error.message),
+        onWarning: (message) => console.warn(message),
+      },
+    });
+
+    serviceRef.current = service;
+
+    return () => {
+      void service.dispose();
+      serviceRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (recordedAudioURL) URL.revokeObjectURL(recordedAudioURL);
+    };
+  }, [recordedAudioURL]);
+
+  const start = async () => {
+    const service = serviceRef.current;
+    if (!service) return;
+
+    setAudioError(null);
+    try {
+      await service.startRecording();
+    } catch (error) {
+      setAudioError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const pause = () => {
+    try {
+      serviceRef.current?.pauseRecording();
+    } catch (error) {
+      setAudioError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const resume = () => {
+    try {
+      serviceRef.current?.resumeRecording();
+    } catch (error) {
+      setAudioError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const stop = async () => {
+    const service = serviceRef.current;
+    if (!service) return;
+
+    try {
+      const blob = await service.stopRecording();
+
+      if (blob) {
+        const nextURL = URL.createObjectURL(blob);
+        setRecordedAudioURL((previousURL) => {
+          if (previousURL) URL.revokeObjectURL(previousURL);
+          return nextURL;
+        });
+      } else if (service.uploadError) {
+        setAudioError(
+          "Chunk upload irratti rakkoon uumame. Backend irraa kuufamuu isaa mirkaneessi."
+        );
+      }
+    } catch (error) {
+      setAudioError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const formatDuration = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(
+      remainingSeconds
+    ).padStart(2, "0")}`;
+  };
+
+  return (
+    <section>
+      <h2>Waraabbii Dhaddachaa</h2>
+      <p>Haala: {recordingState}</p>
+      <p>Yeroo: {formatDuration(duration)}</p>
+      <p>Sadarkaa sagalee: {audioLevel.toFixed(1)} dBFS</p>
+
+      <div>
+        <button onClick={start} disabled={recordingState === "recording" || recordingState === "paused"}>
+          Jalqabi
+        </button>
+        <button onClick={pause} disabled={recordingState !== "recording"}>
+          Pause
+        </button>
+        <button onClick={resume} disabled={recordingState !== "paused"}>
+          Resume
+        </button>
+        <button onClick={stop} disabled={recordingState !== "recording" && recordingState !== "paused"}>
+          Dhaabi
+        </button>
+      </div>
+
+      {audioError && <p role="alert">{audioError}</p>}
+
+      {recordedAudioURL && (
+        <audio controls src={recordedAudioURL} />
+      )}
+    </section>
+  );
+}
+
+
+PART 3 – OPTIONAL BACKEND CHUNK-UPLOAD INTEGRATION
+==================================================
+
+The service accepts an onChunk callback. Connect this callback to your
+own authenticated backend endpoint or Firebase upload service. Do not put
+secret API keys in browser code. The backend should associate every chunk
+with a recording ID and persist its sequence number.
+
+Example shape (replace uploadCourtAudioChunk with your real implementation):
+
+const service = new CourtroomAudioService({
+  timesliceMs: 1000,
+  retainChunks: false,
+  callbacks: {
+    onChunk: async (chunk, index) => {
+      await uploadCourtAudioChunk({
+        recordingId: currentRecordingId,
+        sequence: index,
+        chunk,
+        mimeType: service.mimeType,
+      });
+    },
+    onError: (error) => {
+      console.error("Court audio error:", error);
+    },
+  },
+});
+
+await service.startRecording();
+// ... recording continues ...
+const result = await service.stopRecording();
+// result is null when retainChunks=false.
+// Ask the backend to verify the expected chunk count and finalize the file.
+
+
+PART 4 – FINAL IMPLEMENTATION CHECKLIST
+=======================================
+
+[ ] Serve the app over HTTPS.
+[ ] Ask for microphone access only after a clear user action.
+[ ] Show recording, paused, and stopped status to the operator.
+[ ] Show elapsed time and microphone level.
+[ ] Keep the original audio file unchanged after recording.
+[ ] Store the MIME type and recording metadata with the file.
+[ ] For chunk upload, store recording ID, sequence number, timestamps,
+    authenticated uploader ID, and server receipt status.
+[ ] Verify all chunks on the server before assembling the final recording.
+[ ] Calculate a SHA-256 hash on the server after final assembly.
+[ ] Keep an append-only audit trail for access, export, and deletion.
+[ ] Enforce role-based authorization in the backend, not only in React.
+[ ] Apply court policies for consent/notice, confidentiality, retention,
+    access, export, and disclosure.
+[ ] Test on the actual Android devices and browsers used in court.
+[ ] Test microphone denial, device disconnect, low storage, long recordings,
+    browser interruption, and failed network uploads.
+
+END OF FILE

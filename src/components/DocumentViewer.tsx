@@ -8,6 +8,7 @@ import { DocumentQAPanel } from './DocumentQAPanel';
 import { exportLegalDocumentToDocx, exportLegalDocumentToPdf, sanitizeFilename, sanitizeContentForExport } from '../services/legalDocumentExport';
 import { ImmersiveReadingMode } from './ImmersiveReadingMode';
 import { AnnotationTool } from './AnnotationTool';
+import { PdfAnnotationToolbar } from './PdfAnnotationToolbar';
 import { OpenWithAppModal } from './OpenWithAppModal';
 import { LEGAL_GLOSSARY_DATA, LegalGlossaryEntry } from '../data/legalGlossary';
 import { standardizeLegalCitations } from '../services/legalCitationStandardizer';
@@ -20,7 +21,8 @@ import { LitigationRoadmapWidget } from './LitigationRoadmapWidget';
 import { LegalDictationToolbar } from './LegalDictationToolbar';
 import { CitationPickerModal } from './CitationPickerModal';
 import { CitationFixOverlay } from './CitationFixOverlay';
-import { BookOpen } from 'lucide-react';
+import { BookOpen, Printer } from 'lucide-react';
+import { PrintView } from './PrintView';
 
 interface DocumentViewerProps {
   documentId?: string;
@@ -90,6 +92,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const [showAdvancedAudioPlayer, setShowAdvancedAudioPlayer] = useState(false);
   const [isExportingAudioWav, setIsExportingAudioWav] = useState(false);
   const [audioExportToast, setAudioExportToast] = useState(false);
+  const [isPrintViewOpen, setIsPrintViewOpen] = useState(false);
 
   // Text Layout Alignment State for .legal-content-body
   const [textLayout, setTextLayout] = useState<'justify' | 'left'>('justify');
@@ -539,7 +542,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       url = url.replace('ais-dev-', 'ais-pre-');
     }
     const snippet = activeContent.substring(0, 300).replace(/[#*]/g, '');
-    const text = encodeURIComponent(`⚖️ ${title}\n\n${snippet}...\n\n-- SeeraAI Ethiopian Legal AI (@ayelebeharmee)`);
+    const text = encodeURIComponent(`⚖️ ${title}\n\n${snippet}...\n\n-- SeeraAI Ethiopian Legal AI (@seeraai_ethio)`);
     window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${text}`, '_blank');
   };
 
@@ -643,6 +646,18 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                   {isDirectPdfExporting
                     ? (currentLang === 'om' ? 'PDF qopheessaa...' : currentLang === 'am' ? 'በዘጋጅ ላይ...' : 'Preparing PDF...')
                     : (currentLang === 'om' ? 'Download as PDF' : currentLang === 'am' ? 'PDF አውርድ' : 'Download as PDF')}
+                </span>
+              </button>
+
+              {/* OFFICIAL COURT PRINT VIEW BUTTON */}
+              <button
+                onClick={() => setIsPrintViewOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-white text-slate-900 border border-slate-300 transition-all cursor-pointer font-bold text-xs shadow-sm"
+                title="Open Official Court Print View with Trilingual Letterhead and SHA-256 Verification"
+              >
+                <Printer className="w-4 h-4" />
+                <span>
+                  {currentLang === 'om' ? 'PRINT OFFICIAL' : currentLang === 'am' ? 'ይፋዊ እትም' : 'PRINT OFFICIAL'}
                 </span>
               </button>
 
@@ -1214,6 +1229,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             <span>{getPdfButtonLabel()}</span>
           </button>
 
+          <button
+            onClick={() => setIsPrintViewOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-white text-slate-950 shadow-md shadow-slate-900/40 transition-all hover:scale-[1.02] border border-slate-300 cursor-pointer"
+            title="Official Court Print View with Letterhead & Verification Hash"
+          >
+            <Printer className="w-4 h-4" />
+            <span>PRINT OFFICIAL</span>
+          </button>
+
           {/* Dedicated EXPORT AS WORD (.DOCX) Button */}
           <button
             onClick={handleQuickWordExport}
@@ -1283,7 +1307,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           <button
             onClick={handleShareTelegram}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/40 transition-all hover:scale-[1.02]"
-            title="Share to Telegram (@ayelebeharmee)"
+            title="Share to Telegram (@seeraai_ethio)"
           >
             <span>✈️ Telegram</span>
           </button>
@@ -1292,7 +1316,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           <button
             onClick={handleShareFacebook}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 transition-all hover:scale-[1.02]"
-            title="Share to Facebook (@AyyuLawyer)"
+            title="Share to Facebook"
           >
             <span>📘 Facebook</span>
           </button>
@@ -1445,6 +1469,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         />
       )}
 
+      {/* Quick PDF & Legal Document Editor Annotation Toolbar */}
+      <div className="mt-4">
+        <PdfAnnotationToolbar
+          documentId={documentId || title.toLowerCase().replace(/[^a-z0-9]/g, '-')}
+          documentTitle={title}
+          currentLang={currentLang}
+        />
+      </div>
+
       {/* Interactive Legal Annotations Tool */}
       <AnnotationTool
         documentId={documentId || title.toLowerCase().replace(/[^a-z0-9]/g, '-')}
@@ -1452,6 +1485,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         documentText={activeContent}
         onNavigateToCassation={onNavigateToCassation}
       />
+
+      {/* Official Court Print View Modal Overlay */}
+      {isPrintViewOpen && (
+        <PrintView
+          title={title}
+          content={activeContent}
+          currentLang={currentLang}
+          onClose={() => setIsPrintViewOpen(false)}
+        />
+      )}
 
       {/* Real-time Translate Annotation Pop-up Modal */}
       {isTranslateAnnotationOpen && (

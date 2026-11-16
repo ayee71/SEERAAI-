@@ -44,10 +44,10 @@ import {
   VERIFIED_TELEGRAM_ARCHIVE_URL,
   clearLegalCache,
   verifyExternalDatasetIntegrity,
-  GITHUB_LEGAL_ARCHIVE_URL,
-  GITHUB_PROFILE_URL,
-  GITHUB_CREATE_REPO_URL,
-  getEffectiveGitHubUrl,
+  checkExternalDomainStatus,
+  ExternalDomainStatus,
+  fetchRemoteArchiveDocuments,
+  RemoteArchiveDocument,
 } from '../services/dynamicAssetLoader';
 import {
   verifyDocumentHashWithServer,
@@ -98,6 +98,7 @@ import {
 import { BatchDocumentUploadPanel } from '../components/BatchDocumentUploadPanel';
 import { runSDFHHComplianceAudit, ComplianceAuditResult } from '../utils/complianceEngine';
 import { AuditComplianceDashboard } from '../components/AuditComplianceDashboard';
+import { ChatGPTLegalCollaboratorModal } from '../components/ChatGPTLegalCollaboratorModal';
 
 // Re-export the legal terminology highlight function for DocumentAnalysisView
 export { highlightKeyLegalTerminology, wrapKeyLegalTermsHtml };
@@ -141,10 +142,34 @@ export const DocumentAnalysisView: React.FC<DocumentAnalysisViewProps> = ({
   const [pastedText, setPastedText] = useState(initialQuery || '');
 
   const [modelTier, setModelTier] = useState<GeminiModelChoice>('gemini-flash-lite-latest');
+  const [aiModelProvider, setAiModelProvider] = useState<'gemini' | 'openai' | 'hybrid'>('gemini');
+  const [showChatGPTModal, setShowChatGPTModal] = useState<boolean>(false);
   const [analysisType, setAnalysisType] = useState<
-    'risk_analysis' | 'compliance' | 'plain_explanation' | 'translate_document' | 'summarize' | 'extract_text'
+    'risk_analysis' | 'compliance' | 'plain_explanation' | 'translate_document' | 'summarize' | 'extract_text' | 'court_case_analysis_v2'
   >('risk_analysis');
   const [selectedLangs, setSelectedLangs] = useState<Language[]>([currentLang]);
+  const [discoveredPrecedents, setDiscoveredPrecedents] = useState<any[]>([]);
+
+  const extractPrecedentsFromText = (text: string) => {
+    if (!text) return;
+    const galmeeRegex = /(?:Lakk\. Galmee|Galmee lakk\.|የመዝገብ ቁጥር|Case No\.?)\s*:?\s*(\d+)/gi;
+    const matches = [...text.matchAll(galmeeRegex)];
+    const uniqueIds = Array.from(new Set(matches.map(m => m[1])));
+    
+    if (uniqueIds.length > 0) {
+      const newPrecedents = uniqueIds.map(id => ({
+        id: `disc_${id}_${Date.now()}`,
+        referenceNumber: id,
+        source: 'AI Document Analysis',
+        timestamp: new Date().toLocaleTimeString()
+      }));
+      setDiscoveredPrecedents(prev => {
+        const existingRefs = new Set(prev.map(p => p.referenceNumber));
+        const filtered = newPrecedents.filter(p => !existingRefs.has(p.referenceNumber));
+        return [...filtered, ...prev].slice(0, 20);
+      });
+    }
+  };
   const [customQuery, setCustomQuery] = useState('');
   const [archiveDataSource, setArchiveDataSource] = useState<'local' | 'external'>('local');
 
@@ -190,11 +215,19 @@ export const DocumentAnalysisView: React.FC<DocumentAnalysisViewProps> = ({
   const [copiedSocialLink, setCopiedSocialLink] = useState(false);
   const [activeSocialPlatform, setActiveSocialPlatform] = useState<'facebook' | 'telegram' | 'whatsapp'>('facebook');
 
-  // External Dataset Link Loading & Error State (404/503 wrapper & manual fallback)
+  // External Dataset Link Loading, Live DNS Status & Remote Archive Explorer
   const [isLoadingExternalLink, setIsLoadingExternalLink] = useState(false);
   const [externalLinkError, setExternalLinkError] = useState<string | null>(null);
   const [showManualAccess, setShowManualAccess] = useState(false);
   const [copiedExternalUrl, setCopiedExternalUrl] = useState(false);
+  const [externalDomainStatus, setExternalDomainStatus] = useState<ExternalDomainStatus | null>(null);
+  const [isCheckingExternalDomain, setIsCheckingExternalDomain] = useState(false);
+  const [isRemoteArchiveExplorerOpen, setIsRemoteArchiveExplorerOpen] = useState(false);
+  const [remoteArchiveDocs, setRemoteArchiveDocs] = useState<RemoteArchiveDocument[]>([]);
+  const [remoteArchiveTotal, setRemoteArchiveTotal] = useState<number>(1500);
+  const [remoteArchiveQuery, setRemoteArchiveQuery] = useState('');
+  const [isLoadingRemoteArchive, setIsLoadingRemoteArchive] = useState(false);
+  const [remoteArchiveError, setRemoteArchiveError] = useState<string | null>(null);
 
   // Cryptographic File Hash Verification State (Server-backed integrity check)
   const [hashVerificationMap, setHashVerificationMap] = useState<Record<string, HashVerificationResult>>({});
@@ -685,7 +718,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
       // 1. Audit External Dataset Archive Link
       setIsVerifyingExternalDatasetHash(true);
       try {
-        const extStatus = await verifyDocumentHashWithServer('saorethio1_master_archive');
+        const extStatus = await verifyDocumentHashWithServer('saiethio_master_archive');
         if (isSubscribed) {
           setExternalDatasetHashResult(extStatus);
           logVerificationToHistory(extStatus);
@@ -714,6 +747,21 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
             setIsVerifyingHashMap((prev) => ({ ...prev, [preset.id]: false }));
           }
         }
+      }
+      // 3. Check live DNS & HTTPS reachability for saiethio.com
+      setIsCheckingExternalDomain(true);
+      try {
+        const domainStatus = await checkExternalDomainStatus('saiethio.com');
+        if (isSubscribed) {
+          setExternalDomainStatus(domainStatus);
+          if (domainStatus.activeMirror?.totalDocuments) {
+            setRemoteArchiveTotal(domainStatus.activeMirror.totalDocuments);
+          }
+        }
+      } catch (err) {
+        console.warn('Domain status check failed:', err);
+      } finally {
+        if (isSubscribed) setIsCheckingExternalDomain(false);
       }
     };
 
@@ -878,7 +926,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
     setError(null);
   };
 
-  const executeAnalysis = async (typeToRun: 'risk_analysis' | 'compliance' | 'plain_explanation' | 'translate_document' | 'summarize' | 'extract_text') => {
+  const executeAnalysis = async (typeToRun: 'risk_analysis' | 'compliance' | 'plain_explanation' | 'translate_document' | 'summarize' | 'extract_text' | 'court_case_analysis_v2') => {
     if (filesList.length === 0 && !file && !pastedText.trim()) {
       setError('Maaloo faayila olkaa\'aa ykn barreeffama seeraa galchaa. / እባክዎ ፋይል ይጫኑ ወይም የሕግ ጽሑፍ ያስገቡ።');
       return;
@@ -923,6 +971,10 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
       });
 
       setResult(data);
+      extractPrecedentsFromText(data.analysis);
+      if (data.separatedVersions) {
+        Object.values(data.separatedVersions).forEach(v => extractPrecedentsFromText(v));
+      }
       
       // Perform automated SDFHH compliance audit if requested
       if (typeToRun === 'compliance') {
@@ -1015,7 +1067,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
     {
       id: 'gemini-flash-lite-latest',
       name: 'Gemini Flash Lite (Latest)',
-      tagline: 'Saffisaa & Quota-Eeggate (High Availability) • Cuunfaa fi qorannoo ariifachiisaaf',
+      tagline: 'Saffisaa & Quota-Eeggate • Cuunfaa fi qorannoo ariifachiisaaf',
       icon: Zap,
       recommended: true,
       badge: 'Filatamaa (Recommended)',
@@ -1093,6 +1145,13 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
       desc: 'Suuraa seeraa irraa barreeffama qofa adda baasee baasa (copy-paste gochuuf salphaa kan ta’e).',
       icon: FileText,
     },
+    {
+      id: 'court_case_analysis_v2',
+      title: 'Xiinxala Galmee Refined (v2.0 Refined Case Audit)',
+      amTitle: 'የተሟላ የችሎት መዝገብ ትንተና',
+      desc: 'Galmee falmii guutuu (Pleadings, Evidence, Law) kutaa 11n xiinxalee gabaasa dhiyeessa.',
+      icon: Scale,
+    },
   ];
 
   const handleOpenInCassation = (query: string) => {
@@ -1111,11 +1170,99 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
     );
   };
 
+  const loadRemoteArchiveCatalog = async (searchQuery: string = remoteArchiveQuery) => {
+    setIsLoadingRemoteArchive(true);
+    setRemoteArchiveError(null);
+    try {
+      const res = await fetchRemoteArchiveDocuments(searchQuery, 8);
+      setRemoteArchiveDocs(res.files);
+      if (res.total > 0) setRemoteArchiveTotal(res.total);
+    } catch (err: any) {
+      setRemoteArchiveError(
+        currentLang === 'om'
+          ? 'Kuusaa Cloud Archive fe\'uun hin danda\'amne. Maaloo irra deebi\'aa yaalaa.'
+          : currentLang === 'am'
+          ? 'የርቀት መዝገብ ማምጣት አልተቻለም። እባክዎ እንደገና ይሞክሩ።'
+          : err?.message || 'Failed to load remote legal archive'
+      );
+    } finally {
+      setIsLoadingRemoteArchive(false);
+    }
+  };
+
+  const refreshExternalDomainHealth = async (forceRefresh: boolean = true) => {
+    setIsCheckingExternalDomain(true);
+    try {
+      const status = await checkExternalDomainStatus('saiethio.com', { forceRefresh });
+      setExternalDomainStatus(status);
+      if (status.activeMirror?.totalDocuments) {
+        setRemoteArchiveTotal(status.activeMirror.totalDocuments);
+      }
+      return status;
+    } finally {
+      setIsCheckingExternalDomain(false);
+    }
+  };
+
+  const handleSelectArchiveSource = async (mode: 'local' | 'external') => {
+    setArchiveDataSource(mode);
+    if (mode === 'local') {
+      setIsRemoteArchiveExplorerOpen(false);
+      return;
+    }
+
+    setIsRemoteArchiveExplorerOpen(true);
+    setExternalLinkError(null);
+    await Promise.all([
+      refreshExternalDomainHealth(true),
+      loadRemoteArchiveCatalog(remoteArchiveQuery),
+    ]);
+  };
+
+  const handleLoadRemoteArchiveDoc = (doc: RemoteArchiveDocument) => {
+    const pickText = (field: any): string => {
+      if (!field) return '';
+      if (typeof field === 'string') return field;
+      return field[currentLang] || field.om || field.en || field.am || '';
+    };
+
+    const title = pickText(doc.title) || `Galmee Seeraa #${doc.fileNumber || doc.id}`;
+    const summary = pickText(doc.summary);
+    const principle = pickText(doc.principle);
+    const articles = pickText(doc.keyArticles);
+    const sourceUrl = doc.postUrl || VERIFIED_TELEGRAM_ARCHIVE_URL;
+
+    const assembledText = [
+      `Madda: SEERAAI Archive (Galmee #${doc.fileNumber || 'N/A'}${doc.volume ? ` • Jildii ${doc.volume}` : ''}${doc.postNumber ? ` • Post #${doc.postNumber}` : ''})`,
+      `Liinkii Maddaa: ${sourceUrl}`,
+      `Mata-duree: ${title}`,
+      articles ? `Keewwata fi Labsii: ${articles}` : '',
+      summary ? `\nCuunfaa Dhimmaa:\n${summary}` : '',
+      principle ? `\nQajeeltoo Seeraa Dirqisiisaa:\n${principle}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    setPastedText(assembledText);
+    setFile(null);
+    setFileBase64(null);
+    setFilesList([]);
+    setError(null);
+    setCitationToast(
+      currentLang === 'om'
+        ? `✓ "${title.slice(0, 48)}" gara qorannoo seeraatti fe'ameera!`
+        : currentLang === 'am'
+        ? `✓ "${title.slice(0, 48)}" ወደ ትንታኔ ተጭኗል!`
+        : `✓ Loaded "${title.slice(0, 48)}" into Document Analyzer`
+    );
+    setTimeout(() => setCitationToast(null), 3500);
+  };
+
   const handleOpenExternalDataset = async () => {
     // 0. Enforce cryptographic hash check against server before opening
     if (!externalDatasetHashResult?.isVerified) {
       setIsVerifyingExternalDatasetHash(true);
-      const recheck = await verifyDocumentHashWithServer('saorethio1_master_archive', { forceRefresh: true });
+      const recheck = await verifyDocumentHashWithServer('saiethio_master_archive', { forceRefresh: true });
       setExternalDatasetHashResult(recheck);
       logVerificationToHistory(recheck);
       refreshHistory();
@@ -1138,37 +1285,40 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
     setShowManualAccess(false);
 
     try {
-      // 1. Perform HEAD integrity check to saorethio1.com (cached in localStorage)
-      const verifyResult = await verifyExternalDatasetIntegrity('https://saorethio1.com', 1000 * 60 * 15);
-      
-      // 2. Redirect to GitHub as requested ("saorethio1.com kanaas yemmuu click godhu GitHub irratti akka na geeysuun godhi")
-      const targetGithubUrl = getEffectiveGitHubUrl();
+      const [verifyResult, domainStatus] = await Promise.all([
+        verifyExternalDatasetIntegrity('https://saiethio.com', 1000 * 60 * 5),
+        refreshExternalDomainHealth(true),
+      ]);
+
+      setArchiveDataSource('external');
+      setIsRemoteArchiveExplorerOpen(true);
+      await loadRemoteArchiveCatalog(remoteArchiveQuery);
       setIsLoadingExternalLink(false);
 
-      if (verifyResult.isAvailable) {
-        window.open('https://saorethio1.com', '_blank', 'noopener,noreferrer');
-      } else {
-        // Since saorethio1.com has DNS NXDOMAIN, redirect directly to GitHub profile/archive as requested!
-        window.open(targetGithubUrl, '_blank', 'noopener,noreferrer');
+      if (!verifyResult.isAvailable || domainStatus.status !== 'ONLINE') {
         setShowManualAccess(true);
         setExternalLinkError(
           currentLang === 'om'
-            ? 'saorethio1.com gara GitHub (@ayeledha) tti qajeelchameera. Yoo GitHub irratti "404 Page not found" argitan, repo "seeraai" uumuuf qabduu gadii fayyadamaa.'
+            ? `Doomeeniin saiethio.com amma DNS hin qabu (${domainStatus.dnsErrorCode || 'NXDOMAIN'}) — gara serveritti hin qajeelfamne. Garuu Kuusaan Alaa (Cloud & Telegram @seeraai_ethio • ${remoteArchiveTotal}+ Galmeewwan) gadiitti banameera.`
             : currentLang === 'am'
-            ? 'saorethio1.com ወደ GitHub (@ayeledha) ተቀይሯል። በGitHub ላይ "404 Page not found" ካጋጠመዎት "አዲስ ሬፖ ፍጠር" የሚለውን ይጠቀሙ።'
-            : 'saorethio1.com redirected to GitHub (@ayeledha). If you see GitHub "404 Page not found", click "Create Repo" below to initialize "seeraai".'
+            ? `saiethio.com አሁን DNS የለውም (${domainStatus.dnsErrorCode || 'NXDOMAIN'})። ነገር ግን ንቁ የደመና እና ቴሌግራም አርካይቭ (@seeraai_ethio • ${remoteArchiveTotal}+ ሰነዶች) ከታች ተከፍቷል።`
+            : `saiethio.com currently fails DNS (${domainStatus.dnsErrorCode || 'NXDOMAIN'}). The active Cloud & Telegram Archive (@seeraai_ethio • ${remoteArchiveTotal}+ Docs) is open below.`
         );
       }
-    } catch (err: any) {
+    } catch {
       setIsLoadingExternalLink(false);
-      window.open(getEffectiveGitHubUrl(), '_blank', 'noopener,noreferrer');
+      setArchiveDataSource('external');
+      setIsRemoteArchiveExplorerOpen(true);
       setShowManualAccess(true);
     }
   };
 
   const handleCopyExternalUrl = async () => {
     try {
-      await navigator.clipboard.writeText('https://saorethio1.com');
+      const activeAppUrl = typeof window !== 'undefined' ? window.location.origin : 'https://saiethio.com';
+      await navigator.clipboard.writeText(
+        externalDomainStatus?.status === 'ONLINE' ? 'https://saiethio.com' : activeAppUrl
+      );
       setCopiedExternalUrl(true);
       setTimeout(() => setCopiedExternalUrl(false), 3000);
     } catch {}
@@ -1189,7 +1339,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Legal Archive Filter Toggle: saorethio1.com vs Local Storage */}
+          {/* Legal Archive Filter Toggle: Local Storage vs Cloud Archive (saiethio.com / Mirror) */}
           <div className="flex items-center p-1 bg-slate-900 border border-slate-800 rounded-xl text-xs gap-1 shadow-sm shrink-0">
             <span className="text-[10px] uppercase font-mono font-bold text-slate-400 px-2 flex items-center gap-1">
               <span>🗄️</span>
@@ -1197,27 +1347,40 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
             </span>
             <button
               type="button"
-              onClick={() => setArchiveDataSource('local')}
-              className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1 ${
+              onClick={() => handleSelectArchiveSource('local')}
+              className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1 whitespace-nowrap ${
                 archiveDataSource === 'local'
                   ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
               }`}
-              title="Fetch from local cache / storage to save data usage and manage offline cache"
+              title="Use local cache & on-device sample storage"
             >
               <span>💾 Local</span>
             </button>
             <button
               type="button"
-              onClick={() => setArchiveDataSource('external')}
-              className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1 ${
+              onClick={() => handleSelectArchiveSource('external')}
+              className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                 archiveDataSource === 'external'
                   ? 'bg-sky-500 text-white shadow-md font-extrabold'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
               }`}
-              title="Fetch legal document datasets dynamically from saorethio1.com to save local space"
+              title={
+                externalDomainStatus?.status === 'ONLINE'
+                  ? 'saiethio.com online — fetch remote legal datasets'
+                  : 'saiethio.com DNS offline (NXDOMAIN) — auto-routed to active Cloud & Telegram Legal Archive (@seeraai_ethio)'
+              }
             >
-              <span>🌐 saorethio1.com</span>
+              <span>🌐 saiethio.com</span>
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  isCheckingExternalDomain
+                    ? 'bg-amber-300 animate-pulse'
+                    : externalDomainStatus?.status === 'ONLINE'
+                    ? 'bg-emerald-400'
+                    : 'bg-amber-400'
+                }`}
+              />
             </button>
           </div>
 
@@ -1277,6 +1440,225 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
           </button>
         </div>
       </div>
+
+      {/* Live Cloud Archive & saiethio.com Domain Diagnostic Panel (shown when 🌐 saiethio.com toggle is selected) */}
+      {(archiveDataSource === 'external' || isRemoteArchiveExplorerOpen) && (
+        <div className="bg-slate-900 border border-sky-500/40 rounded-2xl p-5 shadow-xl space-y-4 animate-in fade-in duration-200">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Globe className="w-4 h-4 text-sky-400 shrink-0" />
+                <span className="text-sm font-bold text-slate-100">
+                  {currentLang === 'om'
+                    ? 'Xiinxala Doomeenii saiethio.com & Kuusaa Alaa (Cloud Archive)'
+                    : currentLang === 'am'
+                    ? 'የ saiethio.com ሁኔታ እና የደመና መዝገብ አሳሽ'
+                    : 'saiethio.com Status & Cloud Archive Mirror'}
+                </span>
+                {isCheckingExternalDomain ? (
+                  <span className="px-2 py-0.5 rounded bg-slate-800 text-amber-300 text-[10px] font-mono font-bold">
+                    Checking DNS...
+                  </span>
+                ) : externalDomainStatus?.status === 'ONLINE' ? (
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-mono font-bold">
+                    saiethio.com ONLINE ({externalDomainStatus.ipAddresses[0]})
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/40 text-[10px] font-mono font-bold">
+                    saiethio.com: {externalDomainStatus?.dnsErrorCode || 'DNS_NXDOMAIN'} • Mirror Active
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {externalDomainStatus?.status === 'ONLINE'
+                  ? currentLang === 'om'
+                    ? 'Doomeeniin saiethio.com sirriitti hojjachaa jira.'
+                    : 'saiethio.com is online and reachable.'
+                  : currentLang === 'om'
+                  ? `Doomeeniin saiethio.com ammaaf DNS (${externalDomainStatus?.dnsErrorCode || 'ENOTFOUND'}) hin qabu — IP serveritti hin qajeelfamne. Haa ta'u malee kuusaan seeraa Cloud & Telegram (@seeraai_ethio • Galmeewwan ${remoteArchiveTotal}+) sirriitti hojjachaa jira.`
+                  : currentLang === 'am'
+                  ? `saiethio.com አሁን DNS (${externalDomainStatus?.dnsErrorCode || 'ENOTFOUND'}) ስለሌለው አይከፍትም። ሆኖም የደመና እና ቴሌግራም መዝገብ (@seeraai_ethio • ${remoteArchiveTotal}+ ሰነዶች) በንቃት እየሰራ ነው።`
+                  : `saiethio.com does not have active DNS records yet (${externalDomainStatus?.dnsErrorCode || 'ENOTFOUND'}), so traffic automatically uses our live Cloud & Telegram mirror (@seeraai_ethio • ${remoteArchiveTotal}+ docs).`}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <button
+                type="button"
+                onClick={() => refreshExternalDomainHealth(true)}
+                disabled={isCheckingExternalDomain}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isCheckingExternalDomain ? 'animate-spin' : ''}`} />
+                <span>{currentLang === 'om' ? 'DNS Sakatta\'i' : 'Re-check DNS'}</span>
+              </button>
+
+              <a
+                href={VERIFIED_TELEGRAM_ARCHIVE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>@seeraai_ethio</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={() => handleSelectArchiveSource('local')}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 text-xs font-bold cursor-pointer"
+                title="Close remote panel"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Live Remote Archive Search & Document Loader */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={remoteArchiveQuery}
+                onChange={(e) => setRemoteArchiveQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    loadRemoteArchiveCatalog(remoteArchiveQuery);
+                  }
+                }}
+                placeholder={
+                  currentLang === 'om'
+                    ? 'Kuusaa galmeewwan 1,500+ keessaa barbaadi (fkn: qabeenya, hojii, lafa, dhaala)...'
+                    : 'Search 1,500+ archived rulings & proclamations...'
+                }
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-sky-500"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => loadRemoteArchiveCatalog(remoteArchiveQuery)}
+              disabled={isLoadingRemoteArchive}
+              className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 shrink-0"
+            >
+              {isLoadingRemoteArchive ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+              <span>{currentLang === 'om' ? 'Kuusaa Barbaadi' : 'Search Mirror'}</span>
+            </button>
+          </div>
+
+          {remoteArchiveError && (
+            <div className="p-2.5 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{remoteArchiveError}</span>
+            </div>
+          )}
+
+          {isLoadingRemoteArchive ? (
+            <div className="py-6 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-sky-400" />
+              <span>{currentLang === 'om' ? 'Kuusaa alaa fe\'aa jira...' : 'Loading cloud legal archive...'}</span>
+            </div>
+          ) : remoteArchiveDocs.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {remoteArchiveDocs.map((doc) => {
+                const title =
+                  typeof doc.title === 'string'
+                    ? doc.title
+                    : doc.title?.[currentLang] || doc.title?.om || doc.title?.en || `File #${doc.fileNumber || doc.id}`;
+                const summary =
+                  typeof doc.summary === 'string'
+                    ? doc.summary
+                    : doc.summary?.[currentLang] || doc.summary?.om || doc.summary?.en || '';
+
+                return (
+                  <div
+                    key={doc.id}
+                    className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-sky-500/50 flex flex-col justify-between gap-2 transition-all"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-1 text-[10px] font-mono text-sky-300">
+                        <span>#{doc.fileNumber || doc.postNumber || 'DOC'}</span>
+                        {doc.volume && <span className="text-slate-400">Vol {doc.volume}</span>}
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-100 line-clamp-2">{title}</h4>
+                      {summary && <p className="text-[11px] text-slate-400 line-clamp-2 leading-snug">{summary}</p>}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+                      <a
+                        href={doc.postUrl || VERIFIED_TELEGRAM_ARCHIVE_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>Post</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleLoadRemoteArchiveDoc(doc)}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-bold cursor-pointer transition-colors"
+                      >
+                        {currentLang === 'om' ? 'Fayyadami' : 'Load'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-4 text-center text-xs text-slate-400 bg-slate-950/60 rounded-xl border border-slate-800">
+              {currentLang === 'om' ? 'Galmeen barbaadame hin argamne. Jechoota biraan yaalaa.' : 'No matching archive files found.'}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Real-time Cassation Precedent Tracker (AI Discovered) */}
+      {discoveredPrecedents.length > 0 && (
+        <div className="animate-in fade-in slide-in-from-top-4">
+          <div className="bg-slate-900 border-2 border-sky-500/40 rounded-3xl p-5 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-5 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 bg-sky-500 h-full" />
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-sky-500/20 text-sky-400 flex items-center justify-center font-black text-xl shadow-inner shrink-0 border border-sky-500/30">
+                ⚖️
+              </div>
+              <div>
+                <h4 className="text-lg font-black uppercase text-white tracking-tight flex items-center gap-2">
+                  <span>Discovered Cassation Precedents</span>
+                  <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">Extracted from current legal analysis</p>
+              </div>
+            </div>
+            
+            <div className="flex flex-wrap gap-2.5 justify-start md:justify-end max-w-3xl no-scrollbar overflow-x-auto pb-1">
+              {discoveredPrecedents.map((p) => (
+                <div key={p.id} className="group relative flex items-center gap-2 px-3.5 py-2 bg-slate-950 border-2 border-sky-500/30 rounded-2xl text-sm font-mono font-black text-sky-300 shadow-xl transition-all hover:border-sky-400 hover:scale-105 active:scale-95">
+                  <span className="text-[10px] opacity-50 font-bold">GALMEE</span>
+                  <span>#{p.referenceNumber}</span>
+                  <a
+                    href={VERIFIED_TELEGRAM_ARCHIVE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1 rounded-lg bg-sky-500/10 text-sky-500 hover:bg-sky-500 hover:text-white transition-colors"
+                    title="Open SeeraAI Telegram Archive"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 w-48 p-2 bg-slate-800 border border-sky-500/50 rounded-xl text-[10px] text-white shadow-2xl pointer-events-none text-center font-sans">
+                    Extracted at {p.timestamp}<br/>Source: {p.source}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Telegram Import Toast Banner */}
       {telegramSyncToast && (
@@ -1363,7 +1745,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                 <span>Moodeela Gemini AI Filadhaa (Engine):</span>
               </label>
               <span className="text-[11px] text-slate-400 font-mono">
-                {modelTier === 'gemini-flash-lite-latest' ? '⚡ Flash Lite (Active)' : '🧠 High Availability'}
+                {modelTier === 'gemini-flash-lite-latest' ? '⚡ Flash Lite (Active)' : '🧠 Gemini 3.8 Flash (Active)'}
               </span>
             </div>
 
@@ -1433,9 +1815,9 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                         </span>
                         <span
                           className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-mono bg-sky-950 text-sky-300 border border-sky-500/30"
-                          title="Hosted on saorethio1.com external legal dataset"
+                          title="Verified in SEERAAI Cloud & Telegram Legal Archive (@seeraai_ethio)"
                         >
-                          🌐 External
+                          🌐 Verified
                         </span>
                       </div>
                       <span className="text-[10px] text-amber-400/90 font-mono block">
@@ -1492,7 +1874,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
             </div>
           </div>
 
-          {/* Prominent External Dataset & Build Status Banner */}
+          {/* Prominent External Dataset & Domain Mirror Banner */}
           <div className="bg-gradient-to-r from-slate-900 via-amber-950/30 to-slate-900 border border-amber-500/40 rounded-2xl p-5 shadow-xl space-y-3">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -1502,38 +1884,49 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-sm text-slate-100">
-                      {currentLang === 'om' ? 'Kuusaa Sanadoota Alaa (saorethio1.com)' : 'External Dataset Hosting (saorethio1.com)'}
+                      {currentLang === 'om'
+                        ? 'Kuusaa Sanadoota Alaa (Cloud Mirror & saiethio.com)'
+                        : 'External Dataset Hosting (Cloud Mirror & saiethio.com)'}
                     </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
-                      Build v4.1.0 (35.07 MB • 250 MB Limit Compliant)
+                    <span
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold border ${
+                        externalDomainStatus?.status === 'ONLINE'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      }`}
+                    >
+                      {externalDomainStatus?.status === 'ONLINE'
+                        ? 'saiethio.com ONLINE'
+                        : `saiethio.com: ${externalDomainStatus?.dnsErrorCode || 'NXDOMAIN'} • Mirror Active`}
                     </span>
                     {/* Server-backed Verification Status Indicator */}
                     <DocumentHashStatusIndicator
-                      documentId="saorethio1_master_archive"
+                      documentId="saiethio_master_archive"
                       isVerifying={isVerifyingExternalDatasetHash}
                       result={externalDatasetHashResult}
                     />
                   </div>
                   <p className="text-xs text-slate-300 leading-relaxed">
                     {currentLang === 'om'
-                      ? 'Hanga appii (250 MB) eeguuf, galmeewwan seeraa gurguddoo fi arayiiwwan waraqaa alaa saorethio1.com irraa argamu. Hash eeggatee banama.'
-                      : 'To stay under the 250 MB publish limit, large legal document datasets & archives are hosted externally at saorethio1.com. Cryptographic hash verified.'}
+                      ? `Galmeewwan seeraa gurguddoo (${remoteArchiveTotal}+ Docs) Cloud Archive fi Telegram @seeraai_ethio irraa kallattiin argamu (saiethio.com ammaaf DNS eegaa jira). Hash eeggatee banama.`
+                      : `Large legal document datasets (${remoteArchiveTotal}+ Docs) are served actively from our verified Cloud & Telegram mirror (@seeraai_ethio) while saiethio.com DNS is pending. Cryptographic hash verified.`}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => window.open(VERIFIED_TELEGRAM_ARCHIVE_URL, '_blank', 'noopener,noreferrer')}
-                  className="px-4 py-2.5 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-400 hover:to-sky-500 text-white font-bold text-xs rounded-xl shadow-lg flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+                <a
+                  href={VERIFIED_TELEGRAM_ARCHIVE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2.5 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-400 hover:to-sky-500 text-white font-bold text-xs rounded-xl shadow-lg flex items-center gap-2 active:scale-95 transition-all"
                   title="Verified 1,500+ Legal Precedent Archive"
                 >
                   <span>✈️</span>
                   <span>Telegram Archive (1,500+)</span>
-                </button>
+                </a>
 
-                {/* Open Button - Disabled until file hash is checked and verified against server known good copy */}
+                {/* Open Button - Opens live in-app Cloud Archive Mirror after verifying cryptographic hash */}
                 <button
                   type="button"
                   onClick={handleOpenExternalDataset}
@@ -1549,7 +1942,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                   }`}
                   title={
                     externalDatasetHashResult?.isVerified
-                      ? 'Cryptographic file hash verified by server. Click to open.'
+                      ? 'Cryptographic file hash verified by server. Click to open Cloud Archive.'
                       : isVerifyingExternalDatasetHash
                       ? 'Checking file hash with server...'
                       : 'Open button disabled until file hash is verified against server known-good registry'
@@ -1558,7 +1951,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                   {isLoadingExternalLink ? (
                     <>
                       <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
-                      <span>{currentLang === 'om' ? 'Qajeelchaa Jira (Redirecting)...' : 'Redirecting...'}</span>
+                      <span>{currentLang === 'om' ? 'Kuusaa Fe\'aa Jira...' : 'Loading Archive...'}</span>
                     </>
                   ) : isVerifyingExternalDatasetHash ? (
                     <>
@@ -1580,61 +1973,62 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
               </div>
             </div>
 
-            {/* Visual Error Notification for 404 / 503 / Timeout */}
+            {/* Visual Error / Diagnostic Notification for DNS NXDOMAIN */}
             {externalLinkError && (
-              <div className="bg-rose-950/80 border border-rose-500/60 rounded-xl p-3 flex items-center justify-between text-xs text-rose-200">
+              <div className="bg-amber-950/60 border border-amber-500/50 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-amber-100">
                 <div className="flex items-center gap-2">
-                  <span>⚠️</span>
+                  <span>ℹ️</span>
                   <span>{externalLinkError}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setExternalLinkError(null)}
-                  className="text-rose-300 hover:text-white text-xs underline cursor-pointer"
+                  className="text-amber-300 hover:text-white text-xs underline cursor-pointer shrink-0"
                 >
                   Dismiss
                 </button>
               </div>
             )}
 
-            {/* Manual Access Required Fallback Button & Copy Box with GitHub 404 fix */}
+            {/* Working Fallback Mirror & DNS Configuration Guide */}
             {showManualAccess && (
-              <div className="bg-slate-950 border border-amber-500/50 rounded-xl p-4 space-y-3 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-amber-300 flex items-center gap-1.5">
+              <div className="bg-slate-950 border border-sky-500/40 rounded-xl p-4 space-y-3 text-xs">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="font-bold text-sky-300 flex items-center gap-1.5">
                     <span>🔓</span>
-                    <span>{currentLang === 'om' ? 'Maddoota Kuusaa Alaa (Direct Access)' : 'External Legal Archives'}</span>
+                    <span>{currentLang === 'om' ? 'Maddoota Kuusaa Alaa Hojjachaa Jiran (Active Mirrors)' : 'Active External Legal Archive Mirrors'}</span>
                   </span>
-                  <span className="text-[10px] text-slate-400">DNS & GitHub 404 Helper</span>
+                  <span className="text-[10px] text-slate-400 font-mono">saiethio.com DNS Fallback</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => window.open(GITHUB_PROFILE_URL, '_blank', 'noopener,noreferrer')}
-                    className="p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <span>👤</span>
-                    <span>GitHub @ayeledha</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => window.open(GITHUB_CREATE_REPO_URL, '_blank', 'noopener,noreferrer')}
+                    onClick={() => setIsTelegramModalOpen(true)}
                     className="p-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow"
-                    title="Yoo '404 Didn't find anything' jedhe, repo haaraa maqaa 'seeraai' jedhu uumaa"
                   >
-                    <span>➕</span>
-                    <span>Repo "seeraai" Uumi</span>
+                    <span>📥</span>
+                    <span>{currentLang === 'om' ? 'Kuusaa App Keessatti Fidi' : 'Import 1,500+ Archive'}</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => window.open(VERIFIED_TELEGRAM_ARCHIVE_URL, '_blank', 'noopener,noreferrer')}
-                    className="p-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow"
+                  <a
+                    href={VERIFIED_TELEGRAM_ARCHIVE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold flex items-center justify-center gap-1.5 shadow"
                   >
                     <span>✈️</span>
-                    <span>Telegram (@saiorethio1)</span>
+                    <span>Telegram (@seeraai_ethio)</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('seera:navigate', { detail: { tab: 'settings' } }))}
+                    className="p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="Configure Namecheap DNS records for saiethio.com in Settings"
+                  >
+                    <span>⚙️</span>
+                    <span>{currentLang === 'om' ? 'Qindaa\'ina DNS (Settings)' : 'Domain DNS Settings'}</span>
                   </button>
                 </div>
 
@@ -1642,7 +2036,11 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                   <input
                     type="text"
                     readOnly
-                    value="https://saorethio1.com"
+                    value={
+                      externalDomainStatus?.status === 'ONLINE'
+                        ? 'https://saiethio.com'
+                        : (typeof window !== 'undefined' ? window.location.origin : VERIFIED_TELEGRAM_ARCHIVE_URL)
+                    }
                     className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-amber-200 font-mono flex-1 select-all"
                   />
                   <button
@@ -1650,7 +2048,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                     onClick={handleCopyExternalUrl}
                     className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shrink-0 cursor-pointer transition-all"
                   >
-                    <span>{copiedExternalUrl ? '✓ Waraabameera!' : 'Copy URL'}</span>
+                    <span>{copiedExternalUrl ? '✓ Waraabameera!' : 'Copy Active URL'}</span>
                   </button>
                 </div>
               </div>
@@ -1709,7 +2107,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                   PDF, Scanned Legal Contracts, Court Decisions, Proclamations (Processed Off-Main-Thread)
                 </span>
                 <span className="text-[11px] text-amber-400/90 mt-1.5 block font-mono">
-                  🌐 Large datasets are available for download at saorethio1.com
+                  🌐 Large legal datasets are synced via Cloud Archive & Telegram (@seeraai_ethio)
                 </span>
               </div>
 
@@ -1810,7 +2208,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                       <ProgressiveLegalImageLoader
                         fullSrc={`data:${filesList[activeImageIndex]?.mimeType};base64,${filesList[activeImageIndex]?.base64}`}
                         alt={filesList[activeImageIndex]?.name || 'Document'}
-                        externalDocUrl="saorethio1.com"
+                        externalDocUrl={archiveDataSource === 'external' ? 'Cloud Archive' : undefined}
                         className="w-full max-h-[460px]"
                       />
                     </div>
@@ -1847,7 +2245,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                           <ProgressiveLegalImageLoader
                             fullSrc={`data:${filesList[activeImageIndex]?.mimeType};base64,${filesList[activeImageIndex]?.base64}`}
                             alt={filesList[activeImageIndex]?.name || 'Sanada 1'}
-                            externalDocUrl="saorethio1.com"
+                            externalDocUrl={archiveDataSource === 'external' ? 'Cloud Archive' : undefined}
                             className="w-full h-full"
                           />
                         </div>
@@ -1874,7 +2272,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                             <ProgressiveLegalImageLoader
                               fullSrc={`data:${filesList[secondaryImageIndex]?.mimeType};base64,${filesList[secondaryImageIndex]?.base64}`}
                               alt={filesList[secondaryImageIndex]?.name || 'Sanada 2'}
-                              externalDocUrl="saorethio1.com"
+                              externalDocUrl={archiveDataSource === 'external' ? 'Cloud Archive' : undefined}
                               className="w-full h-full"
                             />
                           ) : (
@@ -2453,6 +2851,17 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
               >
                 <span className="text-base">⏱️</span>
               </button>
+
+              {/* CHATGPT LEGAL COLLABORATOR BUTTON */}
+              <button
+                type="button"
+                onClick={() => setShowChatGPTModal(true)}
+                className="flex items-center justify-center gap-1.5 py-3 px-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs tracking-wide shadow-lg shadow-teal-950/40 transition-all hover:scale-[1.01] cursor-pointer min-h-[50px]"
+                title="Collaborative Legal Analysis with ChatGPT (GPT-4o Engine)"
+              >
+                <span className="text-base">💬</span>
+                <span>CHATGPT COLLAB</span>
+              </button>
             </div>
             </div>
 
@@ -2846,7 +3255,7 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                               </div>
                               <div className="p-3 space-y-1">
                                 <div className="text-[10px] text-slate-500 font-mono truncate">
-                                  www.saorethio1.com
+                                  www.saiethio.com
                                 </div>
                                 <h5 className="text-xs font-bold text-slate-200 line-clamp-1">
                                   {activeSocialPlatform === 'facebook'
@@ -3129,11 +3538,11 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                                 )}
                                 <span
                                   className="group/ext relative inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-mono bg-sky-950 text-sky-300 border border-sky-500/30 cursor-help shrink-0"
-                                  title="Hosted on saorethio1.com to help maintain the app's performance"
+                                  title="Verified in SEERAAI Cloud & Telegram Legal Archive (@seeraai_ethio)"
                                 >
-                                  <span>🌐 External</span>
+                                  <span>🌐 Verified</span>
                                   <span className="pointer-events-none absolute bottom-full right-0 mb-1 hidden group-hover/ext:block w-48 p-2 rounded-lg bg-slate-950 text-slate-200 text-[10px] font-sans border border-slate-700 shadow-xl z-30 leading-snug">
-                                    Hosted on saorethio1.com to help maintain the app's performance and 250 MB limit.
+                                    Verified in SEERAAI Cloud & Telegram Legal Archive (@seeraai_ethio).
                                   </span>
                                 </span>
                               </div>
@@ -3217,11 +3626,11 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
                                 )}
                                 <span
                                   className="group/ext relative inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono bg-sky-950 text-sky-300 border border-sky-500/30 cursor-help shrink-0"
-                                  title="Hosted on saorethio1.com to help maintain the app's performance"
+                                  title="Verified in SEERAAI Cloud & Telegram Legal Archive (@seeraai_ethio)"
                                 >
-                                  <span>🌐 External</span>
+                                  <span>🌐 Verified</span>
                                   <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/ext:block w-48 p-2 rounded-lg bg-slate-950 text-slate-200 text-[10px] font-sans border border-slate-700 shadow-2xl z-30 leading-snug">
-                                    Hosted on saorethio1.com to help maintain the app's performance and 250 MB limit.
+                                    Verified in SEERAAI Cloud & Telegram Legal Archive (@seeraai_ethio).
                                   </span>
                                 </span>
                               </div>
@@ -3548,6 +3957,16 @@ Himatamaan maallaqa liqeeffate Birrii 500,000 hin kaffalle. Manni murtii dhimma 
           </div>
         )}
       </div>
+
+      {/* ChatGPT Legal Collaborator Modal Overlay */}
+      {showChatGPTModal && (
+        <ChatGPTLegalCollaboratorModal
+          currentLang={currentLang}
+          documentTitle={file?.name || filesList[0]?.name || 'Sanada Seeraa / Legal Document'}
+          documentText={pastedText || result?.analysis || ''}
+          onClose={() => setShowChatGPTModal(false)}
+        />
+      )}
     </div>
   );
 };

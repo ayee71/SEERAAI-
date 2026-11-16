@@ -1,0 +1,137 @@
+SEERAAI PRO — PHASE 8B.5.11
+ISOLATED FIREBASE EMULATOR TEST HARNESS & GITHUB ACTIONS PREPARATION
+
+ROLE
+You are continuing the EXISTING SEERAAI PRO application in the existing repository `sai-ethio-legal-ai`. This is a security-remediation task, not a new application or a production deployment.
+
+CURRENT VERIFIED INPUTS (as reported in Phase 8B.5.10)
+1. `firestore.rules.phase8b5.3.integrated.candidate`
+   Expected size: 18,042 bytes; expected lines: 504
+   Expected SHA-256: cd50c7ee5b82ff2f9881b6562d88aa4f428dc1562278ddb5f977fbce3eab908b
+2. `storage.rules.phase8b5.4.integrated.candidate`
+   Expected size: 1,443 bytes; expected lines: 46
+   Expected SHA-256: eb1c614a5be091902f793112dc7f4fcc33511f3e42d7daffd4c9463003dc68b5
+3. `package.json` and `package-lock.json` were reported present.
+4. The following CI files were reported missing: `.github/workflows/rules-test.yml` and `firebase.emulator.test.json`.
+
+IMPORTANT: These are reported identities, not permission to assume files still match. Recalculate the actual size, line count and full SHA-256 before doing anything. If either candidate Rules file is missing or does not match its expected hash, STOP and report the discrepancy. Do not reconstruct, regenerate, truncate, or substitute Rules.
+
+PHASE OBJECTIVE
+Prepare a reproducible, isolated Firestore + Cloud Storage Rules Emulator test harness and GitHub Actions workflow using ONLY the two verified candidate Rules files. This phase prepares the tests and CI workflow. It must not claim that tests passed unless they are actually executed and evidence is produced.
+
+1. STRICT PRODUCTION SAFETY — NON-NEGOTIABLE
+- Do NOT deploy or publish anything.
+- Do NOT modify production `firestore.rules`, `storage.rules`, or `firebase.json`.
+- Do NOT modify production Firebase project configuration, Auth, users, custom claims, IAM, secrets, Cloud Run, Functions, Storage objects, or Firestore data.
+- Do NOT access the production Firebase project.
+- Do NOT use production credentials, `.env` secrets, service-account keys, Firebase tokens, or production environment variables.
+- Do NOT create a replacement Firebase project.
+- Use only the Firebase Emulator Suite with project ID `demo-seeraai-test`.
+- Do not run `firebase deploy`, `firebase use`, `firebase deploy --only`, or any production command.
+- Keep the app's existing users, features, source code and integrations intact. Avoid unrelated refactoring.
+
+2. INSPECT BEFORE EDITING
+Inspect and report:
+- Both candidate Rules files and verify their exact hashes against the values above.
+- Active baseline `firestore.rules` and `storage.rules` in read-only mode only.
+- `firebase.json` in read-only mode only.
+- `package.json`, `package-lock.json`, existing test directories, existing test frameworks and scripts.
+- Existing Firestore and Storage Rules match blocks, helper functions, custom claims, and overlapping wildcard matches.
+
+Do not assume that the reports correctly describe the actual files. Derive test expectations from the actual candidate Rules source. In particular, inspect every `allow` statement and overlapping `match` block. Remember that Firebase Rules `allow` grants are additive: a deny in one matching block does not cancel an allow in another matching block.
+
+3. CREATE AN ISOLATED EMULATOR CONFIGURATION
+If it does not already exist, create `firebase.emulator.test.json` with explicit paths to:
+- `firestore.rules.phase8b5.3.integrated.candidate`
+- `storage.rules.phase8b5.4.integrated.candidate`
+
+Configure only Firestore and Storage emulators with explicit non-conflicting local ports and `singleProjectMode: true`. Disable Emulator UI unless it is needed. Do not copy or overwrite production `firebase.json`.
+
+Before running tests, validate that the Firebase CLI resolves the candidate paths from this config. If the config would load production Rules or no Rules, STOP. Never allow an emulator to start with open/default Rules accidentally.
+
+4. BUILD REAL RULES UNIT TESTS
+Inspect installed dependency versions and the existing package manager first. Use the compatible modular Firebase SDK and `@firebase/rules-unit-testing` APIs for the project's actual versions. Add only the minimum necessary development dependencies, pinned reproducibly and reflected in the lockfile. Do not upgrade unrelated application dependencies.
+
+Create separate, discoverable test suites for Firestore Rules and Storage Rules. Tests must connect only to the emulators and use mock Authentication contexts; never initialize a production Firebase app.
+
+Derive each test assertion from the actual candidate Rules. Include both expected-allow and expected-deny cases where applicable. At minimum, cover:
+- Unauthenticated access.
+- User ownership and another user's access.
+- Cross-institution / cross-tenant reads and writes.
+- Missing, malformed, and conflicting institution/role/admin/legal-content-manager claims.
+- Judge, registrar and court_admin permissions exactly as defined by the Rules.
+- Admin and legal-content-manager permissions exactly as defined by the Rules.
+- Telegram public-read collections versus restricted writes.
+- Subscriber, poll-result, statistics, briefing-log and other internal Telegram collections.
+- Court documents, institution documents, court logos and court audio paths.
+- Storage content-type and file-size restrictions if they are actually enforced by the candidate Rules.
+- Unauthorized create, read, update and delete operations.
+- Attempts to change an existing institutionId or cross a tenant boundary.
+- Every broad wildcard / catch-all rule and every overlapping match that could make a supposedly denied request succeed.
+
+Do not write tests that merely repeat the desired security policy in comments. Execute real SDK operations against the running emulators and use `assertSucceeds` / `assertFails` (or equivalent) on actual results. Do not seed test fixtures through normal user permissions if privileged setup is required; use `withSecurityRulesDisabled` only for fixture setup and clearly isolate it from the tests being asserted.
+
+If any candidate behavior is ambiguous, record the ambiguity and do not invent the expected result. If any important path cannot be tested, mark coverage incomplete.
+
+5. PACKAGE SCRIPTS AND LOCKFILE
+Add clearly named scripts, for example:
+- `test:rules:firestore`
+- `test:rules:storage`
+- `test:rules`
+
+Use the actual test runner already in the project where possible. Do not remove or rename existing scripts. Keep `package.json` and `package-lock.json` consistent. Do not claim installation succeeded in an offline environment.
+
+6. GITHUB ACTIONS WORKFLOW
+If missing, create `.github/workflows/rules-test.yml`. Requirements:
+- Trigger on `workflow_dispatch` and pull requests that change Rules, test files, the emulator config, package manifest/lockfile, or the workflow itself.
+- Use a supported pinned Node.js version compatible with the project's package and lockfile.
+- Set up a compatible Java runtime required by the selected Firebase emulators.
+- Install dependencies reproducibly with `npm ci`.
+- Install/invoke a pinned Firebase CLI version reproducibly; do not use an unpinned `latest` install.
+- Run the Emulator Suite using `firebase emulators:exec` with `--config firebase.emulator.test.json`, `--project demo-seeraai-test`, and only the Firestore and Storage emulators.
+- Execute the real Rules test suites and fail the job on any failed test or non-zero command exit.
+- Do not require Firebase login, production secrets, service-account keys, or `FIREBASE_TOKEN`.
+- Capture test output, emulator debug logs, command exit status, candidate hashes, and a machine-readable summary as CI artifacts, including on failure.
+- Use a least-privilege GitHub Actions permissions block (read-only contents unless another permission is demonstrably required).
+- Do not echo secrets or environment variables.
+
+Use the official Firebase-recommended CI pattern `firebase emulators:exec` rather than only starting emulators. Confirm from the actual CLI command help/version that the selected flags and emulator names are valid.
+
+7. PRE-FLIGHT SAFETY GUARDS
+Before test execution, the scripts/workflow must:
+- Assert project ID is exactly `demo-seeraai-test`.
+- Assert both candidate Rules files exist and have the expected SHA-256 values.
+- Assert emulator config points to those candidate files.
+- Assert no production Firebase credentials or production project ID are configured.
+- Fail closed if any check fails.
+
+After the test run, recalculate both SHA-256 hashes and confirm candidate files were not modified. Store the before/after hashes in the evidence output.
+
+8. EXECUTION RULES
+If this environment has network access and all necessary packages/emulator binaries are available, you may run the isolated tests. If not, create the harness and workflow only, then state clearly that execution is BLOCKED and provide exact GitHub Actions steps for the project owner.
+
+Never label a workflow as passed just because it was created. Distinguish:
+- HARNESS PREPARED
+- WORKFLOW PREPARED
+- TESTS EXECUTED
+- TESTS PASSED
+
+Only mark TESTS PASSED when real Firestore AND Storage Rules test commands completed successfully with captured output and exit code 0.
+
+9. REQUIRED DELIVERABLES
+Provide a Phase 8B.5.11 report with:
+1. Actual candidate paths, sizes, line counts and full SHA-256 hashes.
+2. Exact list of files created/modified; confirm production files are unchanged.
+3. Exact emulator config and test command used.
+4. Test suite names and coverage matrix mapping each security requirement to test cases.
+5. Dependency versions and lockfile status.
+6. GitHub Actions workflow trigger, runtime versions and artifact names.
+7. Actual test counts: passed, failed, skipped — or clearly say NOT RUN.
+8. Exit code and relevant logs — or clearly say NOT AVAILABLE.
+9. Uncovered risks and ambiguities.
+10. Exact next action for the project owner to commit the CI-only changes to an isolated branch and run GitHub Actions.
+
+FINAL GATE
+This phase does NOT authorize production deployment. Even if Emulator tests pass, release remains BLOCKED pending complete review of test evidence, candidate-vs-baseline diff, server-side Admin SDK authorization, live production Rules inspection/backup, custom-claims migration dry-run, rollback preparation, functional regression testing, and explicit owner approval.
+
+STOP after the report. No production changes, publishing, deployment, or migration are authorized.

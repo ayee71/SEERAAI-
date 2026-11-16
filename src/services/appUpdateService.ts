@@ -4,7 +4,7 @@
  * detects remote service worker updates, and offers 1-click & auto updates.
  */
 
-export const CURRENT_APP_VERSION = '4.1.0';
+export const CURRENT_APP_VERSION = '4.2.0-PRO';
 export const APP_VERSION_STORAGE_KEY = 'seera_active_app_version';
 export const LAST_UPDATE_CHECK_KEY = 'seera_last_update_check_ts';
 
@@ -123,7 +123,7 @@ export async function checkForAppUpdate(isManualTrigger: boolean = false): Promi
       const data = await response.json();
       const serverVersion = data.version || currentVersion;
 
-      const hasNewVersion = Boolean(serverVersion !== currentVersion && storedVersion !== serverVersion);
+      const hasNewVersion = Boolean((serverVersion !== currentVersion && storedVersion !== serverVersion) || data.forceUpdate || isManualTrigger);
       const isMandatory = Boolean(data.forceUpdate);
 
       const updateInfo: AppUpdateInfo = {
@@ -132,7 +132,7 @@ export async function checkForAppUpdate(isManualTrigger: boolean = false): Promi
         currentVersion: storedVersion || currentVersion,
         latestVersion: serverVersion,
         buildTime: data.buildTime,
-        releaseNotes: data.releaseNotes || 'Moodeelota Gemini AI haarawaa, sirna hojii mana murtii fi seerota haaromfaman.',
+        releaseNotes: data.releaseNotes || 'Moodeelota Gemini AI & ChatGPT, sirna hojii mana murtii fi seerota haaromfaman.',
         features: data.features || [],
       };
 

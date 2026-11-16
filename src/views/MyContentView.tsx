@@ -53,6 +53,7 @@ import {
   autoCategorizeDocumentsIntoFolders,
   shareFolder,
   saveDocument,
+  uploadFileToFirebaseStorage,
 } from '../services/storage';
 import { processDocumentOffThread } from '../services/documentExtractionService';
 import { convertMediaFileToText, extractDocumentMetadata } from '../services/api';
@@ -76,6 +77,7 @@ import { TelegramImportModal } from '../components/TelegramImportModal';
 import { directExportSavedDocument } from '../services/legalDocumentExport';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 import { SavedCitationsModal } from '../components/SavedCitationsModal';
+import { DownloadBookmarksButton } from '../components/DownloadBookmarksButton';
 import { getLocalSavedCitations } from '../services/citationLibraryService';
 import { Bell, CalendarPlus, Share2 } from 'lucide-react';
 
@@ -169,6 +171,8 @@ export const MyContentView: React.FC<MyContentViewProps> = ({ currentLang, onOpe
   const [isBatchRenaming, setIsBatchRenaming] = useState(false);
   const [batchRenameProgress, setBatchRenameProgress] = useState('');
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const [isMigratingStorage, setIsMigratingStorage] = useState(false);
+  const [migrationProgress, setMigrationProgress] = useState(0);
 
   const handleBatchAiRename = async () => {
     if (selectedDocIds.length === 0) return;
@@ -534,7 +538,18 @@ END:VCALENDAR`;
           }
         }
 
-        // 5. Save document
+        // 5. Upload to Cloud Storage if successful
+        let storageUrl = undefined;
+        if (processed.base64) {
+          try {
+            const uploadRes = await uploadFileToFirebaseStorage(file, file.name);
+            storageUrl = uploadRes.url;
+          } catch (err) {
+            console.error('Cloud upload failed in batch', err);
+          }
+        }
+
+        // 6. Save document
         saveDocument({
           title: caseName || file.name.split('.')[0],
           content: text || 'No text extracted.',
@@ -546,7 +561,8 @@ END:VCALENDAR`;
           extractedDate,
           docType,
           folderId,
-          fileDataUrl: processed.base64 ? `data:${processed.mimeType};base64,${processed.base64}` : undefined,
+          storageUrl,
+          fileDataUrl: (processed.base64 && !storageUrl) ? `data:${processed.mimeType};base64,${processed.base64}` : undefined,
           mimeType: processed.mimeType
         });
 
@@ -607,6 +623,61 @@ END:VCALENDAR`;
       loadData();
     }
   };
+
+  const handleMigrateToCloud = async () => {
+    const docsToMigrate = docs.filter(d => d.fileDataUrl && !d.storageUrl);
+    if (docsToMigrate.length === 0) {
+      alert(currentLang === 'om' ? 'Sanadni gara cloudtti jijjiiramu hin jiru.' : 'No documents found for cloud migration.');
+      return;
+    }
+
+    if (!confirm(currentLang === 'om' ? `Sanadoonni ${docsToMigrate.length} gara cloudtti akka dabarfaman ni barbaadduu? Kun bakka kuusaa localStorage ni qusata.` : `Migrate ${docsToMigrate.length} documents to Cloud Storage? This will free up browser local storage.`)) {
+      return;
+    }
+
+    setIsMigratingStorage(true);
+    setMigrationProgress(0);
+    let successCount = 0;
+
+    for (let i = 0; i < docsToMigrate.length; i++) {
+      const doc = docsToMigrate[i];
+      try {
+        // Convert base64 to Blob
+        const base64Data = doc.fileDataUrl!.split(',')[1];
+        const contentType = doc.mimeType || doc.fileDataUrl!.split(';')[0].split(':')[1];
+        const byteCharacters = atob(base64Data);
+        const byteArrays = [];
+        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+          const slice = byteCharacters.slice(offset, offset + 512);
+          const byteNumbers = new Array(slice.length);
+          for (let j = 0; j < slice.length; j++) {
+            byteNumbers[j] = slice.charCodeAt(j);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          byteArrays.push(byteArray);
+        }
+        const blob = new Blob(byteArrays, { type: contentType });
+        
+        // Upload
+        const { url } = await uploadFileToFirebaseStorage(blob, doc.title);
+        
+        // Update document
+        updateDocument(doc.id, {
+          storageUrl: url,
+          fileDataUrl: undefined // Remove base64 to free space
+        });
+        successCount++;
+      } catch (err) {
+        console.error('Migration failed for doc:', doc.id, err);
+      }
+      setMigrationProgress(Math.round(((i + 1) / docsToMigrate.length) * 100));
+    }
+
+    setIsMigratingStorage(false);
+    loadData();
+    alert(currentLang === 'om' ? `Sanadoonni ${successCount} milkaa'inaan gara cloudtti dabarfamaniiru!` : `Successfully migrated ${successCount} documents to Cloud Storage!`);
+  };
+
   const handleBatchTag = () => {
     if (!currentTagInput.trim()) return;
     const tag = currentTagInput.trim();
@@ -854,6 +925,42 @@ END:VCALENDAR`;
         </div>
       )}
 
+      {/* Cloud Migration Progress Modal */}
+      {isMigratingStorage && (
+        <div className="fixed inset-0 bg-slate-950/90 z-[200] flex items-center justify-center p-6 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-amber-500/30 rounded-3xl p-8 w-full max-w-md shadow-2xl space-y-6">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/20 flex items-center justify-center">
+                <Database className="w-8 h-8 text-amber-400 animate-pulse" />
+              </div>
+              <h2 className="text-xl font-bold text-white">Optimizing Storage</h2>
+              <p className="text-slate-400 text-sm">
+                {currentLang === 'om' 
+                  ? 'Sanadoota keessan gara clouditti dabarsaa jirra. Kun yeroo muraasa fudhachuu danda\'a.' 
+                  : 'Moving your documents to secure cloud storage. This will free up local browser space.'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-mono text-amber-300">
+                <span>Migration Progress</span>
+                <span>{migrationProgress}%</span>
+              </div>
+              <div className="h-3 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                <div 
+                  className="h-full bg-amber-500 transition-all duration-300 shadow-[0_0_10px_rgba(245,158,11,0.5)]"
+                  style={{ width: `${migrationProgress}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-800 text-center">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Cloud Transition Active</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-8 pb-16">
       {/* Title */}
       <div>
@@ -1074,6 +1181,18 @@ END:VCALENDAR`;
                   <span>Batch Upload</span>
                 </button>
               </div>
+
+              <button
+                onClick={handleMigrateToCloud}
+                disabled={isMigratingStorage}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-indigo-500/30 text-indigo-300 text-xs font-bold transition-all cursor-pointer shadow"
+                title="Optimize Storage: Move local base64 documents to Firebase Cloud Storage"
+              >
+                <Database className={`w-3.5 h-3.5 ${isMigratingStorage ? 'animate-spin' : ''}`} />
+                <span>{isMigratingStorage ? 'Optimizing...' : 'Optimize Storage'}</span>
+              </button>
+
+              <DownloadBookmarksButton currentLang={currentLang} variant="primary" />
             </div>
           </div>
 
@@ -1313,6 +1432,42 @@ END:VCALENDAR`;
 
             <div className="pt-4 border-t border-slate-800 text-center">
               <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">AI Entity Extraction Active</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cloud Migration Progress Modal */}
+      {isMigratingStorage && (
+        <div className="fixed inset-0 bg-slate-950/90 z-[200] flex items-center justify-center p-6 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-amber-500/30 rounded-3xl p-8 w-full max-w-md shadow-2xl space-y-6">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/20 flex items-center justify-center">
+                <Database className="w-8 h-8 text-amber-400 animate-pulse" />
+              </div>
+              <h2 className="text-xl font-bold text-white">Optimizing Storage</h2>
+              <p className="text-slate-400 text-sm">
+                {currentLang === 'om' 
+                  ? 'Sanadoota keessan gara clouditti dabarsaa jirra. Kun yeroo muraasa fudhachuu danda\'a.' 
+                  : 'Moving your documents to secure cloud storage. This will free up local browser space.'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-mono text-amber-300">
+                <span>Migration Progress</span>
+                <span>{migrationProgress}%</span>
+              </div>
+              <div className="h-3 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                <div 
+                  className="h-full bg-amber-500 transition-all duration-300 shadow-[0_0_10px_rgba(245,158,11,0.5)]"
+                  style={{ width: `${migrationProgress}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-800 text-center">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Cloud Transition Active</p>
             </div>
           </div>
         </div>

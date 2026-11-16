@@ -1,0 +1,123 @@
+SEERAAI PRO — PHASE 7D.1: POST-IMPLEMENTATION SAFETY AUDIT
+MODE: STRICT READ-ONLY / FORENSIC VERIFICATION ONLY
+NO IMPLEMENTATION AUTHORIZED
+
+CONTEXT
+The existing SEERAAI PRO application (v5.0.0) received a narrow Phase 7D implementation affecting:
+- src/services/indexedDb.ts
+- src/context/AuthContext.tsx
+- src/components/LogoutConfirmationModal.tsx
+
+The supplied Phase 7D report claims local build success and describes safe IndexedDB deletion, two-stage BroadcastChannel coordination, and protection of offline data. Do not accept those claims without independently inspecting the actual repository and complete functions.
+
+ABSOLUTE GUARDRAILS
+1. READ-ONLY ONLY. Do not edit, create, delete, rename, or overwrite any source/configuration/test files.
+2. Do not install, upgrade, or remove dependencies.
+3. Do not access, write, delete, or modify production Firebase, Firestore, Storage, Auth, user data, or institutional data.
+4. Do not deploy Firestore/Storage rules, hosting, Cloud Run, DNS, or any production/staging service.
+5. Do not print, request, or expose API keys, tokens, passwords, secrets, or private user data.
+6. Do not run destructive tests against real browser profiles or production data.
+7. If a test cannot be run safely in an isolated local test environment, mark it NOT RUN. Never infer PASS from source inspection alone.
+8. Stop after the report. No Phase 7D.2 or implementation work is authorized by this prompt.
+
+AUDIT OBJECTIVE
+Determine whether the Phase 7D changes are actually safe for a controlled local/staging test. Independently inspect exact code and identify any divergence between the report and implementation. Do not merely repeat the previous report.
+
+MANDATORY SOURCE INSPECTION
+Inspect the complete relevant implementations and callers, not only the excerpts:
+- src/services/indexedDb.ts: safeDeleteOfflineDB(), DB connection creation, every openOfflineDB() caller, onversionchange handling, object store names, deletion behavior.
+- src/context/AuthContext.tsx: complete logout(), all callers, error paths, state reset, auth persistence behavior, localStorage/sessionStorage cleanup, account-switch/login guards.
+- src/components/LogoutConfirmationModal.tsx: default checkbox state, actual consent wording, pending item inventory, cancel/retry/stay-signed-in/discard paths.
+- src/services/backgroundSync.ts: queue APIs, in-flight operation tracking, pause/resume controls, storage event/BroadcastChannel listeners, write locking, retry semantics.
+- src/services/storage.ts: exact localStorage keys, user-scoped key behavior, local-only drafts, cached documents, persistence paths.
+- Any service worker, worker, or component that opens the same IndexedDB or writes to the affected stores.
+
+CRITICAL QUESTIONS — ANSWER EACH WITH EXACT PATH AND LINE NUMBERS
+A. IndexedDB deletion result handling
+- Does logout inspect the returned { success, reason } from every safeDeleteOfflineDB() call?
+- If any deletion returns success:false, does logout stop account switching and enter a real, implemented isolation-lockdown state?
+- Does onblocked trigger a coordinated close/ack/retry path, or merely log and wait?
+- Can the deletion request complete after the timeout has already returned false? If yes, explain the race and how later completion is handled.
+- Do all database connections register onversionchange and close? Identify every open connection path.
+- Is success:true returned only after an actual onsuccess event? Is the no-window/no-indexedDB branch appropriate for this browser-only operation?
+B. BroadcastChannel coordination
+- Does PREPARE_SIGN_OUT have actual receiving listeners in all relevant tabs/workers?
+- Does the initiating tab collect and validate ACK_PREPARE messages matching UID, correlationId, and tabId before proceeding?
+- Is a timeout treated as missing acknowledgement rather than successful preparation?
+- Does the code prevent account switching if any sensitive tab remains unresponsive?
+- Does SESSION_TERMINATED cause all receiving tabs to halt writes/sync, clear in-memory auth state, and prevent stale authenticated UI?
+- Are channel lifetime, listener cleanup, duplicate messages, stale messages, and UID mismatch handled?
+- Does the implementation coordinate IndexedDB CLOSE_IDB messages and wait for actual connection closure?
+C. Offline queue and local-only data
+- Does logout enumerate the real IndexedDB stores and localStorage queue keys from source, rather than relying on guessed names?
+- Does it inspect both queued edits and local-only drafts before any deletion?
+- Is each cloud-confirmed record backed by a successful server acknowledgement and matching user/document/revision identifier? A timestamp alone is not sufficient.
+- Is in-flight work actually awaited? A fixed timeout alone must not mark writes as synced.
+- If sync fails or the network disconnects, are unsynced drafts preserved without exposing them to the next user?
+- Is there an implemented encrypted user-specific recovery/export mechanism? If not, explain the shared-device privacy dilemma and do not claim it is solved.
+- Does clearCache=false leave plaintext private records accessible to a subsequent user on a shared browser profile? Trace actual retrieval and user-scoping behavior.
+D. Firebase Auth ordering and failure cases
+- What precisely happens if signOut(auth) rejects?
+- Does the application distinguish Firebase sign-out success from local cleanup success?
+- Can it report logout completed when Firebase auth remains active?
+- Can local drafts be deleted before a failed signOut leaves the user authenticated?
+- Are Firebase auth persistence keys manipulated directly in a way that conflicts with the SDK?
+- Is there a safe, tested recovery state for each partial-failure combination?
+E. Modal consent and institutional boundaries
+- Is destructive clearing default-false in actual code?
+- Does the modal display accurate live counts for queued edits and local-only drafts?
+- Is discard consent explicit, itemized, and separately confirmed?
+- Are canonical institutional records separated from disposable local replicas?
+- Are institutional retention requirements still unresolved? If yes, state that purge of institutional data remains prohibited pending policy approval.
+
+MANDATORY FLOW TABLE
+Provide a table for at least these cases:
+1. No pending work; all tabs acknowledge; IDB deletion succeeds; Firebase signOut succeeds.
+2. Pending edits; sync succeeds and cloud acknowledgement is verified.
+3. Pending edits; network offline / sync fails.
+4. A tab does not ACK PREPARE_SIGN_OUT.
+5. IDB deleteDatabase emits onblocked and later onsuccess.
+6. IDB deleteDatabase times out and later emits onsuccess.
+7. IDB deletion returns onerror.
+8. Firebase signOut rejects before local purge.
+9. Firebase signOut succeeds but local purge fails.
+10. clearCache=false on a shared terminal with plaintext local drafts.
+For each: actual code path, resulting auth state, local-data state, whether account switching is permitted, and verdict.
+
+TEST EVIDENCE REQUIREMENTS
+Distinguish clearly:
+- EXECUTED: include exact command, environment, exit status, and concise real output.
+- PROPOSED: not executed.
+- NOT RUN / NOT VERIFIED: no evidence.
+
+Do not label static code inspection as an executed runtime test. Do not claim IndexedDB deletion is runtime-verified unless a safe isolated test actually created a temporary test database, exercised success/error/blocked/late-success cases, and verified the resulting state. Do not claim BroadcastChannel works across tabs unless a real isolated two-tab test was run. Do not run tests against user or production data.
+
+At minimum assess whether these isolated tests exist and were actually run:
+- safeDeleteOfflineDB success, error, blocked, timeout, late-success-after-timeout;
+- all IndexedDB open connections respond to versionchange and close;
+- two-tab PREPARE/ACK/TERMINATED flow including missing ACK and UID mismatch;
+- queue preservation through network loss;
+- local-only draft preservation and shared-device isolation;
+- Firebase signOut rejection and partial cleanup recovery;
+- modal default and explicit discard consent;
+- login/account-switch prevention when isolation is incomplete.
+
+FINAL DECISION
+Choose exactly one:
+- READY FOR ISOLATED LOCAL TESTING (only if no known destructive or cross-user privacy path remains, with evidence);
+- NOT READY — REMEDIATION REQUIRED;
+- INSUFFICIENT EVIDENCE.
+
+Do not recommend production deployment. Local build/lint success is not proof of sign-out, offline synchronization, IndexedDB, BroadcastChannel, or multi-user privacy correctness.
+
+FINAL OUTPUT FORMAT
+1. Executive decision.
+2. Files and exact functions inspected.
+3. Findings table: claim, actual code evidence, verdict, severity.
+4. Failure-flow table for all ten mandatory cases.
+5. Test evidence: EXECUTED / PROPOSED / NOT RUN.
+6. Exact minimal remediation items, if any.
+7. Remaining uncertainties, including institutional retention.
+8. Explicit confirmation that no files/resources were modified and nothing was deployed.
+
+STOP after this report. Do not implement, patch, deploy, or ask for implementation approval in this run.

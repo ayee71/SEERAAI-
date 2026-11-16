@@ -1,0 +1,115 @@
+SEERAAI PRO — PHASE 7C.3.2: FINAL DESIGN GAP REVIEW
+MODE: STRICT READ-ONLY — PLAN ONLY — NO IMPLEMENTATION AUTHORIZED
+
+PROJECT RULES
+You are reviewing the EXISTING SEERAAI PRO application. Do not create a replacement app. Preserve the existing repository, Firebase project, users, documents, court workflows, integrations, and features.
+
+ABSOLUTE GUARDRAILS
+1. Do not edit, create, delete, rename, or overwrite any source/configuration file.
+2. Do not install, upgrade, or remove packages.
+3. Do not access, write, delete, or alter production Firebase, Firestore, Storage, Auth, or user data.
+4. Do not deploy Firebase rules, Storage rules, hosting, Cloud Run, DNS, or any production/staging service.
+5. Do not print or request secrets, tokens, credentials, or private user data.
+6. This is a design review only. Stop after the report and wait for separate explicit approval.
+
+PURPOSE
+Independently inspect the actual current source code and correct the Phase 7C.3.1 design. Do not accept previous PASS claims without code evidence. Determine whether the proposed sign-out and offline-data design is internally consistent, privacy-safe, and implementable without losing user work or exposing one user's data to another.
+
+MANDATORY SOURCE INSPECTION
+Inspect the actual current versions, with exact paths and line ranges, of at least:
+- src/context/AuthContext.tsx
+- src/components/LogoutConfirmationModal.tsx
+- src/services/backgroundSync.ts
+- src/services/indexedDb.ts
+- src/services/storage.ts
+- service worker / background sync registration and handlers, if present
+- all code that opens SeeraAIOfflineDB or any other database proposed for deletion
+- all relevant Firestore/Storage write and sync acknowledgement code
+- authentication persistence and account-switch handlers
+Do not assume proposed store names, key names, function names, object-store names, or APIs exist. Verify each one in source. Identify discrepancies among earlier reports and current source.
+
+REQUIRED DESIGN GAPS TO RESOLVE
+
+A. CORRECT CROSS-TAB ORDERING
+The Phase 7C.3.1 design sends SESSION_TERMINATED after LOCAL_PURGE, while its receiver protocol expects other tabs to close IndexedDB connections before deletion. Correct this contradiction.
+Specify a two-stage protocol, for example:
+1. PREPARE_SIGN_OUT / CLOSE_DB_CONNECTIONS broadcast with UID, correlation ID, and database names.
+2. Each matching-UID tab stops new writes and background sync, drains or safely pauses its work, closes all owned IDB connections, and returns an acknowledgement.
+3. The initiating tab waits for acknowledgements with a bounded timeout and an explicit safe failure branch.
+4. Only after connections are confirmed closed should it attempt database deletion.
+5. Only after successful local cleanup and Auth outcome should it broadcast the final SESSION_TERMINATED event.
+Define behavior for missing tabs, stale messages, duplicate messages, wrong UID, unavailable BroadcastChannel, suspended tabs, and acknowledgement timeout. Do not assume a message post means it was received.
+
+B. INDEXEDDB DELETION LIFECYCLE
+Review the proposed safeDeleteOfflineDB() wrapper. Correctly handle onsuccess, onerror, onblocked, timeout, and possible late success after a timeout. Explain that deleteDatabase() requests cannot be cancelled, and prevent overlapping retries while an earlier request may still be pending. Specify connection tracking and onversionchange handling in every module that opens the database. Do not report success for SSR/no-indexedDB paths unless the application has explicitly established that no browser-side data exists. A timeout or blocked state must remain a failure/unknown state, not success.
+
+C. IN-FLIGHT WRITES AND QUEUE DRAINING
+The proposed 3,000 ms drain timeout has no clearly defined branch. Define exactly what happens if pending writes cannot finish within the deadline. The safe default must preserve queued/local-only data and keep the current user session usable, or otherwise enter a controlled locked state that prevents account switching and cross-user access. Do not continue destructive cleanup after an unconfirmed drain. Define lock acquisition, blocking new writes, stopping background sync, awaiting already-started writes, resuming sync after cancellation, and releasing locks in finally paths.
+
+D. DATA CLASSIFICATION AND CLOUD ACKNOWLEDGEMENT
+Verify all actual stores/keys and the actual schema fields before proposing inventory. Distinguish:
+- server-confirmed data;
+- pending edits;
+- local-only drafts;
+- derived disposable caches;
+- user preferences;
+- authentication/session state;
+- institutional/court data.
+Do not use a timestamp or local boolean alone as proof of cloud persistence. Define authoritative acknowledgement using the actual Firebase SDK behavior, successful server-accepted write, document identity/revision, and any necessary server read/metadata check. Account for offline persistence and pending writes. Verify whether getQueuedEdits(), getSavedDocuments(), syncQueuedEdits(), STORE_EDITS, STORE_SYNC_QUEUE, STORE_INSTITUTIONS, and other names actually exist.
+
+E. SHARED-DEVICE PRIVACY VS PRESERVING OFFLINE DRAFTS
+The current proposal says unsynced/local-only drafts may be preserved after sign-out. That may expose plaintext data on a shared court/public terminal. Do not treat “preserve locally” as automatically safe.
+Give explicit safe user choices and behavior:
+- retry synchronization and remain signed in if it fails;
+- cancel sign-out and preserve all data;
+- explicitly discard selected unsynced/local-only items after showing exact counts and item identity (without exposing sensitive contents unnecessarily);
+- alternatively, if preservation after sign-out is required, design a genuinely user-bound encrypted offline vault with a defensible key lifecycle and re-authentication/unlock process.
+Do not claim encryption is secure without describing key derivation, storage, unlock, recovery, account change, and loss-of-key behavior. Plaintext local preservation must not permit the next user to read the prior user's drafts.
+
+F. INSTITUTIONAL RECORDS AND RETENTION
+Correct the assertion that STORE_INSTITUTIONS and audit logs should simply never be purged locally. Distinguish authoritative server records from disposable local replicas/caches. Local cache retention must follow confirmed institutional policy, least-privilege access, encryption, and device-management rules. Mark legal/institutional retention questions as unresolved if no actual authoritative policy text is available. Do not invent Ethiopian or Oromia retention requirements.
+
+G. AUTH SIGN-OUT AND CLEANUP FAILURE ORDER
+Analyze consequences if Firebase signOut(auth) fails after local credentials/cache have been cleared, and if it succeeds but local cleanup fails. Propose an idempotent, recoverable state machine. Define what is blocked on cleanup failure (especially account switching), how the app avoids presenting a false signed-out/safe state, and how the prior user can recover unsynced work. Avoid leaving stale auth tokens or privileged in-memory claims. Clearly separate local sign-out, remote token/session behavior, local data purge, and cross-tab confirmation.
+
+H. BROADCAST MESSAGE SCHEMA AND SECURITY
+Define message types and fields precisely. Do not require uid for messages where it is not applicable unless justified. Validate origin/channel scope, UID matching, correlation IDs, timestamps, and replay/duplicate handling. Do not include secrets or document contents in messages. Include ACK semantics and timeout handling. Explain fallback behavior when BroadcastChannel is unavailable; do not imply window.dispatchEvent is cross-tab.
+
+I. TEST PLAN
+Provide executable/proposed tests with test file paths and commands only where they actually exist. Separate EXECUTED, PROPOSED, and NOT RUN. Include at minimum:
+- no pending edits;
+- queued edits while online;
+- queued edits while offline;
+- local-only draft;
+- in-flight write at sign-out;
+- timeout while draining;
+- IndexedDB onblocked and late onsuccess;
+- IndexedDB onerror;
+- multiple tabs same UID;
+- multiple tabs different UID;
+- suspended/non-responding tab;
+- BroadcastChannel unavailable;
+- browser refresh/reopen after failed purge;
+- signOut(auth) failure;
+- cache purge failure;
+- shared-device second-user isolation;
+- institutional role and tenant isolation.
+A build/lint pass is not evidence that these runtime properties work.
+
+OUTPUT FORMAT
+Return a rigorous report with:
+1. Executive decision: NO-GO / READY FOR DESIGN APPROVAL / READY FOR CONTROLLED IMPLEMENTATION, and precise rationale.
+2. Exact inspected files, versions, paths, and line ranges.
+3. Verified actual key/store/function inventory; mark every unverified name explicitly.
+4. A corrected end-to-end state machine, including every failure/cancel/retry branch.
+5. Corrected cross-tab protocol sequence and message schema.
+6. Corrected IndexedDB deletion lifecycle, including timeout/late-event behavior.
+7. Data classification and shared-device privacy policy.
+8. Firebase acknowledgement definition grounded in actual code/SDK use.
+9. Institutional retention caveats grounded only in actual policy evidence.
+10. File-by-file minimal patch proposal, with no code changes performed.
+11. Test matrix with exact execution status and evidence.
+12. Remaining unresolved risks and explicit stop conditions.
+
+FINAL STOP CONDITION
+Do not implement anything. Do not state that any proposed test passed unless it was actually executed and evidenced. Do not request broad approval. End by stating exactly what must be resolved before any Phase 7D implementation can be considered.

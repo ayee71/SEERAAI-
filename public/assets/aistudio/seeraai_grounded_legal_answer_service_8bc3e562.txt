@@ -1,0 +1,398 @@
+SEERAAI PRO — GOOGLE SEARCH GROUNDED LEGAL ANSWER
+================================================
+
+MURTEESSA / VERSION
+-------------------
+- Server-side TypeScript service.
+- Uses the official @google/genai SDK.
+- Default model: gemini-3.8-flash (can be overridden with GEMINI_LEGAL_MODEL).
+- Gemini API key is read only from GEMINI_API_KEY on the server.
+- Google Search runs in a separate first stage. The user's case facts are NOT sent in that Search request.
+- Final legal analysis is generated in a second request without the Google Search tool.
+- Returns a structured object: answer, citations, search suggestions, search queries, and grounding status.
+
+IMPORTANT PRIVACY NOTE
+----------------------
+The service deliberately keeps `facts` out of the Google Search request. However, `question` is used as the default Search query. If the question itself contains names, case numbers, addresses, or other confidential details, pass a generalized and de-identified `safeSearchQuery` in the third argument. Do not send confidential case information to Google Search.
+
+FILE 1: src/server/legal/legalAnswerService.ts
+================================================
+
+import { GoogleGenAI } from "@google/genai";
+
+const DEFAULT_MODEL = "gemini-3.8-flash";
+const MAX_QUESTION_LENGTH = 20_000;
+const MAX_FACTS_LENGTH = 100_000;
+const MAX_SEARCH_QUERY_LENGTH = 4_000;
+
+export interface GroundedLegalCitation {
+  title: string;
+  url: string;
+  domain: string;
+}
+
+export interface GroundedLegalAnswer {
+  answer: string;
+  citations: GroundedLegalCitation[];
+  grounded: boolean;
+  model: string;
+  searchQueries: string[];
+  /** Google-provided HTML. The client must display it as supplied when present. */
+  searchSuggestionsHtml: string | null;
+}
+
+export interface GroundedLegalAnswerOptions {
+  /**
+   * A generalized, de-identified legal search query.
+   * Use this whenever `question` contains confidential or identifying details.
+   * When omitted, `question` itself is used as the Search query.
+   */
+  safeSearchQuery?: string;
+}
+
+let geminiClient: GoogleGenAI | null = null;
+
+function getGeminiClient(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+
+  if (!apiKey) {
+    throw new Error(
+      "GEMINI_API_KEY hin jiru. API key server environment keessatti qindeessi."
+    );
+  }
+
+  if (!geminiClient) {
+    geminiClient = new GoogleGenAI({ apiKey });
+  }
+
+  return geminiClient;
+}
+
+function assertTextInput(
+  value: string,
+  fieldName: string,
+  maxLength: number,
+  required: boolean
+): string {
+  if (typeof value !== "string") {
+    throw new Error(`${fieldName} barruu ta'uu qaba.`);
+  }
+
+  const normalized = value.trim();
+
+  if (required && !normalized) {
+    throw new Error(`${fieldName} duwwaa ta'uu hin qabu.`);
+  }
+
+  if (normalized.length > maxLength) {
+    throw new Error(
+      `${fieldName} dheerina hayyamame (${maxLength} characters) caaluu hin qabu.`
+    );
+  }
+
+  return normalized;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+type WebGroundingChunk = {
+  web?: {
+    uri?: string;
+    title?: string;
+  };
+};
+
+function extractGroundingCitations(
+  chunks: readonly WebGroundingChunk[] | undefined
+): GroundedLegalCitation[] {
+  const citations: GroundedLegalCitation[] = [];
+  const seenUrls = new Set<string>();
+
+  for (const chunk of chunks ?? []) {
+    const web = chunk.web;
+    const url = web?.uri?.trim();
+
+    if (!url || !isHttpUrl(url) || seenUrls.has(url)) {
+      continue;
+    }
+
+    let domain = "";
+    try {
+      domain = new URL(url).hostname;
+    } catch {
+      continue;
+    }
+
+    citations.push({
+      title: web?.title?.trim() || domain,
+      url,
+      domain,
+    });
+
+    seenUrls.add(url);
+  }
+
+  return citations;
+}
+
+const SEARCH_SYSTEM_INSTRUCTION = `
+You are the SEERAAI legal research source-finding assistant.
+Find current, relevant legal sources for the legal issue in the user's search query.
+Prefer primary and official sources: official gazettes, government legislation portals,
+official courts, official justice institutions, and official regional government sources.
+For Ethiopian matters, distinguish federal law from Oromia Regional State law.
+Do not invent legislation, article numbers, court decisions, case numbers, dates, or URLs.
+Do not treat a news story, blog, or social-media post as binding law.
+Clearly indicate when an official source or the current legal status cannot be verified.
+Do not request, reproduce, or search for personal identities or confidential case details.
+Return a concise research summary in the language of the query, with the most useful sources.
+`;
+
+const LEGAL_ANALYSIS_SYSTEM_INSTRUCTION = `
+Ati SEERAAI PRO, gargaaraa qorannoo fi xiinxala seeraa Afaan Oromoo, Afaan Amaaraa,
+fi Afaan Ingiliffaa ti.
+
+ULAAGAALEE DIRQAMAA:
+1. Afaan gaaffiin dhiyaateen deebisi.
+2. Yoo aangoon seeraa hin ibsamne, seera Itoophiyaa akka tilmaama hojii jalqabaatti fudhadhu;
+   garuu tilmaama kana ifatti ibsi. Seera Federaalaa fi seera Naannoo Oromiyaa wal hin makiin.
+3. Seera, keewwata, labsii, dambii, qajeelfama, murtiiwwan mana murtii ykn lakkoofsa galmee
+   hin uuminii. Madda amansiisaa hin arganne yoo ta'e, 'hin mirkanoofne' jedhi.
+4. Seerri jijjiirame, haqame ykn bakka bu'ame ta'uu isaa yoo hin mirkaneessin,
+   akka seera yeroo ammaa hojiirra jiru mancaasanii hin dhiheessin.
+5. Ragaan fayyadamaan kenne dhugaa mirkanaa'e jechuu miti. 'Ragaa dhiyaate' ykn
+   'odeeffannoo gaaffii keessatti ibsame' jedhii adda baasi.
+6. Ragaa galmee, himannaa, falmii ykn ragaa nama dhuunfaa irratti hundaa'uun
+   murtii xumuraa kennuu hin fakkaatin. Dhimmoota falmisiisoo, hanqina ragaa fi
+   filannoowwan hiikaa seeraa adda baasi.
+7. Maddoota qorannoo keessatti lakkoofsa [1], [2] fi kkf fayyadami; mallattoo tokko
+   madda tarreeffame waliin walqabsiisi. Madda hin deeggarre irratti cite hin kaa'in.
+8. Yoo Google Search irraa madda hin argamne, deebiin kun live source grounding hin qabu
+   jedhii ifatti beeksisi; akka mirkanaa'e hin dhiheessin.
+9. Deebii qindaa'aa kenni: (a) Gaaffii seeraa, (b) Seera rogummaa qabu,
+   (c) Xiinxala seeraa, (d) Xumura, (e) Maddoota.
+10. Odeeffannoo hin jirre tilmaamaan hin guutin. Wanti murteessaa hin beekamne yoo jiraate,
+    daangaa xiinxala sanaa ibsi.
+`;
+
+/**
+ * Searches for legal sources first, then analyzes the question and supplied facts.
+ *
+ * IMPORTANT: `facts` are never included in the Google Search request.
+ * If `question` contains confidential identifiers, pass a de-identified
+ * `options.safeSearchQuery` so those identifiers are not sent to Google Search.
+ *
+ * The return value is structured JSON data, not a plain string. Update the
+ * existing server route to return this object to the frontend.
+ */
+export async function generateGroundedLegalAnswer(
+  question: string,
+  facts = "",
+  options: GroundedLegalAnswerOptions = {}
+): Promise<GroundedLegalAnswer> {
+  const normalizedQuestion = assertTextInput(
+    question,
+    "Gaaffiin",
+    MAX_QUESTION_LENGTH,
+    true
+  );
+
+  const normalizedFacts = assertTextInput(
+    facts,
+    "Ragaan",
+    MAX_FACTS_LENGTH,
+    false
+  );
+
+  const suppliedSafeSearchQuery = options?.safeSearchQuery;
+  const requestedSearchQuery = suppliedSafeSearchQuery == null
+    ? ""
+    : assertTextInput(
+        suppliedSafeSearchQuery,
+        "Safe legal search query",
+        MAX_SEARCH_QUERY_LENGTH,
+        false
+      );
+  const searchQuery = assertTextInput(
+    requestedSearchQuery || normalizedQuestion,
+    "Safe legal search query",
+    MAX_SEARCH_QUERY_LENGTH,
+    true
+  );
+
+  const ai = getGeminiClient();
+  const model = process.env.GEMINI_LEGAL_MODEL?.trim() || DEFAULT_MODEL;
+
+  try {
+    // STAGE 1: Search only the generalized legal issue. Do NOT add case facts here.
+    const searchResponse = await ai.models.generateContent({
+      model,
+      contents: `QORANNOO MADDA SEERAA\n\nGaaffii/search query seeraa waliigalaa:\n${searchQuery}\n\n` +
+        "Madda seeraa ammaa fi jalqabaa dursa kenni. Seera ykn murtii hin uumini.",
+      config: {
+        systemInstruction: SEARCH_SYSTEM_INSTRUCTION,
+        // Google's Search Grounding guidance recommends temperature 1.0.
+        temperature: 1.0,
+        tools: [{ googleSearch: {} }],
+      },
+    });
+
+    const searchCandidate = searchResponse.candidates?.[0];
+    const groundingMetadata = searchCandidate?.groundingMetadata;
+    const citations = extractGroundingCitations(
+      groundingMetadata?.groundingChunks ?? []
+    );
+
+    const searchSummary = searchResponse.text?.trim() || "";
+    const searchQueries = (groundingMetadata?.webSearchQueries ?? [])
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+
+    const searchSuggestionsHtml =
+      groundingMetadata?.searchEntryPoint?.renderedContent?.trim() || null;
+
+    const citationContext = citations.length > 0
+      ? citations
+          .map((citation, index) =>
+            `[${index + 1}] ${citation.title}\nURL: ${citation.url}\nDomain: ${citation.domain}`
+          )
+          .join("\n\n")
+      : "Google Search irraa madda web mirkanaa'e hin argamne.";
+
+    // STAGE 2: Analyze the user's facts without enabling Google Search.
+    // This prevents case facts from being sent to Search as part of this request.
+    const analysisResponse = await ai.models.generateContent({
+      model,
+      contents: `GAAFFII SEERAA:\n${normalizedQuestion}\n\n` +
+        `RAGAA / HAALA GALMEE (odeeffannoo fayyadamaan kenne; dhugaa mirkanaa'e jechuu miti):\n` +
+        `${normalizedFacts || "Ragaan galmee dabalataa hin dhiyaanne."}\n\n` +
+        `CUUNFAA QORANNOO GOOGLE SEARCH:\n${searchSummary || "Cuunfaan Search hin argamne."}\n\n` +
+        `MADDOOTA QORANNOO (lakkoofsa isaanii akkuma jirutti fayyadami):\n${citationContext}\n\n` +
+        "Amma xiinxala seeraa of eeggannoo qabu qopheessi. Madda hin deeggarre irratti cite hin kaa'in.",
+      config: {
+        systemInstruction: LEGAL_ANALYSIS_SYSTEM_INSTRUCTION,
+        temperature: 0.2,
+      },
+    });
+
+    const answer = analysisResponse.text?.trim();
+
+    if (!answer) {
+      const finishReason = analysisResponse.candidates?.[0]?.finishReason;
+      throw new Error(
+        `Gemini deebii barruu hin deebisne. Finish reason: ${String(finishReason || "unknown")}`
+      );
+    }
+
+    return {
+      answer,
+      citations,
+      grounded: citations.length > 0,
+      model,
+      searchQueries,
+      searchSuggestionsHtml,
+    };
+  } catch (error) {
+    // Log the technical error on the server; do not expose credentials or raw
+    // provider details to the end user.
+    console.error(
+      "[SEERAAI] Grounded legal answer generation failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+
+    throw new Error(
+      "Qorannoon seeraa yeroo ammaa xumuramuu hin dandeenye. API key, model, network fi Gemini API status ilaali; booda irra deebi'i."
+    );
+  }
+}
+
+
+FILE 2: server-app.ts — INTEGRATION INTO YOUR EXISTING API ROUTE
+===============================================================
+
+Do NOT replace your entire existing server-app.ts with this snippet. Import the
+service and merge the call into the route that currently handles legal questions.
+The example below uses Express-style request/response names; adapt only the route
+syntax if your server uses another framework.
+
+import { generateGroundedLegalAnswer } from "./src/server/legal/legalAnswerService";
+
+// Inside your existing legal-answer API route:
+const { question, facts = "", safeSearchQuery } = req.body ?? {};
+
+const result = await generateGroundedLegalAnswer(question, facts, {
+  safeSearchQuery,
+});
+
+return res.status(200).json(result);
+
+The route should validate authentication/authorization before this call, and
+should apply request-size limits and rate limiting. Do not expose GEMINI_API_KEY
+to React/Vite or return it in any API response.
+
+
+FRONTEND INTEGRATION REQUIREMENT
+===============================
+
+The endpoint now returns an object, not a plain string. The frontend should:
+1. Display `result.answer`.
+2. Display `result.citations` as clickable source links.
+3. Clearly show a warning when `result.grounded === false`.
+4. When `result.searchSuggestionsHtml` is not null, display Google's supplied
+   Search Suggestions HTML exactly as provided. Use an isolated/sandboxed iframe;
+   do not inject it into the application with `dangerouslySetInnerHTML`.
+5. Optionally display `result.searchQueries` for diagnostics or auditing, subject
+   to Google's display requirements for Search Suggestions.
+
+Example citation display data:
+- result.citations[n].title
+- result.citations[n].url
+- result.citations[n].domain
+
+
+ENVIRONMENT VARIABLES
+=====================
+
+GEMINI_API_KEY=your_server_side_gemini_api_key
+GEMINI_LEGAL_MODEL=gemini-3.8-flash
+
+Keep these variables in the server/Cloud Run environment. Never use a VITE_ prefix
+for the Gemini API key. Never commit the real key to GitHub.
+
+
+PACKAGE REQUIREMENT
+===================
+
+Install/update the official SDK in the backend package:
+
+npm install @google/genai
+
+The existing project already appears to use @google/genai, so do not add a duplicate
+package entry. Verify the installed version and run the project's TypeScript build.
+
+
+IMPORTANT LIMITATIONS / DEPLOYMENT CHECKLIST
+============================================
+
+[ ] Confirm `GEMINI_API_KEY` exists in the server runtime.
+[ ] Confirm the selected model is enabled for the API key and billing/project.
+[ ] Confirm the `server-app.ts` route returns the structured result object.
+[ ] Update frontend code that previously expected a plain string.
+[ ] Render citations and Google Search Suggestions in the UI.
+[ ] Show an explicit ungrounded warning when `grounded` is false.
+[ ] Pass a generalized `safeSearchQuery` for any question containing confidential
+    case identifiers or personal information.
+[ ] Do not store API keys in Firestore documents, frontend bundles, or GitHub.
+[ ] Add authentication, authorization, rate limits, and audit logging around the route.
+[ ] Run `npm run build` and test with a non-confidential sample legal question.
+
+This code provides Google Search grounding; it does NOT guarantee that every result
+is an official legal source or that every legal proposition is correct. The caller
+must still verify legislation, amendments, and court decisions against authoritative
+primary sources before relying on them in a judicial or professional setting.

@@ -1,0 +1,54 @@
+SEERAAI PRO — PHASE 8B.6.4
+PRE-APPROVAL COMPATIBILITY AUDIT
+READ-ONLY — NO FILE MODIFICATIONS
+
+The Phase 8B.6 Final Audit has identified two potentially stronger existing files:
+
+- firestore.rules.candidate (794 lines)
+- storage.rules.candidate (151 lines)
+
+It proposed using their contents to replace the current integrated candidate files.
+
+DO NOT IMPLEMENT THIS PROPOSAL YET.
+
+Before requesting approval, perform a complete read-only compatibility audit.
+
+1. Compare the entire 794-line firestore.rules.candidate against firestore.rules.phase8b5.3.integrated.candidate.
+2. Compare the entire 151-line storage.rules.candidate against storage.rules.phase8b5.4.integrated.candidate.
+3. Produce complete unified diffs and explain every security-relevant change.
+4. Identify every Firestore and Storage path used by the existing SEERAAI PRO source code.
+5. Verify that the proposed candidate rules preserve legitimate existing workflows, including court documents, evidence, audio, witness records, institution membership, audit logs, Telegram functionality and existing roles.
+6. Identify every overlapping Firestore match block and explain additive allow behavior.
+7. Verify that all existing test cases remain valid under the proposed candidate rules.
+8. Identify missing tests for every newly introduced access restriction.
+9. Check whether the proposed rules depend on custom claims or Firestore documents that are actually created and maintained by the existing backend.
+10. Check Storage MIME type and size restrictions against the actual file types and upload sizes used by the application.
+11. Do not assume that 50 MB is safe or compatible without inspecting the actual application upload implementation.
+12. Inspect package.json, package-lock.json, Node.js version, npm version, and exact peer dependency requirements.
+13. Determine whether @firebase/rules-unit-testing version 4.x is compatible with the actual installed Firebase SDK and test code.
+14. Do not recommend legacy-peer-deps=true unless a documented, unavoidable peer dependency conflict remains after a proper version-compatible dependency resolution.
+15. Do not upgrade Firebase or Firebase Admin without a separate compatibility and migration assessment.
+
+STRICT RULES:
+
+- READ ONLY.
+- Do not edit, create, delete, rename, overwrite, install or deploy files.
+- Do not modify production Firebase Rules.
+- Do not connect to the production Firebase project.
+- Do not change Git branches or commits.
+- Do not publish or merge anything.
+
+OUTPUT:
+A. Complete file-to-file comparison.
+B. Security behavior changes.
+C. Existing app compatibility matrix.
+D. Missing or failing test scenarios.
+E. Dependency compatibility analysis with exact versions.
+F. Risks of adopting each candidate file.
+G. Recommended minimal remediation plan.
+H. Explicit list of files that would be modified after approval.
+
+End with:
+APPROVAL REQUIRED — NO CHANGES HAVE BEEN MADE.
+
+Do not request approval until all sections above are completed with evidence from actual repository files.

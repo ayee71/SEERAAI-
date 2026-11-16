@@ -1,0 +1,242 @@
+SEERAAI PRO — PHASE 8B.3
+CANDIDATE FIREBASE RULES DEEP AUDIT & SECURITY VERIFICATION
+
+PROJECT: Existing SEERAAI PRO
+REPOSITORY: sai-ethio-legal-ai
+BASELINE: 4.1.0 (verify actual current package version; do not assume)
+FIREBASE PROJECT ID: leafy-rush-xvd6f
+FIRESTORE DATABASE: ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478
+
+MISSION
+Continue Phase 8B.2 using the actual existing SEERAAI PRO repository. Resolve the outstanding source-level verification questions and produce an evidence-based Phase 8B.3 report. This is a candidate-rules and source-code review phase, NOT a production deployment phase.
+
+ABSOLUTE PRESERVATION / SAFETY RULES
+1. Work only in the existing SEERAAI PRO repository and existing Firebase project context.
+2. Do not create a replacement app, Firebase project, repository, database, or Cloud Run service.
+3. Do not delete, migrate, overwrite, or expose user accounts, legal documents, witness data, court audio, case records, or production data.
+4. Do not publish Firestore Rules or Storage Rules.
+5. Do not deploy Cloud Run, Firebase Functions, Hosting, or any production service.
+6. Do not change production IAM, Authentication configuration, custom claims, user roles, secrets, or access policies.
+7. Do not run scripts against production. Do not use Admin SDK credentials to inspect or modify production.
+8. Do not print, log, copy into reports, or ask the user to provide secret values, access tokens, private keys, passwords, personal data, or court-sensitive data.
+9. Do not report a check as VERIFIED unless you actually inspect the relevant code/configuration and provide file paths, line numbers, command output, or other reproducible evidence.
+10. If any required information is unavailable, say BLOCKED or NOT VERIFIED. Never infer success from a successful build.
+
+PHASE 8B.2 BASELINE REPORTED BY THE USER
+- Emulator tests are BLOCKED because the preview container lacks Java and @firebase/rules-unit-testing.
+- Custom Claims were reportedly inspected read-only, but the plan uses the names admin, role, institutionId.
+- An earlier project specification used admin, courtRole, institutionId. This is a material inconsistency that must be resolved by examining actual candidate Rules, backend code, and user-role data structures. Do not silently select one name or perform migration.
+- Backend secrets TELEGRAM_WEBHOOK_SECRET and MINIAPP_HMAC_SECRET were reportedly found in server-side code only. Re-verify this claim in the source and built client artifacts; never display the secret values.
+- tsc --noEmit reportedly passed.
+- npm run build reportedly passed and generated dist/server.js.
+- Production live Rules and deployment status remain NOT VERIFIED because no authenticated Firebase CLI session targets production.
+- Production was reportedly not touched.
+Treat all of these as claims to re-check where possible, not as independently verified facts.
+
+TASK 1 — REPOSITORY / FILE INVENTORY
+Inspect the actual current repository state. Confirm the presence, exact paths, and current contents of:
+- firestore.rules.candidate
+- storage.rules.candidate
+- firestore.rules (if present)
+- storage.rules (if present)
+- firebase.json
+- tests/firestore.rules.test.ts
+- tests/storage.rules.test.ts
+- tests/security_remediation_verification.test.ts
+- FIREBASE_SECURITY_REMEDIATION_REPORT.md
+- FIREBASE_RELEASE_READINESS_CHECKLIST.md
+
+Also inspect the relevant source files from Phase 8B.2, especially:
+- server-app.ts
+- src/server/firebase-admin-config.ts
+- src/server/legal/legalAnswerRoute.ts
+- src/server/legal/legalSearch.ts
+- src/services/firebase.ts
+- src/services/ragService.ts
+- src/services/courtDocuments.ts
+- src/services/witnessSchedulingService.ts
+- src/services/courtCaseService.ts
+- src/services/courtNotificationService.ts
+- functions/src/courtDocuments.ts
+- Telegram webhook / Mini App route implementations
+- authentication, password-reset, WebAuthn, kiosk, deadline, and admin route implementations
+
+For every file, report whether it exists, whether it is modified, and the exact line ranges reviewed. Do not claim to have reviewed a file that was not opened.
+
+TASK 2 — FULL FIRESTORE RULES STATIC AUDIT
+Read the entire firestore.rules.candidate file from beginning to end. Do not rely on summaries or screenshots alone.
+
+Build a route/collection access matrix for every match block, including:
+- path pattern
+- methods granted (get, list, read, create, update, delete, write)
+- authorization predicate
+- roles permitted
+- institution / tenant restriction
+- whether public access is possible
+- source line numbers
+
+Specifically investigate:
+A. Every match involving telegram_*, including nested collections and recursive wildcards.
+B. Any catch-all pattern such as {document=**}, {path=**}, or equivalent broad path match.
+C. Every overlapping match block. Explain which requests match multiple blocks and whether ANY allow condition grants access.
+D. Any allow true, unconditional allow, isSignedIn-only permission, email_verified-only permission, or public read/write.
+E. users/{userId} create/update rules and any path that lets a user write their own admin, role, courtRole, institutionId, permissions, status, or verification fields.
+F. institutions/{institutionId}/courtDocuments and nested audit logs.
+G. court_documents, legalDocuments, witness_schedules, witness_statements, court_audio_recordings, courtroom_sessions, court_notifications, court_templates, collaboration_invites, quality_audits, admins, and admin_activity_logs.
+H. Update rules that permit institutionId, ownerUid, createdBy, role, or other authorization-bearing fields to be changed.
+I. Query/list access: verify that permitted queries can be constrained safely and that collection reads do not expose another tenant's documents.
+J. Helper functions: confirm null safety, token field names, type checks, role checks, and institution checks.
+
+For each finding classify:
+- VERIFIED SAFE
+- VERIFIED VULNERABLE
+- NEEDS EMULATOR TEST
+- BLOCKED / INSUFFICIENT EVIDENCE
+
+Do not treat a restrictive rule as overriding another permissive matching rule. Explain all effective access as the combined result of matching allow statements.
+
+TASK 3 — FULL STORAGE RULES STATIC AUDIT
+Read all of storage.rules.candidate. Map every path pattern to the actual upload/download paths used by the application.
+
+Check at minimum:
+- institutions/{institutionId}/courtDocuments/**
+- legal_docs/**
+- court_logos/**
+- court audio / witness audio upload paths
+- any generic catch-all storage path
+- MIME type validation and allowed types
+- maximum file size
+- owner UID and institution isolation
+- read, create, update, delete permissions
+- metadata tampering and overwrite risks
+- whether any user can upload an executable or unexpected content type
+- whether upload/download URLs or metadata leak sensitive court records
+
+Show the precise mismatch, if any, between client upload paths, backend paths, Storage Rules, and Firestore metadata paths.
+
+TASK 4 — CUSTOM CLAIMS SCHEMA CONSISTENCY (READ-ONLY)
+Resolve the reported naming inconsistency:
+- one earlier specification says admin, courtRole, institutionId
+- the Phase 8B.2 report says admin, role, institutionId
+
+Inspect actual usages in:
+- firestore.rules.candidate
+- storage.rules.candidate
+- backend authorization middleware and route handlers
+- Firebase Admin user provisioning code
+- client code that reads token claims (UI only; not an authorization source)
+- existing role / institution data model, if available locally without accessing production
+
+Produce a single recommended canonical claims schema based on actual implementation evidence. For every claim specify:
+- exact key
+- exact type (boolean/string/etc.)
+- allowed values
+- trusted source of truth
+- which Rules/functions/routes consume it
+- behavior when missing, malformed, or stale
+
+Do not invent a role mapping. Do not access production users. Do not assign or change any claims. Do not generate a script that could be accidentally run against production. If you prepare a future migration design, it must be a dry-run-only design with explicit safeguards and a separately reviewed production approval gate.
+
+TASK 5 — BACKEND ROUTE AUTHORIZATION EVIDENCE
+For each sensitive route, provide a table:
+- HTTP method and route path
+- authentication mechanism
+- Firebase ID token verification (identify exact code)
+- role check
+- institution/tenant check
+- input validation
+- rate limiting / abuse controls, if present
+- sensitive response data
+- test evidence
+
+Check routes for legal answers, court documents, court audio, witness scheduling, court case operations, notifications, Telegram webhook, Telegram Mini App, kiosk, deadlines, and admin functions.
+
+A secret being referenced only in server-side source is NOT proof that the endpoint is properly authorized. Keep secret-handling review separate from route authorization review.
+
+TASK 6 — SECRET HANDLING / CLIENT BUNDLE VERIFICATION
+Verify the following without printing their values:
+- TELEGRAM_WEBHOOK_SECRET
+- MINIAPP_HMAC_SECRET
+
+Check:
+- no VITE_ or other client-exposed prefix
+- no import into frontend modules
+- no secret values in logs, API responses, source maps, generated client assets, or repository files
+- no deterministic or weak fallback secret
+- safe behavior if a required secret is missing
+- webhook signature / HMAC validation is actually enforced, not merely imported
+- constant-time comparison where appropriate
+
+Inspect built client output if it exists, but do not expose secrets in the report. Report only file names and safe evidence.
+
+TASK 7 — EMULATOR TEST READINESS
+Determine whether a trusted local development computer or CI runner can execute the Firebase Emulator tests. Do not claim the current preview container can do so if Java is absent.
+
+Check actual package.json scripts, firebase.json emulator configuration, dependency declarations, and test imports. Confirm whether @firebase/rules-unit-testing is installed and compatible with the existing dependency versions.
+
+If Java is unavailable in this environment:
+- Keep emulator status BLOCKED.
+- Do not bypass, mock away, or skip the Rules authorization tests while calling the Rules verified.
+- Produce exact commands for a separate trusted developer machine or CI environment to run the Firestore and Storage emulator tests.
+- Ensure tests point only to emulator endpoints and a non-production test project ID.
+- Ensure emulator test setup explicitly loads the candidate Rules files, not an accidentally open/default Rules configuration.
+- Include positive and negative tests for unauthenticated, wrong-role, wrong-institution, owner, judge, registrar, auditor, administrator, and tenant-crossing cases, as applicable.
+- Include regression tests for every identified overlap and every telegram_* path.
+
+Do not run any command that connects to production.
+
+TASK 8 — SAFE SOURCE-ONLY REMEDIATION (ONLY IF NECESSARY)
+First complete the read-only audit and list findings. Do not silently change the existing candidate files.
+
+If actual defects are found and a source-only patch is clearly necessary, create separate, clearly named review copies such as:
+- firestore.rules.phase8b3.review.candidate
+- storage.rules.phase8b3.review.candidate
+
+Preserve the original candidate files unchanged. Do not change firebase.json to make the new files active. Explain every difference and why it is required. Do not claim the review copies are safe until static review and Emulator tests are completed.
+
+Do not change production rules, production configuration, claims, users, or cloud resources.
+
+TASK 9 — REGRESSION / BUILD CHECKS
+Re-run only safe local checks where possible:
+- npm run lint (or actual configured typecheck command)
+- npm run build
+- existing security remediation tests
+- existing sign-out safety tests
+- existing legal knowledge base tests
+
+Record the exact command, exit code, actual number of tests passed/failed/skipped, and relevant output. Separate compilation checks from security tests. A successful TypeScript check or Vite build does not prove Firebase Rules or backend authorization are secure.
+
+TASK 10 — FINAL PHASE 8B.3 REPORT
+Create:
+SEERAAI_PRO_PHASE_8B3_CANDIDATE_RULES_DEEP_AUDIT_REPORT.md
+
+The report must contain:
+1. Executive summary.
+2. Exact repository/version and files inspected.
+3. Firestore rules access matrix and all overlapping/catch-all findings.
+4. Telegram collections analysis.
+5. Storage rules path/access matrix.
+6. Custom Claims naming inconsistency and recommended canonical schema.
+7. Backend route-by-route authorization evidence.
+8. Server-secret verification evidence (without secret values).
+9. Emulator readiness and exact blockers.
+10. Regression/build results.
+11. Source-only changes made, if any, with diffs.
+12. Production verification status.
+13. Release blockers and a prioritized next-step checklist.
+
+Use only these final statuses:
+- VERIFIED PASS — direct evidence and applicable tests exist.
+- VERIFIED FAIL — reproducible defect exists.
+- PARTIALLY VERIFIED — some evidence exists, but coverage is incomplete.
+- BLOCKED — required environment, source, or authorization is unavailable.
+- NOT TESTED — no execution or inspection was performed.
+
+FINAL RELEASE GATE
+Unless every critical Rules path has been reviewed, all overlapping permissions are resolved, the claims schema is consistent, Firestore and Storage Emulator tests have actually passed, route-level authorization has evidence, and production live Rules have been independently inspected and backed up through an authorized read-only process, the release status MUST remain BLOCKED.
+
+Do not use the phrase "conditionally ready for production" if Emulator tests or live production Rules are unverified. Human review is not a substitute for missing security tests.
+
+Do not publish, deploy, migrate, or modify production resources in Phase 8B.3.
+
+BEGIN PHASE 8B.3 NOW. Start with repository inventory and full candidate Rules inspection. Return evidence, not assurances.

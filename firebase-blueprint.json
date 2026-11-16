@@ -161,9 +161,28 @@
         "tags": { "type": "array", "description": "Searchable keywords and index tags." },
         "yearEC": { "type": "number", "description": "Enactment Ethiopian calendar year." },
         "yearGC": { "type": "number", "description": "Enactment Gregorian calendar year." },
+        "institutionId": { "type": "string", "description": "The institution ID this document belongs to. If null, it is a global/public document." },
         "createdAt": { "type": "object", "description": "Server timestamp when stored in Firestore." }
       },
       "required": ["id", "channelHandle", "referenceNumber", "type", "jurisdiction", "title", "summary", "rawText", "createdAt"]
+    },
+    "TelegramLog": {
+      "title": "Telegram Webhook & Bot Processing Audit Log",
+      "description": "Audit records of incoming webhook updates, processed messages, and error diagnostics.",
+      "type": "object",
+      "properties": {
+        "updateId": { "type": "number", "description": "Telegram update ID." },
+        "status": { "type": "string", "enum": ["success", "failed"], "description": "Processing status." },
+        "updateType": { "type": "string", "description": "Type of update (message, callback_query, etc.)." },
+        "chatId": { "type": "number", "description": "Telegram chat or channel ID." },
+        "sender": { "type": "string", "description": "Username or first name of sender." },
+        "textSummary": { "type": "string", "description": "Preview of message text or command." },
+        "bodySummary": { "type": "string", "description": "Truncated JSON payload summary." },
+        "error": { "type": "string", "description": "Error details if processing failed." },
+        "ip": { "type": "string", "description": "Originating IP address." },
+        "timestamp": { "type": "string", "description": "ISO timestamp of the event." }
+      },
+      "required": ["status", "timestamp"]
     },
     "ObjectionTemplate": {
       "title": "Objection Template",
@@ -207,7 +226,7 @@
         "id": { "type": "string" },
         "institutionName": { "type": "string" },
         "googleMeetLink": { "type": "string" },
-        "vkLink": { "type": "string" },
+        "secondaryMeetLink": { "type": "string", "description": "Alternative meeting link for redundancy." },
         "courtLogoUrl": { "type": "string" },
         "status": { "type": "string", "enum": ["active", "inactive"] },
         "autoJoin": { "type": "boolean" },
@@ -537,9 +556,29 @@
         "type": { "type": "string" },
         "caseId": { "type": "string" },
         "caseNumber": { "type": "string" },
+        "recipientUid": { "type": "string", "description": "UID of the user who should receive this notification." },
         "isRead": { "type": "boolean" },
         "createdAt": { "type": "object" }
       }
+    },
+    "UserFeedback": {
+      "title": "AI Inaccuracy & Legal Feedback Report",
+      "description": "User reports of inaccuracies in AI-generated legal content, citations, or Cassation precedents.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "User ID of the submitter." },
+        "userEmail": { "type": "string", "description": "User email address if provided." },
+        "userName": { "type": "string", "description": "User display name." },
+        "category": { "type": "string", "enum": ["ai_inaccuracy", "missing_law", "translation_error", "hallucinated_article", "other"], "description": "Category of inaccuracy." },
+        "contentType": { "type": "string", "description": "Type of AI content being reported." },
+        "aiPromptQuery": { "type": "string", "description": "Prompt or search query reported." },
+        "reportedInaccuracy": { "type": "string", "description": "User description of inaccuracy." },
+        "suggestedCorrection": { "type": "string", "description": "User suggested correction or citation." },
+        "rating": { "type": "number", "description": "Optional satisfaction rating." },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved"], "description": "Processing status." },
+        "createdAt": { "type": "object", "description": "Server timestamp." }
+      },
+      "required": ["userId", "reportedInaccuracy", "createdAt"]
     }
   },
   "firestore": {
@@ -582,6 +621,10 @@
     "telegram_legal_documents/{documentId}": {
       "schema": "TelegramLegalDocument",
       "description": "Harvested legal proclamations, regulations, and cassation rulings from public Telegram channels stored for platform indexing and retrieval."
+    },
+    "telegram_logs/{logId}": {
+      "schema": "TelegramLog",
+      "description": "Real-time audit log of incoming Telegram webhook updates, authentications, and bot dispatch logs."
     },
     "dossier_audits/{auditId}": {
       "schema": "DossierAudit",
@@ -667,9 +710,129 @@
       "schema": "CaseDocket",
       "description": "Court cases, litigation lifecycle dockets, and hearing schedules."
     },
+    "admin_logs/{logId}": {
+      "schema": "AuditLogEntry",
+      "description": "Read-only audit trail of administrative actions for court admins."
+    },
     "court_notifications/{notifId}": {
       "schema": "CourtNotification",
       "description": "Consolidated assignments and automated 24-hour hearing session push notifications."
+    },
+    "court_templates/{templateId}": {
+      "schema": "ObjectionTemplate",
+      "description": "Court document templates scoped by institutionId."
+    },
+    "user_feedback/{feedbackId}": {
+      "schema": "UserFeedback",
+      "description": "Reports of inaccuracies in AI-generated legal content."
+    },
+    "practice_cases/{caseId}": {
+      "schema": "PracticeCase",
+      "description": "Simulation cases for legal practice mode (e.g. @court.oromia.et users)."
+    },
+    "institutions/{institutionId}": {
+      "schema": "CourtInstitution",
+      "description": "Authorized court institutions with secure subcollections."
+    },
+    "institutions/{institutionId}/courtDocuments/{docId}": {
+      "schema": "CourtDocument",
+      "description": "Securely stored court documents for the specific institution."
+    },
+    "institutions/{institutionId}/auditLogs/{logId}": {
+      "schema": "AuditLogEntry",
+      "description": "Audit trail for document actions within an institution."
+    },
+    "cases/{caseId}/witness_statements/{stmtId}": {
+      "schema": "WitnessStatement",
+      "description": "Witness testimony summaries linked to specific case files."
+    },
+    "cases/{caseId}/physical_evidence/{evidenceId}": {
+      "schema": "PhysicalEvidence",
+      "description": "Physical exhibits and evidentiary documents submitted for a case."
+    },
+    "witness_statements/{stmtId}": {
+      "schema": "WitnessStatement",
+      "description": "Global index of witness testimonies for cross-examination references."
+    }
+  },
+  "entities": {
+    "CourtDocument": {
+      "title": "Institutional Court Document",
+      "description": "Stores metadata for a document stored in institutional storage.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "folderId": { "type": "string" },
+        "fileName": { "type": "string" },
+        "contentType": { "type": "string" },
+        "size": { "type": "number" },
+        "storagePath": { "type": "string" },
+        "institutionId": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "object" },
+        "verified": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["uploading", "active", "upload_failed", "archived"] }
+      },
+      "required": ["id", "title", "folderId", "fileName", "storagePath", "institutionId", "status"]
+    },
+    "PracticeCase": {
+      "title": "Practice Simulation Case",
+      "description": "Stores state and progress for a legal practice simulation case.",
+      "type": "object",
+      "properties": {
+        "caseId": { "type": "string" },
+        "userId": { "type": "string", "description": "The user who created/is practicing with this case." },
+        "courtId": { "type": "string", "description": "The court institution this case belongs to (e.g. gurbicha)." },
+        "caseNumber": { "type": "string" },
+        "plaintiff": { "type": "string" },
+        "defendant": { "type": "string" },
+        "subject": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "processing", "judgment", "appealed", "closed"] },
+        "stage": { "type": "number", "description": "Current numeric stage (0-3)." },
+        "documents": { "type": "array", "items": { "type": "string" } },
+        "judgment": { "type": "string" },
+        "appealTarget": { "type": "string", "description": "The court where the case was sent for appeal." },
+        "createdAt": { "type": "object" },
+        "updatedAt": { "type": "object" }
+      },
+      "required": ["caseId", "userId", "status", "stage", "createdAt"]
+    },
+    "WitnessStatement": {
+      "title": "Witness Testimony Statement",
+      "description": "Testimony summary, credibility assessment, and cross-examination notes linked to a case.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "caseId": { "type": "string" },
+        "caseNumber": { "type": "string" },
+        "witnessName": { "type": "string" },
+        "witnessRole": { "type": "string", "enum": ["plaintiff_witness", "defendant_witness", "expert_witness", "court_witness"] },
+        "statementText": { "type": "string" },
+        "crossExaminationNotes": { "type": "string" },
+        "credibilityRating": { "type": "string", "enum": ["high", "moderate", "questionable"] },
+        "recordedBy": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "createdAt": { "type": "object" }
+      },
+      "required": ["id", "caseId", "witnessName", "witnessRole", "statementText"]
+    },
+    "PhysicalEvidence": {
+      "title": "Case Physical / Documentary Evidence",
+      "description": "Admissible or challenged evidence items logged in court docket.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "caseId": { "type": "string" },
+        "exhibitNumber": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "admissibilityStatus": { "type": "string", "enum": ["admissible", "rejected", "tendered", "marked_for_id", "objected"] },
+        "objectionNotes": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "reviewedAt": { "type": "string" }
+      },
+      "required": ["id", "caseId", "admissibilityStatus"]
     }
   }
 }

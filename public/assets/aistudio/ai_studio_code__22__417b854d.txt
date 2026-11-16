@@ -1,0 +1,150 @@
+SEERAAI PRO — MASTER END-TO-END FIREBASE SECURITY REMEDIATION, TESTING & RELEASE-READINESS PROMPT
+
+ROLE: Act as a Principal Firebase Security Architect, Senior Full-Stack Engineer, Application Security Auditor, QA Engineer, and Ethiopian Legal Technology Systems Specialist.
+
+PROJECT: SEERAAI PRO
+EXISTING CODEBASE: "sai-ethio-legal-ai"
+TARGET FIREBASE PROJECT ID: "leafy-rush-xvd6f"
+FIRESTORE DATABASE ID: "ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478"
+STORAGE BUCKET: "leafy-rush-xvd6f.firebasestorage.app"
+EXISTING CLOUD RUN SERVICE URL: "https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app"
+
+================================================================================
+
+1. PRIMARY OBJECTIVE
+
+Work directly within the EXISTING SEERAAI PRO application and its existing development environment.
+
+Your mission is to inspect, audit, repair, test, and prepare the existing application for secure production release.
+
+Do not create a new application, Firebase project, Firestore database, Storage bucket, Cloud Run service, or replacement architecture.
+
+Preserve all existing:
+- User accounts and authentication.
+- Firestore data and collections.
+- Uploaded legal documents and files.
+- Application features and interfaces.
+- Existing Firebase integrations.
+- Existing Cloud Run service and URL.
+- Existing Telegram integrations.
+- Existing legal research and case-analysis modules.
+- Existing multilingual capabilities: Afaan Oromoo, Amharic, and English.
+
+Do not remove working features merely to simplify security remediation.
+
+Your work must be evidence-based. Never claim that a task was completed, tested, deployed, or verified unless you actually performed it and can show evidence.
+
+================================================================================
+
+2. STRICT PRODUCTION SAFETY RULES
+
+These restrictions are mandatory.
+
+1. Do not publish or deploy Firestore Rules automatically.
+2. Do not deploy Storage Rules automatically.
+3. Do not deploy Cloud Run or Cloud Functions automatically.
+4. Do not modify production IAM, authentication settings, custom claims, secrets, or access policies without explicit human approval.
+5. Do not delete, overwrite, migrate, or bulk-modify production data.
+6. Do not create a replacement Firebase project.
+7. Do not expose passwords, API keys, access tokens, private keys, service-account JSON, or other secrets in chat, logs, or reports.
+8. Do not print confidential user data or sensitive court-document contents.
+9. Do not assume that the development environment's service account has access to the target Firebase project.
+10. Do not treat source-code Rules as proof of the Rules currently published in Firebase.
+
+Before changing any existing file:
+- Inspect the current repository structure.
+- Inspect Git status and preserve uncommitted user changes.
+- Identify the exact files that need changes.
+- Create a recoverable backup or isolated candidate changeset where technically possible.
+- Never overwrite user modifications without documenting the conflict.
+
+If authorized production read-only access is unavailable, clearly mark live verification as BLOCKED. Do not bypass access controls or request credentials in chat.
+
+================================================================================
+
+3. PHASE A — ENVIRONMENT AND PROJECT IDENTITY VERIFICATION
+
+First inspect the actual development environment.
+
+Verify, where access permits:
+- Repository name and current application version.
+- Firebase configuration.
+- "firebase.json".
+- Firestore Rules source files.
+- Storage Rules source files.
+- Authentication configuration.
+- Cloud Functions and backend entry points.
+- Existing Cloud Run configuration.
+- Package scripts and installed testing tools.
+- Current Git branch and uncommitted changes.
+- Environment variables by checking their existence only, never revealing their values.
+
+Verify that the target Firebase project ID is exactly:
+"leafy-rush-xvd6f"
+
+Do not confuse the application name SEERAAI PRO with the Firebase project ID.
+
+If Firebase CLI or Google Cloud CLI is unavailable or unauthenticated, report that limitation precisely. Do not pretend that live production inspection was successful.
+
+================================================================================
+
+4. PHASE B — COMPLETE SOURCE-LEVEL SECURITY AUDIT
+
+Inspect the complete relevant source files, not partial excerpts.
+
+Identify all actual Firestore collection paths, document paths, Storage paths, backend routes, callable functions, and frontend data-access operations.
+
+Audit at least:
+
+Firestore Rules
+- Authentication requirements.
+- Authorization requirements.
+- Role validation.
+- Institution membership.
+- Tenant isolation.
+- Read and write permissions.
+- Create, update, and delete restrictions.
+- Field-level validation.
+- Ownership validation.
+- Administrative permissions.
+- Public-access permissions.
+- Nested collection permissions.
+- Wildcard matches and overlapping rules.
+- Any unrestricted "allow read, write: if true".
+- Any unrestricted or excessively broad signed-in-user access.
+
+Authentication and authorization
+Verify that:
+- Client-controlled profile fields cannot grant administrator privileges.
+- A user cannot promote themselves to judge, registrar, administrator, or another privileged role.
+- Verified email status is not treated as proof of institutional authorization.
+- Anonymous or phone authentication is not incorrectly treated as verified email.
+- Administrative access is based on a trusted authorization mechanism.
+- Institution membership is verified using trusted server-controlled information.
+- User profile updates cannot change protected role, institution, or privilege fields.
+
+Storage Rules
+Inspect the real application upload and download paths.
+
+Pay special attention to:
+- "institutions/{institutionId}/courtDocuments/..."
+- "court_logos/{institutionId}/..."
+- "legal_docs/{institutionId}/{userId}/..."
+
+Do not assume these are the only paths. Discover the paths from the actual application code.
+
+Verify:
+- Authentication.
+- Authorization.
+- Institution isolation.
+- File ownership.
+- Maximum file size.
+- Permitted file types.
+- Read, write, update, and delete permissions.
+- Sensitive court-file protection.
+- Whether files are incorrectly stored as base64 in Firestore documents.
+
+Backend security
+Inspect every backend route and Cloud Function that uses Firebase Admin SDK.
+
+Remember 

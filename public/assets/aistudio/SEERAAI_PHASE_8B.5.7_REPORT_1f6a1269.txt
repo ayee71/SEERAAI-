@@ -1,0 +1,202 @@
+SEERAAI PRO - PHASE 8B.5.7
+GITHUB ACTIONS WORKFLOW READINESS & EXECUTION SUPPORT
+Report date: 2026-11-15
+Isolated project ID: demo-seeraai-test
+
+======================================================================
+WORKFLOW READINESS STATUS:  NOT VERIFIED (BLOCKED)
+SECURITY STATUS:            NOT VERIFIED - no tests have been executed
+======================================================================
+Nothing was deployed, published, migrated, or modified in production.
+No production credentials or data were accessed.
+
+----------------------------------------------------------------------
+1. EXACT FILES INSPECTED
+----------------------------------------------------------------------
+Searched the uploads folder and the whole filesystem of this session:
+
+  .github/workflows/rules-test.yml                   NOT FOUND
+  firebase.emulator.test.json                        NOT FOUND
+  firestore.rules.phase8b5.3.integrated.candidate    NOT FOUND
+  storage.rules.phase8b5.4.integrated.candidate      NOT FOUND
+  package.json / package-lock.json                   NOT FOUND
+  Rules test files                                   NOT FOUND
+
+Therefore items 2-7 of the task (workflow_dispatch, lockfile install,
+candidate loading, project ID, test execution, non-zero exit, artifacts)
+could NOT be verified. I will not describe them as correct.
+
+Note: the earlier workflow text in the Phase 8B.5.5 report (section K)
+was a template I wrote. It is not the project's real file.
+
+----------------------------------------------------------------------
+2. VERIFICATION CHECKLIST FOR THE REAL rules-test.yml
+----------------------------------------------------------------------
+Compare your real file against each line; mark PASS/FAIL yourself.
+
+ [ ] 2. "on: workflow_dispatch:" present, file is on the default branch
+        (GitHub only shows the "Run workflow" button for workflows that
+        exist on the default branch).
+ [ ] 3. "npm ci" (not "npm install"); package-lock.json committed;
+        firebase-tools and @firebase/rules-unit-testing are in
+        devDependencies with exact versions; actions pinned to major
+        versions at least (checkout@v4, setup-node@v4, setup-java@v4).
+ [ ] 4. firebase.emulator.test.json has:
+          "firestore": {"rules": "firestore.rules.phase8b5.3.integrated.candidate"}
+          "storage":   {"rules": "storage.rules.phase8b5.4.integrated.candidate"}
+        and the workflow passes --config firebase.emulator.test.json.
+        Tests must not silently read the production firestore.rules or
+        storage.rules.
+ [ ] 5. --project demo-seeraai-test everywhere; the string
+        leafy-rush-xvd6f appears nowhere in workflow/test/config files.
+ [ ] 6. Uses "firebase emulators:exec ... \"npm test\"" (actually runs
+        tests); no "|| true", no "continue-on-error: true"; exit code
+        propagated.
+ [ ] 7. upload-artifact step with "if: always()" saving: test output,
+        exit code, hashes before/after, firebase-debug.log,
+        firestore-debug.log, storage-debug.log (or ui-debug.log).
+
+----------------------------------------------------------------------
+3. PROPOSED CORRECTION (smallest set; CI + test config only)
+----------------------------------------------------------------------
+Use ONLY if the real workflow fails any checklist item. Replace the
+contents of .github/workflows/rules-test.yml with the following. It does
+not touch production firestore.rules, storage.rules, or firebase.json.
+
+--- BEGIN .github/workflows/rules-test.yml ---
+name: rules-emulator-tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rules-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GCLOUD_PROJECT: demo-seeraai-test
+      FIRESTORE_CANDIDATE: firestore.rules.phase8b5.3.integrated.candidate
+      STORAGE_CANDIDATE: storage.rules.phase8b5.4.integrated.candidate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies from lockfile
+        run: npm ci
+
+      - name: Guard - isolated config only
+        run: |
+          set -euo pipefail
+          test -f "$FIRESTORE_CANDIDATE"
+          test -f "$STORAGE_CANDIDATE"
+          test -f firebase.emulator.test.json
+          grep -q "$FIRESTORE_CANDIDATE" firebase.emulator.test.json
+          grep -q "$STORAGE_CANDIDATE" firebase.emulator.test.json
+          if grep -rq "leafy-rush-xvd6f" firebase.emulator.test.json .github test 2>/dev/null; then
+            echo "Production project ID found in test setup"; exit 1
+          fi
+
+      - name: Prepare evidence folder and hashes (before)
+        run: |
+          mkdir -p evidence
+          sha256sum "$FIRESTORE_CANDIDATE" "$STORAGE_CANDIDATE" | tee evidence/hashes_before.txt
+          wc -lc "$FIRESTORE_CANDIDATE" "$STORAGE_CANDIDATE" | tee evidence/sizes.txt
+          npx --no-install firebase --version | tee evidence/tool_versions.txt
+          java -version 2>> evidence/tool_versions.txt
+          node -v >> evidence/tool_versions.txt
+
+      - name: Run Firestore + Storage rules tests in emulators
+        run: |
+          set +e
+          npx --no-install firebase emulators:exec \
+            --config firebase.emulator.test.json \
+            --project demo-seeraai-test \
+            --only firestore,storage \
+            "npm test" 2>&1 | tee evidence/test_output.txt
+          code=${PIPESTATUS[0]}
+          echo "$code" > evidence/exit_code.txt
+          exit 0
+
+      - name: Hashes (after) and unchanged check
+        if: always()
+        run: |
+          sha256sum "$FIRESTORE_CANDIDATE" "$STORAGE_CANDIDATE" | tee evidence/hashes_after.txt
+          diff evidence/hashes_before.txt evidence/hashes_after.txt \
+            && echo "HASHES UNCHANGED" | tee evidence/hash_check.txt \
+            || { echo "HASHES CHANGED" | tee evidence/hash_check.txt; exit 1; }
+          cp -f firebase-debug.log firestore-debug.log storage-debug.log ui-debug.log evidence/ 2>/dev/null || true
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rules-test-evidence
+          path: evidence/
+          if-no-files-found: error
+
+      - name: Fail job if tests failed
+        run: |
+          code=$(cat evidence/exit_code.txt)
+          echo "Test exit code: $code"
+          test "$code" = "0"
+--- END ---
+
+Why the run step uses "exit 0": it lets the evidence/hash/upload steps
+run, and the LAST step fails the job with the real exit code. A failed
+test therefore still produces a red workflow AND downloadable evidence.
+
+Required test-config changes (only if missing):
+ - package.json: "test" script runs the real Firestore and Storage rules
+   test files (e.g. mocha/jest), devDependencies pinned, lockfile
+   committed.
+ - firebase.emulator.test.json: separate from firebase.json, with
+   firestore rules, storage rules, and emulators ports
+   (firestore 8080, storage 9199, auth 9099, ui disabled).
+ - Tests must create the environment with projectId demo-seeraai-test and
+   must assert which rules are loaded (e.g. read the candidate files with
+   fs and pass them to initializeTestEnvironment), so a wrong path fails
+   loudly instead of silently using other rules.
+
+----------------------------------------------------------------------
+4. STEPS FOR THE PROJECT OWNER IN GITHUB ACTIONS
+----------------------------------------------------------------------
+ 1. Create a branch (e.g. ci/rules-test). Add or correct ONLY:
+    .github/workflows/rules-test.yml, firebase.emulator.test.json,
+    package.json + package-lock.json, and the rules test files.
+    Do not edit firestore.rules, storage.rules, firebase.json.
+ 2. Confirm both candidate files are committed at the repo root.
+ 3. Merge the workflow to the default branch (needed for the
+    "Run workflow" button), or run it from the branch if GitHub shows it.
+ 4. GitHub -> Actions -> "rules-emulator-tests" -> Run workflow.
+    No secrets are required; do not add any.
+ 5. When finished, open the run, note the run URL and the job result.
+ 6. Download artifact "rules-test-evidence" (bottom of run page).
+ 7. Send back: the run URL and these files: test_output.txt,
+    exit_code.txt, hashes_before.txt, hashes_after.txt, hash_check.txt,
+    sizes.txt, tool_versions.txt, and the *-debug.log files.
+ 8. A genuine report (PASS / FAIL / BLOCKED) can only be produced from
+    that evidence.
+
+----------------------------------------------------------------------
+5. REMAINING BLOCKERS AND LIMITS
+----------------------------------------------------------------------
+ - Real workflow, config, candidate files and tests not available to me.
+ - Zero tests executed; security NOT verified.
+ - Backend routes using Firebase Admin SDK bypass Rules and still need
+   separate auth/authorization tests.
+ - Review all overlapping matches, especially match /{document=**};
+   allow rules are additive.
+
+Status: BLOCKED. No production change was made. Stopping here.

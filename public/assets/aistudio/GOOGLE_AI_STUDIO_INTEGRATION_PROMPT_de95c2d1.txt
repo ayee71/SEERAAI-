@@ -1,0 +1,21 @@
+GOOGLE AI STUDIO BUILD MODE — SEERAAI v4.2 INTEGRATION PROMPT
+
+Work inside the EXISTING SEERAAI application already open in Google AI Studio. Do not generate a new app, do not create a new Firebase project, do not switch Firestore database, and do not replace the application.
+
+Before editing, inspect the existing package.json, server.ts/server-app.ts, Firebase Admin initialization, current Firestore instance/database selection, existing Auth and RBAC, current question submission view, language selector, and all legal FAQ/repository modules. Keep a backup / use a separate Git branch.
+
+Integrate the files in this package into the existing app. Preserve all existing features, UI routes, legal documents, Firebase project ID, Firestore database name, Storage bucket, security rules, institution-level data boundaries, user roles, and FAQ records. The new `/api/legal/ask` endpoint must answer the actual submitted question using verified legal sources; it must not read fixed FAQ question/answer records as legal authority.
+
+Use the app's already initialized Firebase Admin Firestore object and inject it into `createLegalAnswerRouter`. Do not call initializeApp twice. Do not use a new Firebase project. Do not change database IDs. Connect `authorizeUser` and `authorizeReviewer` to the REAL existing server-side RBAC functions; do not make a permissive placeholder, do not rely only on hiding UI controls, and fail closed if the RBAC function is missing.
+
+Add the dependencies listed in README_AFAAN_OROMOO.md without overwriting package.json. Use Google AI Studio Settings > Secrets for OPENAI_API_KEY, GEMINI_API_KEY and Telegram MTProto secrets. Never place secrets in frontend code, VITE_ variables, source files, GitHub, logs, or responses.
+
+Connect the existing legal question form to `askSEERAAIV42`, passing its current language selector value as `language`. Preserve the current screen design and history behavior. Render the structured answer, statutory citations, separate Federal and Oromia comparison, cassation case analyses, warnings, and Telegram research leads. Visually label Telegram results `UNVERIFIED — REVIEW REQUIRED`; never present them as legal authorities until the authorized human review route promotes them to the verified cassation collection.
+
+Add `POST /api/legal/telegram/candidates/:candidateId/verify` only behind the existing legal reviewer/admin permission. The reviewer must confirm the original full decision, court, decision number, date, volume/page and holding, and upload the original file to the existing Firebase Storage bucket. Implement `assertOriginalDocumentExists` using the EXISTING Admin Storage bucket and pass it to the router; the route must reject verification if the file does not exist. Keep audit logs minimal and never log case facts or full prompts.
+
+For Federal–Oromia analysis, retrieve and cite verified statutes/cassation sources from both jurisdictions. Never assume Federal law automatically overrides all Oromia law. Discuss constitutional competence and conflict only when sources support it. Use the relevant date to select the correct dated version of a statute. Keep historical/amended versions rather than deleting them.
+
+After editing, run the app's existing typecheck, tests and build. Fix all regressions. Report exact files changed, commands run, errors remaining, secrets that need manual entry, any Firestore indexes needed, and whether actual Telegram authentication/channel access has been tested. Do not claim production readiness or 10/10 unless those tests genuinely pass.
+
+Do not deploy or make destructive Firebase/GitHub changes without the user's explicit approval.

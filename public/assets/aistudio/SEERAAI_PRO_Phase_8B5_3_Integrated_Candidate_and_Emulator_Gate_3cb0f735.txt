@@ -1,0 +1,202 @@
+SEERAAI PRO — PHASE 8B.5.3
+INTEGRATED CANDIDATE RULES, FEATURE-PRESERVATION & EMULATOR RELEASE GATE
+
+PROJECT: Existing SEERAAI PRO
+REPOSITORY: sai-ethio-legal-ai
+CURRENT REPORTED PACKAGE VERSION: 5.0.0
+FIREBASE PROJECT ID: leafy-rush-xvd6f
+FIRESTORE DATABASE: ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478
+
+PRIMARY OBJECTIVE
+Prepare and verify complete, integrated, reviewable candidate Rulesets from the existing active Rules and the Phase 8B.5 candidate changes. Preserve all existing SEERAAI PRO features and access paths. This is a NON-PRODUCTION task. Do not publish, deploy, or change production resources.
+
+1. STRICT PRESERVATION AND SAFETY BOUNDARIES
+
+Work only in the existing SEERAAI PRO repository. Do not create a replacement application, Firebase project, database, repository, or Cloud Run service.
+
+DO NOT modify:
+- firestore.rules
+- storage.rules
+- firebase.json
+- production Firestore or Storage data
+- Firebase Auth users or settings
+- production custom claims or user roles
+- production IAM, service accounts, secrets, Cloud Run, or Functions
+- production indexes, buckets, or database configuration
+
+DO NOT run firebase deploy, gcloud deploy, Cloud Run deployment, Functions deployment, Rules publication, or any command that targets the live Firebase project.
+
+Do not use production credentials or production project ID for Emulator tests. Use a clearly isolated demo project ID such as demo-seeraai-rules-test and explicitly connect tests to local emulators only. Never request or print secrets, private keys, tokens, user PII, or court-case data.
+
+2. VERIFY THE EXACT INPUT FILES AND BASELINES
+
+Inspect the complete current contents and Git diff of:
+- firestore.rules (active baseline; previously reported 519 lines)
+- storage.rules (active baseline; previously reported 37 lines)
+- firebase.json (active configuration)
+- firestore.rules.phase8b5.candidate (focused patch; previously reported 71 lines)
+- storage.rules.phase8b5.candidate (candidate; previously reported 35 lines)
+- relevant Firebase Rules tests and emulator configuration
+- relevant app services that read/write Telegram data and upload/download court documents
+
+Do not rely on prior reports alone. Confirm actual current line counts, file paths, timestamps/version history where available, and exact contents. Report missing or renamed files rather than guessing.
+
+3. BUILD A COMPLETE FIRESTORE INTEGRATED CANDIDATE — DO NOT REPLACE ACTIVE RULES
+
+Important: firestore.rules.phase8b5.candidate is a focused patch, NOT a complete standalone ruleset. Never replace the active 519-line firestore.rules with the 71-line patch.
+
+Prepare a NEW isolated file, for example:
+firestore.rules.phase8b5.3.integrated.candidate
+
+It must be a complete ruleset formed by carefully integrating the intended Phase 8B.5 Telegram security changes into the full active Firestore baseline.
+
+Requirements:
+- Preserve every existing active collection, subcollection, helper, role check, institution boundary, and feature-specific permission unless a specific security defect is explicitly documented and the proposed change is justified.
+- Do not simply append patch clauses if doing so creates overlapping match blocks with additive allow permissions.
+- Find and resolve existing broad Telegram matches so there is no remaining public write route through another overlapping match.
+- Keep only intentionally published public feeds public-readable, after verifying the actual data model distinguishes published from draft/private content.
+- Deny public writes to all Telegram collections.
+- Restrict Telegram management writes to the intended server-side Admin SDK routes and/or explicitly authorized legal content managers, according to the actual app architecture.
+- Protect subscribers, user stats, poll results, briefing logs, webhook logs, messages, and other internal collections from public access.
+- Verify get/list and create/update/delete separately. Do not assume read/write shorthand is sufficiently narrow.
+- Inspect recursive wildcard catch-alls and every overlapping match. Remember that matching allow expressions are additive (OR); a false rule does not override another true rule.
+- Confirm the global admin catch-all does not inadvertently expose data through untrusted admin claims or fallback email logic.
+- Preserve the current users, court cases, court documents, witness schedules, courtroom sessions, notifications, audio metadata, payments, legal knowledge base, Telegram bot, Mini App, and all other collections actually present in the baseline and application.
+- Do not invent new collection names or data fields.
+
+4. VERIFY THE LEGAL CONTENT MANAGER HELPER AND CLAIMS
+
+The Phase 8B.5.2 report refers to isLegalRepositoryManager(), while earlier reports refer to legalContentManager and isAdmin(). These names may not be interchangeable.
+
+Inspect the exact helper definitions and every call site in Firestore Rules, Storage Rules, backend services, and token provisioning code.
+
+Establish one evidence-based mapping:
+- Which token claim or trusted backend role grants legal content management?
+- Does isLegalRepositoryManager() exist in the actual Rules source?
+- Does it check request.auth.token.legalContentManager == true, admin == true, a role, or something else?
+- Can ordinary users set or modify this claim themselves? They must not be able to.
+- Are backend and Rules checks consistent?
+
+Do not silently rename helpers, add claims, grant roles, or change production user records. If the source of truth is unclear, mark BLOCKED and present the exact inconsistency.
+
+5. BUILD A COMPLETE STORAGE INTEGRATED CANDIDATE — PRESERVE ALL PATHS
+
+The 35-line storage.rules.phase8b5.candidate was reported as a standalone ruleset for /legal_docs/{institutionId}/{userId}/{allPaths=**}. Do not assume it safely replaces the active 37-line storage.rules.
+
+Prepare a NEW isolated complete file, for example:
+storage.rules.phase8b5.3.integrated.candidate
+
+Compare every match path and helper in active storage.rules against the candidate and actual application upload/download paths.
+
+Preserve required existing paths and functionality, including court document paths, logos, and any other real application Storage paths found in source. Do not invent paths.
+
+Verify separately:
+- Owner read, create, update, and delete.
+- Owner access requires both request.auth.uid == userId and request.auth.token.institutionId == institutionId where the path is institution-scoped.
+- Institutional staff read access is limited to the same institution and explicitly authorized roles.
+- A judge, registrar, or court_admin from another institution is denied.
+- Global admin access follows the verified admin helper.
+- Unauthenticated and anonymous users are denied unless a specific public asset path is intentionally public.
+- File size and content type restrictions are preserved or strengthened without breaking supported existing uploads.
+- A default-deny rule is present, while recognizing it does not cancel a separate overlapping allow=true rule.
+
+Do not broaden access simply to make an existing feature pass. Identify the precise feature, path, and intended role before proposing an exception.
+
+6. CREATE A PATH AND FEATURE COMPATIBILITY MATRIX
+
+For each existing Firebase Storage path and Firestore collection that the application uses, provide:
+- exact source path / collection name
+- source file and line reference where it is read or written
+- intended user roles
+- read permissions
+- create permissions
+- update permissions
+- delete permissions
+- institution isolation rule
+- public/private classification
+- corresponding Emulator test name
+
+Explicitly test Telegram bot/webhook/Mini App, public Telegram feeds, internal Telegram collections, legal repository management, court documents, court logos, witness records, courtroom audio, notifications, and other identified live features.
+
+If an app operation uses Firebase Admin SDK, explain that Admin SDK bypasses Firestore Security Rules and therefore requires separate backend authentication, authorization, and IAM protection. Inspect the actual route/service; do not treat a Rules test as proof of backend security.
+
+7. EMULATOR SETUP AND ACTUAL TEST EXECUTION
+
+Check whether the current environment has:
+- Java/JDK (record exact `java -version` output)
+- Firebase CLI (record `firebase --version`)
+- Node/npm versions
+- @firebase/rules-unit-testing
+- Firestore and Storage Emulator binaries/configuration
+
+If Java and the dependencies are available, run isolated local Emulator tests using the integrated candidate files. The tests must explicitly load the candidate Rules (for example with loadFirestoreRules/loadStorageRules in the test harness) rather than accidentally loading production Rules from firebase.json.
+
+Use an emulator-only demo project ID. Confirm emulator host/ports and show test commands and exit codes. Ensure the test harness cannot reach production. If dependencies are absent, explain the minimum safe local/CI setup; do not pretend the tests ran. Do not alter production configuration to make Emulator tests run.
+
+Required Firestore test cases include:
+- unauthenticated access denied to private/internal collections
+- public read allowed only for deliberately published public feed items
+- public write denied for every Telegram collection
+- draft/unpublished feed read denied to public users
+- legal content manager authorized writes succeed
+- ordinary authenticated users cannot manage legal content
+- user cannot self-promote to admin/legalContentManager through user profile writes
+- admin behavior follows the exact verified claim/helper
+- tenant A cannot read or write tenant B data
+- valid same-tenant judge/registrar/admin access behaves as intended
+- create/update/delete and list/query authorization tested separately
+- overlapping matches do not re-open blocked paths
+- existing court and legal feature permissions remain functional
+
+Required Storage test cases include:
+- anonymous upload/download denied
+- owner within correct institution allowed for intended operations
+- owner with mismatched institutionId denied
+- same-institution authorized staff read allowed where intended
+- staff from another institution denied
+- unauthorized user update/delete denied
+- global admin behavior follows verified helper
+- MIME type and file-size constraints enforced
+- every existing application Storage path tested
+
+Do not report test success unless the tests were executed and actual output/exit codes are available. Report pass/fail/skipped/blocked counts separately. A successful TypeScript build is not a Rules Emulator test.
+
+8. REGRESSION AND SOURCE CHANGE REVIEW
+
+Review the reported src/server/legal/legalSearch.ts change:
+candidates.push({ ...data, id: d.id })
+
+Verify it fixes the property overwrite warning and does not change search semantics, result ordering, tenant filtering, or document identity. Run the relevant tests.
+
+Run the existing lint/typecheck/build and security regression tests where possible. Preserve actual command output and distinguish build checks from tests.
+
+9. REQUIRED OUTPUT FILES AND REPORT
+
+Create only new reviewable artifacts; do not overwrite active production files:
+- firestore.rules.phase8b5.3.integrated.candidate
+- storage.rules.phase8b5.3.integrated.candidate
+- tests for the integrated candidates, or a clear list of missing tests
+- SEERAAI_PRO_PHASE_8B5_3_INTEGRATION_AND_EMULATOR_REPORT.md
+
+If safe integrated candidates cannot be completed because of missing source/schema evidence, do not invent a solution. Produce a blocker report instead and leave the candidate file uncreated or clearly marked incomplete.
+
+The final report must include:
+1. Exact input files and line counts.
+2. Full active-vs-candidate diff summary.
+3. Proof the complete Firestore baseline was preserved.
+4. Proof all required Storage paths were preserved.
+5. Overlapping match analysis.
+6. legalContentManager / isLegalRepositoryManager claim/helper consistency.
+7. Feature and role compatibility matrix.
+8. Emulator setup, exact commands, logs, exit codes, and counts.
+9. Regression, lint, typecheck, and build outcomes.
+10. Unresolved risks and blockers.
+11. Clear recommendation: BLOCKED, READY FOR FURTHER TESTING, or READY FOR HUMAN RELEASE REVIEW.
+
+10. FINAL NON-PRODUCTION GATE
+
+No publishing, deployment, migration, custom-claim assignment, IAM change, secret rotation, production data access, or production mutation is authorized by this task.
+
+Even if integrated candidates and Emulator tests pass, stop and request a separate explicit human decision before any production operation. A source audit or Emulator pass does not prove the currently deployed production Rules are the same as the local active files.
+
+BEGIN PHASE 8B.5.3 NOW. Perform the work in the existing repository, preserve the existing SEERAAI PRO application, and report only what you actually inspected and executed.

@@ -444,12 +444,12 @@ export const DiscussionPanel: React.FC<DiscussionPanelProps> = ({ targetId, titl
           comments.map((comment) => {
             const isMeeting = Boolean(
               comment.meetingData ||
-                (comment.text && (comment.text.includes('meet.jit.si') || comment.text.includes('[Walgahii Viidiyoo')))
+                (comment.text && (comment.text.includes('meet.google.com') || comment.text.includes('meet.ffrn.de') || comment.text.includes('meet.jit.si') || comment.text.includes('[Walgahii Viidiyoo')))
             );
 
             const meetingUrl =
               comment.meetingData?.meetingUrl ||
-              (comment.text.match(/https:\/\/meet\.jit\.si\/[^\s\n]+/)?.[0] ?? '');
+              (comment.text.match(/https:\/\/(meet\.google\.com|meet\.ffrn\.de|meet\.jit\.si)\/[^\s\n]+/)?.[0] ?? '');
 
             const meetingTopic =
               comment.meetingData?.topic ||
@@ -508,9 +508,9 @@ export const DiscussionPanel: React.FC<DiscussionPanelProps> = ({ targetId, titl
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1 text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 shrink-0">
-                          <Clock className="w-3 h-3" />
-                          <span>Yeroo Murtaa'e (2h)</span>
+                        <div className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30 shrink-0 font-bold">
+                          <Clock className="w-3 h-3 text-emerald-400" />
+                          <span>♾️ Daangaa Malee (24h Non-Stop)</span>
                         </div>
                       </div>
 

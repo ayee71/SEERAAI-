@@ -1,0 +1,806 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  X,
+  Mic,
+  MicOff,
+  CheckCircle2,
+  Play,
+  Pause,
+  RotateCcw,
+  AlertCircle,
+  Sparkles
+} from 'lucide-react';
+import { Language } from '../i18n/translations';
+import { generateLegalContent } from '../services/api';
+
+export interface WitnessTestimonyItem {
+  id: string;
+  witnessName: string;
+  witnessRole:
+    | 'plaintiff_witness'
+    | 'defendant_witness'
+    | 'expert_witness'
+    | 'court_witness';
+  statementText: string;
+  timestamp: string;
+  audioTimestampSeconds?: number;
+  milestoneStageId?: string;
+  crossExaminationNotes?: string;
+  credibilityRating: 'high' | 'moderate' | 'questionable';
+
+  // Audio recording: upload this Blob to Firebase Storage in parent
+  audioBlob?: Blob;
+  audioMimeType?: string;
+  audioDurationSeconds?: number;
+}
+
+interface WitnessTestimonyModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  currentLang: Language;
+  activeCaseNumber: string;
+  onSaveTestimony: (testimony: WitnessTestimonyItem) => Promise<void> | void;
+}
+
+const formatTime = (seconds: number): string => {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const mins = Math.floor(safeSeconds / 60);
+  const secs = safeSeconds % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+};
+
+const getSupportedMimeType = (): string => {
+  if (typeof MediaRecorder === 'undefined') return '';
+  const types = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/ogg;codecs=opus'
+  ];
+  return types.find(type => MediaRecorder.isTypeSupported(type)) || '';
+};
+
+export const WitnessTestimonyModal: React.FC<WitnessTestimonyModalProps> = ({
+  isOpen,
+  onClose,
+  currentLang,
+  activeCaseNumber,
+  onSaveTestimony
+}) => {
+  const [witnessName, setWitnessName] = useState('');
+  const [witnessRole, setWitnessRole] = useState<WitnessTestimonyItem['witnessRole']>('plaintiff_witness');
+  const [statementText, setStatementText] = useState('');
+  const [milestoneStage, setMilestoneStage] = useState('stage_4_evidence');
+  const [crossNotes, setCrossNotes] = useState('');
+  const [credibility, setCredibility] = useState<WitnessTestimonyItem['credibilityRating']>('high');
+
+  const [isRecording, setIsRecording] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioUrl, setAudioUrl] = useState('');
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioMimeType, setAudioMimeType] = useState('');
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [audioProgress, setAudioProgress] = useState(0);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [waveform, setWaveform] = useState<number[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // AI Hearing Summary State
+  const [isAnalyzingSummary, setIsAnalyzingSummary] = useState(false);
+  const [hearingSummaryResult, setHearingSummaryResult] = useState<{ keyPoints: string[]; legalContradictions: string[] } | null>(null);
+  const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(false);
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const audioUrlRef = useRef('');
+  const transcriptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const isOromo = currentLang === 'om';
+
+  // Auto-scroll transcript textarea to bottom when text is appended (live transcription support)
+  useEffect(() => {
+    if (transcriptTextareaRef.current) {
+      transcriptTextareaRef.current.scrollTop = transcriptTextareaRef.current.scrollHeight;
+    }
+  }, [statementText]);
+
+  // Release microphone and temporary audio resources
+  const releaseAudioResources = () => {
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+    recorderRef.current = null;
+  };
+
+  const clearAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = '';
+    }
+    setAudioUrl('');
+    setAudioBlob(null);
+    setAudioMimeType('');
+    setAudioDuration(0);
+    setAudioProgress(0);
+    setRecordingSeconds(0);
+    setWaveform([]);
+    setIsPlaying(false);
+  };
+
+  useEffect(() => {
+    if (!isRecording) return;
+    const timer = window.setInterval(() => {
+      setRecordingSeconds(prev => prev + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isRecording]);
+
+  useEffect(() => {
+    return () => {
+      releaseAudioResources();
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+    };
+  }, []);
+
+  // Build waveform from the actual recorded audio
+  const generateWaveform = async (blob: Blob) => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) {
+        setWaveform([]);
+        return;
+      }
+
+      const context = new AudioContextClass();
+      try {
+        const arrayBuffer = await blob.arrayBuffer();
+        const decoded = await context.decodeAudioData(arrayBuffer);
+        const channel = decoded.getChannelData(0);
+        const barCount = 48;
+        const samplesPerBar = Math.max(1, Math.floor(channel.length / barCount));
+        const bars: number[] = [];
+
+        for (let i = 0; i < barCount; i++) {
+          const start = i * samplesPerBar;
+          const end = Math.min(start + samplesPerBar, channel.length);
+          let peak = 0;
+          for (let j = start; j < end; j++) {
+            peak = Math.max(peak, Math.abs(channel[j]));
+          }
+          bars.push(Math.max(8, Math.round(peak * 100)));
+        }
+
+        setWaveform(bars);
+        setAudioDuration(decoded.duration);
+      } finally {
+        await context.close();
+      }
+    } catch (error) {
+      console.error('Waveform generation failed:', error);
+      setWaveform([]);
+    }
+  };
+
+  const startRecording = async () => {
+    setErrorMessage('');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setErrorMessage(
+        isOromo
+          ? 'Browser kun microphone recording hin deeggaru. HTTPS fayyadami.'
+          : 'Microphone recording is not supported. Use HTTPS and a supported browser.'
+      );
+      return;
+    }
+
+    if (typeof MediaRecorder === 'undefined') {
+      setErrorMessage('MediaRecorder is not supported by this browser.');
+      return;
+    }
+
+    try {
+      clearAudio();
+      chunksRef.current = [];
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      streamRef.current = stream;
+      const mimeType = getSupportedMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
+      recorderRef.current = recorder;
+
+      recorder.ondataavailable = event => {
+        if (event.data && event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        setErrorMessage(
+          isOromo
+            ? 'Dogoggorri waraabbii sagalee uumame.'
+            : 'An error occurred while recording audio.'
+        );
+        setIsRecording(false);
+        releaseAudioResources();
+      };
+
+      recorder.onstop = async () => {
+        const finalType = recorder.mimeType || mimeType || 'audio/webm';
+        const blob = new Blob(chunksRef.current, { type: finalType });
+
+        releaseAudioResources();
+        setIsRecording(false);
+
+        if (!blob.size) {
+          setErrorMessage(
+            isOromo
+              ? "Sagaleen hin waraabamne. Irra deebi'i."
+              : 'No audio was recorded. Please try again.'
+          );
+          return;
+        }
+
+        const url = URL.createObjectURL(blob);
+        audioUrlRef.current = url;
+
+        setAudioBlob(blob);
+        setAudioMimeType(finalType);
+        setAudioUrl(url);
+
+        await generateWaveform(blob);
+      };
+
+      recorder.start(1000);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+    } catch (error: any) {
+      console.warn('Microphone access notice:', error?.name || error?.message || error);
+      setErrorMessage(
+        isOromo
+          ? 'Microphone hayyama hin arganne. Hayyama microphone browser keessatti kenni.'
+          : 'Microphone access denied or unavailable. Allow microphone permission.'
+      );
+      releaseAudioResources();
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+  };
+
+  const togglePlayback = async () => {
+    const audio = audioRef.current;
+    if (!audio || !audioUrl) return;
+
+    try {
+      if (audio.paused) {
+        await audio.play();
+        setIsPlaying(true);
+      } else {
+        audio.pause();
+        setIsPlaying(false);
+      }
+    } catch (error) {
+      console.error('Audio playback failed:', error);
+      setErrorMessage(
+        isOromo
+          ? 'Sagalee taphachiisuu hin dandeenye.'
+          : 'Unable to play the recorded audio.'
+      );
+    }
+  };
+
+  const seekAudio = (seconds: number) => {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(audio.duration)) return;
+    const safeTime = Math.max(0, Math.min(seconds, audio.duration));
+    audio.currentTime = safeTime;
+    setAudioProgress(safeTime);
+  };
+
+  const handleWaveformClick = (index: number) => {
+    if (!audioDuration || !waveform.length) return;
+    const ratio = index / Math.max(1, waveform.length - 1);
+    seekAudio(ratio * audioDuration);
+  };
+
+  const handleGenerateHearingSummary = async () => {
+    if (!statementText.trim()) {
+      alert(isOromo ? 'Mee dura qabiyyee ragaa barreessi ykn waraabi.' : 'Please enter or dictate witness testimony text first.');
+      return;
+    }
+    setIsAnalyzingSummary(true);
+    try {
+      const res = await generateLegalContent({
+        prompt: `Analyze the following witness testimony / hearing transcript. Extract key factual points and identify any potential legal contradictions or discrepancies.\n\nTranscript:\n"${statementText}"\n\nProvide the response in structured bullet points with two sections:\n1. KEY POINTS:\n2. LEGAL CONTRADICTIONS:`,
+        outputLanguages: [currentLang],
+        taskType: 'summarize',
+      });
+
+      const content = res.content || res.separatedVersions?.[currentLang] || 'Summary generated successfully.';
+      
+      const kpMatches = content.match(/KEY POINTS:?([\s\S]*?)(?=LEGAL CONTRADICTIONS:|$)/i);
+      const lcMatches = content.match(/LEGAL CONTRADICTIONS:?([\s\S]*)/i);
+
+      const keyPoints = kpMatches && kpMatches[1] 
+        ? kpMatches[1].split('\n').map(l => l.replace(/^[-*•\d.]+\s*/, '').trim()).filter(Boolean)
+        : [content];
+      const legalContradictions = lcMatches && lcMatches[1]
+        ? lcMatches[1].split('\n').map(l => l.replace(/^[-*•\d.]+\s*/, '').trim()).filter(Boolean)
+        : ['No major contradictions detected in this snippet.'];
+
+      setHearingSummaryResult({
+        keyPoints: keyPoints.length > 0 ? keyPoints : [content],
+        legalContradictions: legalContradictions.length > 0 ? legalContradictions : ['None identified']
+      });
+      setIsSummaryCollapsed(false);
+    } catch (err: any) {
+      console.error(err);
+      alert('AI Summarization failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsAnalyzingSummary(false);
+    }
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!witnessName.trim() || !statementText.trim()) return;
+
+    if (isRecording) {
+      setErrorMessage(
+        isOromo
+          ? 'Jalqaba waraabbii sagalee dhaabi.'
+          : 'Please stop recording before saving.'
+      );
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorMessage('');
+
+    const newTestimony: WitnessTestimonyItem = {
+      id: `wit_${Date.now()}`,
+      witnessName: witnessName.trim(),
+      witnessRole,
+      statementText: statementText.trim(),
+      timestamp: new Date().toISOString(),
+      audioTimestampSeconds: audioProgress,
+      milestoneStageId: milestoneStage,
+      crossExaminationNotes: crossNotes.trim(),
+      credibilityRating: credibility,
+      ...(audioBlob
+        ? {
+            audioBlob,
+            audioMimeType,
+            audioDurationSeconds: audioDuration
+          }
+        : {})
+    };
+
+    try {
+      await onSaveTestimony(newTestimony);
+
+      setWitnessName('');
+      setStatementText('');
+      setCrossNotes('');
+      setCredibility('high');
+      setMilestoneStage('stage_4_evidence');
+
+      releaseAudioResources();
+      clearAudio();
+      onClose();
+    } catch (error) {
+      console.error('Saving testimony failed:', error);
+      setErrorMessage(
+        isOromo
+          ? 'Ragaa galmeessuun hin milkoofne. Irra deebi\'i yaali.'
+          : 'Could not save the testimony. Please try again.'
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleClose = () => {
+    if (isRecording) {
+      const recorder = recorderRef.current;
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.stop();
+      }
+    }
+    releaseAudioResources();
+    clearAudio();
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[32px] bg-slate-900 border-2 border-amber-500/40 shadow-2xl p-6 sm:p-8 space-y-6">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-2xl font-black">
+              🎙️
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-white">
+                {isOromo ? 'Galmeessa Ragaa Namaa' : 'Witness Testimony Recording'}
+              </h3>
+              <p className="text-xs font-bold text-amber-400">
+                Case: {activeCaseNumber}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-10 h-10 rounded-full hover:bg-slate-800 flex items-center justify-center text-slate-400 transition-colors cursor-pointer"
+            aria-label="Close"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {errorMessage && (
+            <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-2xl flex items-center gap-3 text-rose-400 text-xs font-bold">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-black text-slate-400 uppercase mb-1 block">
+                {isOromo ? 'Maqaa Ragaa' : 'Witness Name'}
+              </label>
+              <input
+                type="text"
+                value={witnessName}
+                onChange={e => setWitnessName(e.target.value)}
+                placeholder="Obbo / Addee..."
+                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-black text-slate-400 uppercase mb-1 block">
+                {isOromo ? 'Gosa Ragaa' : 'Witness Category'}
+              </label>
+              <select
+                value={witnessRole}
+                onChange={e =>
+                  setWitnessRole(e.target.value as WitnessTestimonyItem['witnessRole'])
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-amber-400 font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
+              >
+                <option value="plaintiff_witness">Ragaa Himataa</option>
+                <option value="defendant_witness">Ragaa Himatamaa</option>
+                <option value="expert_witness">Ragaa Ogeessaa</option>
+                <option value="court_witness">Ragaa Mana Murtii</option>
+              </select>
+            </div>
+          </div>
+
+          {/* AUDIO RECORDER SECTION */}
+          <div className="bg-slate-950 border-2 border-amber-500/30 rounded-3xl p-5 space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-black text-amber-400 uppercase tracking-wider">
+                {isOromo ? 'Sagalee Dhugaa Waraabbiif' : 'Court Audio Recording'}
+              </span>
+              <span className="text-xs font-mono text-white">
+                {isRecording
+                  ? formatTime(recordingSeconds)
+                  : `${formatTime(audioProgress)} / ${formatTime(audioDuration)}`}
+              </span>
+            </div>
+
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={isRecording ? stopRecording : startRecording}
+                className={`w-full py-4 rounded-2xl font-black flex items-center justify-center gap-3 transition-colors cursor-pointer ${
+                  isRecording
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/30'
+                    : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/20'
+                }`}
+              >
+                {isRecording ? (
+                  <>
+                    <MicOff className="w-5 h-5 animate-pulse" />
+                    {isOromo ? 'Waraabbii Dhaabi' : 'Stop Recording'}
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-5 h-5" />
+                    {isOromo ? 'Sagalee Waraabi' : 'Start Recording'}
+                  </>
+                )}
+              </button>
+            </div>
+
+            {isRecording && (
+              <p className="text-center text-rose-400 text-xs font-bold animate-pulse">
+                ● {isOromo ? 'Sagaleen amma waraabamaa jira...' : 'Recording in progress...'}
+              </p>
+            )}
+
+            {!isRecording && audioUrl && (
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-emerald-400 font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                    {isOromo ? 'Sagaleen waraabameera' : 'Audio recorded successfully'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={clearAudio}
+                    className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    {isOromo ? "Irra deebi'i" : 'Discard'}
+                  </button>
+                </div>
+
+                {/* Waveform Visualization */}
+                <div className="flex items-center justify-between gap-[3px] h-20 bg-slate-900 px-3 rounded-2xl border border-slate-800 transition-all duration-300 hover:scale-[1.02] hover:border-amber-500/60 hover:shadow-xl">
+                  {waveform.length > 0 ? (
+                    waveform.map((height, index) => {
+                      const played =
+                        index / waveform.length <=
+                        (audioDuration ? audioProgress / audioDuration : 0);
+
+                      return (
+                        <button
+                          key={index}
+                          type="button"
+                          aria-label={`Seek audio to segment ${index + 1}`}
+                          onClick={() => handleWaveformClick(index)}
+                          className={`flex-1 min-w-0 rounded-full transition-colors cursor-pointer ${
+                            played ? 'bg-amber-400' : 'bg-slate-700 hover:bg-slate-500'
+                          }`}
+                          style={{
+                            height: `${Math.max(8, height)}%`
+                          }}
+                        />
+                      );
+                    })
+                  ) : (
+                    <span className="text-xs text-slate-400 mx-auto">
+                      {isOromo ? 'Waveform hin argamne; garuu sagaleen ni taphata.' : 'Waveform unavailable; audio is still playable.'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Scrub slider */}
+                <input
+                  type="range"
+                  min="0"
+                  max={audioDuration || 1}
+                  step="0.1"
+                  value={Math.min(audioProgress, audioDuration || 0)}
+                  onChange={e => seekAudio(Number(e.target.value))}
+                  className="w-full accent-amber-500 cursor-pointer"
+                />
+
+                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                  <span>{formatTime(audioProgress)}</span>
+                  <span>{formatTime(audioDuration)}</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={togglePlayback}
+                  className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-black flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  {isPlaying ? (
+                    <>
+                      <Pause className="w-5 h-5" />
+                      {isOromo ? 'Dhaabi' : 'Pause Audio'}
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-5 h-5" />
+                      {isOromo ? 'Sagalee Dhaggeeffadhu' : 'Play Audio'}
+                    </>
+                  )}
+                </button>
+
+                <audio
+                  ref={audioRef}
+                  src={audioUrl}
+                  onTimeUpdate={e => setAudioProgress(e.currentTarget.currentTime)}
+                  onLoadedMetadata={e => {
+                    const duration = e.currentTarget.duration;
+                    if (Number.isFinite(duration)) {
+                      setAudioDuration(duration);
+                    }
+                  }}
+                  onEnded={() => {
+                    setIsPlaying(false);
+                    setAudioProgress(0);
+                  }}
+                  onPause={() => setIsPlaying(false)}
+                  onPlay={() => setIsPlaying(true)}
+                  className="hidden"
+                />
+              </div>
+            )}
+
+            {!isRecording && !audioUrl && (
+              <p className="text-xs text-slate-400 text-center py-2">
+                {isOromo
+                  ? 'Sagalee waraabuuf qabduu gubbaa fayyadami (filannoodha).'
+                  : 'Click the button above to start recording live testimony (optional).'}
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-black text-slate-400 uppercase mb-1 block">
+                {isOromo ? 'Sadarkaa Beellamaa' : 'Milestone Stage'}
+              </label>
+              <select
+                value={milestoneStage}
+                onChange={e => setMilestoneStage(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
+              >
+                <option value="stage_1_opening">Stage 1: Opening & Identification</option>
+                <option value="stage_2_objections">Stage 2: Preliminary Objections (Art. 244)</option>
+                <option value="stage_3_issues">Stage 3: Framing of Issues (Art. 246)</option>
+                <option value="stage_4_evidence">Stage 4: Production of Evidence & Witness Hearing</option>
+                <option value="stage_5_judgment">Stage 5: Closing Arguments & Judgment</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-black text-slate-400 uppercase mb-1 block">
+                {isOromo ? 'Amanamummaa Ragaa' : 'Credibility Assessment'}
+              </label>
+              <select
+                value={credibility}
+                onChange={e =>
+                  setCredibility(e.target.value as WitnessTestimonyItem['credibilityRating'])
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-xs text-emerald-400 font-bold focus:outline-none focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="high">High Credibility / Corroborated</option>
+                <option value="moderate">Moderate / Minor Discrepancies</option>
+                <option value="questionable">Questionable / Contradicted</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-black text-slate-400 uppercase mb-1 block">
+              {isOromo ? 'Qabiyyee Jecha Ragaa (Transcript)' : 'Testimony Statement / Transcript'}
+            </label>
+            <textarea
+              ref={transcriptTextareaRef}
+              value={statementText}
+              onChange={e => setStatementText(e.target.value)}
+              placeholder={isOromo ? 'Yaada ragaa kennuu barreessi...' : 'Enter witness sworn testimony statement and transcript...'}
+              className="w-full h-32 bg-slate-950 border border-slate-700 rounded-2xl p-4 text-xs font-medium text-white focus:outline-none focus:border-amber-500 resize-none scroll-smooth"
+              required
+            />
+
+            {/* AI Hearing Summary Trigger Button */}
+            <div className="mt-2.5 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleGenerateHearingSummary}
+                disabled={isAnalyzingSummary || !statementText.trim()}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-[10px] uppercase tracking-wider shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <Sparkles className="w-4 h-4 text-slate-950" />
+                <span>{isAnalyzingSummary ? 'AI Analyzing Testimony & Contradictions...' : '✨ AI Summarize Testimony & Extract Contradictions'}</span>
+              </button>
+            </div>
+
+            {/* Collapsible Hearing Summary Panel */}
+            {hearingSummaryResult && (
+              <div className="mt-4 bg-slate-900 border-2 border-amber-500/40 rounded-2xl p-4 space-y-3 animate-in fade-in shadow-xl">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-amber-400 font-black text-xs uppercase tracking-tight">📋 Hearing Summary & Contradiction Analysis</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsSummaryCollapsed(!isSummaryCollapsed)}
+                      className="text-[10px] font-bold text-slate-400 hover:text-white uppercase px-2 py-0.5 rounded bg-slate-800 cursor-pointer"
+                    >
+                      {isSummaryCollapsed ? 'Expand ▾' : 'Collapse ▴'}
+                    </button>
+                  </div>
+                </div>
+
+                {!isSummaryCollapsed && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-1">
+                    <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                      <span className="text-[10px] font-black text-amber-400 uppercase tracking-wider block">Key Points Extracted</span>
+                      <ul className="list-disc list-inside space-y-1.5 text-slate-300 font-medium">
+                        {hearingSummaryResult.keyPoints.map((kp, idx) => (
+                          <li key={idx} className="leading-relaxed">{kp}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="bg-slate-950 p-3.5 rounded-xl border border-rose-500/30 space-y-2">
+                      <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider block">Potential Legal Contradictions</span>
+                      <ul className="list-disc list-inside space-y-1.5 text-rose-200 font-medium">
+                        {hearingSummaryResult.legalContradictions.map((lc, idx) => (
+                          <li key={idx} className="leading-relaxed">{lc}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs font-black text-slate-400 uppercase mb-1 block">
+              {isOromo ? 'Gaaffii Qaxxaamuraa (Cross-Exam Notes)' : 'Cross-Examination Notes'}
+            </label>
+            <input
+              type="text"
+              value={crossNotes}
+              onChange={e => setCrossNotes(e.target.value)}
+              placeholder="Notes on cross-examination by opposing counsel..."
+              className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-xs text-white focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <div className="flex gap-4 pt-4 border-t border-slate-800">
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="flex-1 py-4 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black rounded-2xl uppercase text-xs transition-all shadow-xl shadow-amber-500/20 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 className="w-5 h-5" />
+              <span>{isSaving ? 'Saving Testimony...' : (isOromo ? 'Galmeessi' : 'Save Testimony')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="px-6 py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl text-xs uppercase cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};

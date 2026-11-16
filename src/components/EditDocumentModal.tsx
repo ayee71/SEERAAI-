@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Save, ShieldCheck, Clock, Wifi, WifiOff, CheckCircle, Cloud, Loader2, AlertCircle } from 'lucide-react';
+import { X, Save, ShieldCheck, Clock, Wifi, WifiOff, CheckCircle, Cloud, Loader2, AlertCircle, Share2, MessageSquare } from 'lucide-react';
 import { Language, translations } from '../i18n/translations';
 import { SavedLegalDocument, updateDocument } from '../services/storage';
 import { SmartCitationLinker } from './SmartCitationLinker';
 import { LegalDictationToolbar } from './LegalDictationToolbar';
+import { AnnotationTool } from './AnnotationTool';
+import { VoiceRecordButton } from './VoiceRecordButton';
 import { useFirestoreAutoSave } from '../hooks/useFirestoreAutoSave';
 
 interface EditDocumentModalProps {
@@ -23,6 +25,7 @@ export const EditDocumentModal: React.FC<EditDocumentModalProps> = ({
   const [title, setTitle] = useState(doc.title);
   const [content, setContent] = useState(doc.content);
   const [isSaving, setIsSaving] = useState(false);
+  const [showAnnotations, setShowAnnotations] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const [isOnline, setIsOnline] = useState<boolean>(
     typeof navigator !== 'undefined' ? navigator.onLine : true
@@ -85,6 +88,27 @@ export const EditDocumentModal: React.FC<EditDocumentModalProps> = ({
       console.error('Failed to save document:', error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleShareDocument = async () => {
+    const shareData = {
+      title: title,
+      text: `SEERAAI PRO - Legal Precedent & Annotation\nMata-duree: ${title}\n\n${content.slice(0, 400)}...\n\n(Shared via SEERAAI Pro Legal Archive)`,
+      url: window.location.href,
+    };
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share(shareData);
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(`${shareData.title}\n\n${shareData.text}\n\n${shareData.url}`);
+        alert(currentLang === 'om' ? "Liinkii fi qabiyyeen sanadaa clipboarditti qabameera!" : "Document details copied to clipboard!");
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.error("Share failed:", err);
+      }
     }
   };
 
@@ -157,9 +181,20 @@ export const EditDocumentModal: React.FC<EditDocumentModalProps> = ({
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                Mata-duree Sanadaa / Document Title
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Mata-duree Sanadaa / Document Title
+                </label>
+                <VoiceRecordButton
+                  currentLang={currentLang}
+                  currentValue={title}
+                  onValueChange={setTitle}
+                  onTranscription={(verbatim) => setTitle(verbatim)}
+                  size="sm"
+                  mode="icon-only"
+                  label={currentLang === 'om' ? 'Mata-duree sagaleen galchi' : 'Voice Title'}
+                />
+              </div>
               <input
                 type="text"
                 required
@@ -175,6 +210,17 @@ export const EditDocumentModal: React.FC<EditDocumentModalProps> = ({
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
                   Qabiyyee Seeraa / Legal Content
                 </label>
+                <VoiceRecordButton
+                  currentLang={currentLang}
+                  targetRef={contentRef}
+                  currentValue={content}
+                  onValueChange={setContent}
+                  onTranscription={(verbatim) => {
+                    setContent((prev) => (prev ? `${prev}\n\n${verbatim}` : verbatim));
+                  }}
+                  size="sm"
+                  label={currentLang === 'om' ? 'Sagalee Waraabi' : currentLang === 'am' ? 'በድምፅ ቅዳ' : 'Record Audio'}
+                />
               </div>
 
               {/* Device Microphone Legal Dictation Toolbar */}
@@ -198,6 +244,43 @@ export const EditDocumentModal: React.FC<EditDocumentModalProps> = ({
                 onInsert={(insertedText) => setContent((prev) => (prev ? `${prev}\n\n${insertedText}` : insertedText))}
                 currentLang={currentLang}
               />
+
+              {/* Collaborative Commenting & Section Highlights Toggle */}
+              <div className="pt-3 border-t border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setShowAnnotations(!showAnnotations)}
+                  className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer border ${
+                    showAnnotations
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-amber-400" />
+                    <span>
+                      {currentLang === 'om'
+                        ? '💬 Yaaddannoo & Yaada Timii (Collaborative Review Comments)'
+                        : currentLang === 'am'
+                        ? '💬 የቡድን አስተያየቶች እና ማስታወሻዎች'
+                        : '💬 Team Review & Collaborative Comments'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-amber-300">
+                    {showAnnotations ? 'Cufi / Hide' : 'Bani / Open'}
+                  </span>
+                </button>
+
+                {showAnnotations && (
+                  <div className="mt-3 p-4 bg-slate-950/90 border border-amber-500/30 rounded-2xl animate-in fade-in duration-200">
+                    <AnnotationTool
+                      documentId={doc.id}
+                      currentLang={currentLang}
+                      documentText={content}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -209,6 +292,15 @@ export const EditDocumentModal: React.FC<EditDocumentModalProps> = ({
             </div>
             
             <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleShareDocument}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
+                title="Share annotated precedent with colleagues"
+              >
+                <Share2 className="w-4 h-4 text-amber-400" />
+                <span>Qoodi / Share</span>
+              </button>
               <button
                 type="button"
                 onClick={onClose}

@@ -1,0 +1,236 @@
+import express, { Request, Response } from ‘express’; import { Telegraf
+} from ‘telegraf’; import { timingSafeEqual } from ‘node:crypto’;
+
+// ===================================================== // 1.
+ENVIRONMENT CONFIGURATION //
+=====================================================
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN; const
+TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
+
+if (!TELEGRAM_BOT_TOKEN) { throw new Error(‘TELEGRAM_BOT_TOKEN is
+missing’); }
+
+if (!TELEGRAM_WEBHOOK_SECRET) { throw new Error(‘TELEGRAM_WEBHOOK_SECRET
+is missing’); }
+
+// ===================================================== // 2. LEGAL AI
+SERVICES // =====================================================
+
+// Functions kana project SEERAAI keessan keessatti // duraan jiran
+waliin walitti hidhaa.
+
+import { retrieveLegalGrounding, generateAIAnswer } from
+‘./legal-ai.js’;
+
+// ===================================================== // 3.
+TRILINGUAL SYSTEM INSTRUCTION //
+=====================================================
+
+const TRILINGUAL_SYSTEM_INSTRUCTION = ` Ati SEERAAI Bot dha.
+
+Gargaaraa seeraa AI Federaalaa Itoophiyaa fi Naannoo Oromiyaa ti.
+
+KAAYYOO: Deebii seeraa sirrii, ragaa irratti hundaa’e, amanamaa fi afaan
+fayyadamaan gaafateen kennuu.
+
+AFAN: Afaan Oromoo, Afaan Amaaraa fi English deeggaruu qabda.
+
+SEERALEE DEEBII: 1. Afaan fayyadamaan ittiin gaafateen deebisi. 2. Ibsa
+gabaabaa kenni. 3. Xiinxala seeraa bal’inaan kenni. 4. Labsii, keeyyata
+fi qajeeltoo seeraa madda ragaa qabatamaa irraa caqasi. 5. Furmaata fi
+tarkaanfii seeraa ibsi. 6. Akeekkachiisa seeraa kenni.
+
+SEERA RAGAA: - Keeyyata seeraa hin mirkanoofne hin uumini. - Lakkoofsa
+labsii, murtii fi keeyyata ragaa hin qabne hin caqasin. - Madda seeraa
+yoo hin arganne ifatti ibsi. - Seerri durii fi seerri haaraan adda ta’uu
+isaanii yeroo barbaachisutti hubadhu. - Seera Federaalaa fi seera
+Oromiyaa walitti hin makiin. - Dhimmicha irratti aangoo mana murtii,
+yeroo seeraa fi jijjiirama seeraa ilaali. - RAG keessatti ragaan hin
+jirre yoo ta’e beekumsa waliigalaa ragaa qabatamaa fakkeessitee hin
+dhiheessin.
+
+CAASAA DEEBII:
+
+1.  Ibsa Gabaabaa
+2.  Xiinxala Seeraa
+3.  Labsii fi Keeyyata Rogummaa Qabu
+4.  Furmaata / Tarkaanfii
+5.  Akeekkachiisa
+
+Akeekkachiisa: “Kun hubannoo seeraatiif kan qophaa’e qofa; gorsa ogeessa
+seeraa (abukaatoo) bakka hin bu’u.”
+
+Deebii qulqullina qabu, ifa ta’e fi ogummaa seeraa eeggate kenni. `;
+
+// ===================================================== // 4. EXPRESS
+AND TELEGRAM BOT //
+=====================================================
+
+export const app = express();
+
+app.use(express.json({ limit: ‘1mb’ }));
+
+const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
+
+// ===================================================== // 5. WEBHOOK
+SECRET VALIDATION //
+=====================================================
+
+function verifyWebhookSecret(received: string): boolean { if (!received
+|| !TELEGRAM_WEBHOOK_SECRET) { return false; }
+
+const receivedBuffer = Buffer.from(received); const expectedBuffer =
+Buffer.from( TELEGRAM_WEBHOOK_SECRET );
+
+if (receivedBuffer.length !== expectedBuffer.length) { return false; }
+
+return timingSafeEqual(receivedBuffer, expectedBuffer); }
+
+// ===================================================== // 6. TELEGRAM
+MESSAGE CHUNKING //
+=====================================================
+
+function splitMessage( message: string, maxLength = 3500 ): string[] {
+const chunks: string[] = []; let remaining = message.trim();
+
+while (remaining.length > maxLength) { let splitAt =
+remaining.lastIndexOf( ‘’, maxLength );
+
+    if (splitAt < maxLength * 0.5) {
+      splitAt = remaining.lastIndexOf(
+        ' ',
+        maxLength
+      );
+    }
+
+    if (splitAt < 1) {
+      splitAt = maxLength;
+    }
+
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt).trim();
+
+}
+
+if (remaining.length > 0) { chunks.push(remaining); }
+
+return chunks; }
+
+// ===================================================== // 7. LEGAL
+QUESTION HANDLER //
+=====================================================
+
+bot.on(‘text’, async (ctx) => { const userQuery =
+ctx.message.text.trim();
+
+if (!userQuery) { await ctx.reply(‘Maaloo gaaffii keessan barreessaa.’);
+return; }
+
+if (userQuery.length > 10000) { await ctx.reply( ‘Gaaffiin keessan
+baayyee dheeraa dha.’ + ‘Maaloo gabaabsaa ergaa.’ ); return; }
+
+try { await ctx.sendChatAction(‘typing’);
+
+    // STEP 1: Retrieve legal documents
+
+    const ragGrounding =
+      await retrieveLegalGrounding(userQuery);
+
+    // STEP 2: Generate grounded AI answer
+
+    const aiResponse = await generateAIAnswer({
+      prompt: userQuery,
+      context: ragGrounding,
+      systemInstruction:
+        TRILINGUAL_SYSTEM_INSTRUCTION
+    });
+
+    const responseText =
+      typeof aiResponse === 'string'
+        ? aiResponse
+        : aiResponse?.text;
+
+    if (
+      typeof responseText !== 'string' ||
+      !responseText.trim()
+    ) {
+      throw new Error('AI returned an empty response');
+    }
+
+    // STEP 3: Split long responses
+
+    const chunks = splitMessage(responseText);
+
+    // STEP 4: Send answer to Telegram
+
+    for (const chunk of chunks) {
+      await ctx.reply(chunk);
+    }
+
+} catch (error) { console.error( ‘SEERAAI Legal AI Error:’, error );
+
+    try {
+      await ctx.reply(
+        'Dhiifama, yeroo ammaa deebii seeraa ' +
+        'qopheessuu hin dandeenye. Maaloo ' +
+        'yeroo muraasa booda irra deebi\'aa.'
+      );
+    } catch (replyError) {
+      console.error(
+        'Telegram reply error:',
+        replyError
+      );
+    }
+
+} });
+
+// ===================================================== // 8. NON-TEXT
+MESSAGE HANDLER // =====================================================
+
+bot.on(‘message’, async (ctx) => { await ctx.reply( ‘Maaloo gaaffii
+seeraa keessan barreeffamaan ergaa.’ + ‘Deeggarsi suuraa fi sagalee yoo
+barbaachise’ + ‘moduulii isaanii addatti walitti hidhaa.’ ); });
+
+// ===================================================== // 9. TELEGRAM
+WEBHOOK ENDPOINT //
+=====================================================
+
+app.post( ‘/api/telegram/webhook’, async (req: Request, res: Response)
+=> { const receivedSecret = req.get(‘X-Telegram-Bot-Api-Secret-Token’)
+|| ’’;
+
+    if (!verifyWebhookSecret(receivedSecret)) {
+      res.sendStatus(401);
+      return;
+    }
+
+    try {
+      await bot.handleUpdate(req.body);
+      res.sendStatus(200);
+
+    } catch (error) {
+      console.error(
+        'Telegram Webhook Error:',
+        error
+      );
+
+      res.sendStatus(500);
+    }
+
+} );
+
+// ===================================================== // 10. HEALTH
+CHECK // =====================================================
+
+app.get(‘/api/telegram/health’, (_req, res) => { res.status(200).json({
+ok: true, service: ‘SEERAAI Telegram Bot’, mode: ‘webhook’, status:
+‘running’ }); });
+
+// ===================================================== // 11. EXPORT
+APP // =====================================================
+
+// Cloud Run / Express deployment. // bot.launch() hin barbaachisu. //
+Webhook mode qofa fayyadami.
+
+export default app;

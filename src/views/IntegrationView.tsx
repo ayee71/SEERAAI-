@@ -113,9 +113,9 @@ export const IntegrationView: React.FC<IntegrationViewProps> = ({
       step: 4,
       emoji: '⚡',
       title: {
-        om: '4. Gemini High-Availability Engine & Dursaa Ofumaa (Failover Inference)',
+        om: '4. Gemini Engine & Dursaa Ofumaa (Failover Inference)',
         am: '4. የGemini ሞዴል እና ፈጣን ምትክ አሰራር (Failover Engine)',
-        en: '4. High-Availability Gemini Inference with Intelligent Failover',
+        en: '4. Gemini Inference with Intelligent Failover',
       },
       summary: {
         om: 'Saffisa sekondii tokko gadiin deebii kennuuf `gemini-flash-lite-latest` fi `gemini-3.1-flash-lite` fayyadama; yoo tokko quotiin dhibame kan biraatti ofumaan ce\'a.',
@@ -447,7 +447,7 @@ export const IntegrationView: React.FC<IntegrationViewProps> = ({
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-slate-500">Availability SLA</span>
-                  <span className="text-emerald-400">99.98% High Availability</span>
+                  <span className="text-emerald-400">Active Cloud SLA</span>
                 </div>
               </div>
             </div>

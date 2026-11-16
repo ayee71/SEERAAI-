@@ -1,0 +1,165 @@
+SEERAAI PRO — PHASE 8B.6.5.1
+
+HASH RECONCILIATION & PACKAGE MANIFEST/LOCKFILE VERIFICATION
+
+READ-ONLY FIRST — NO PRODUCTION CHANGES
+
+Inspect the actual current repository files. Do not rely on previous reports or copied snippets.
+
+A. Verify SHA256SUMS.txt
+
+Recompute SHA-256 from the actual current bytes of:
+
+- firestore.rules.phase8b5.3.integrated.candidate
+- storage.rules.phase8b5.4.integrated.candidate
+- firebase.emulator.test.json
+- .github/workflows/rules-test.yml
+- tests/firestore.rules.test.ts
+- tests/storage.rules.test.ts
+- package.json
+- package-lock.json
+
+Compare actual hashes with the current SHA256SUMS.txt.
+
+The Phase 8B.6.5 report claimed these hashes:
+
+- Firestore candidate: ce21a570e78b235b7abedd6fa792fede6b9fb8fb44f02fbb89e76086bbd362b4
+- Storage candidate: 593fb670233f7d21e15b507dcf8cc657df08b3d87861c43094e5ca32f4345997
+- Emulator config: b7b1596b913cfbded64ec367fb8297aa45fc405e6303cd7859ba0e1515a690ec
+- Workflow: 2fa68ae2b0146c4a999e7304a6a3dc89e6e15b31fc125454cc4316755f917f40
+- Firestore tests: 9d4da2ea451f05d27aea023abd82f41ebaa6bf71aa82d46eab3eaca5409a09cb
+- Storage tests: f40227c6eef57e9da52f37929f3e1901d7792d058320a22f1cf0b3be38a81401
+- package.json: aa46ec3ef28cf8d85e477ba8e3f72ad4aceb06b8c44aaa205e29d381ee6d3fad
+- package-lock.json: 1d44376dd8555febb16ca4fe3ac99140a8f9176683244b0ab833337d5eff3e65
+
+Do not assume these values are correct. Actual file bytes are authoritative.
+
+Report each actual hash and whether it matches the current SHA256SUMS.txt and the Phase 8B.6.5 report.
+
+B. Verify package.json against package-lock.json
+
+Read both complete files.
+
+Compare:
+
+- package name and version.
+- Every direct dependency and its declared version range.
+- Every devDependency and its declared version range.
+- package-lock root package metadata.
+- Node and npm engine requirements, if declared.
+- Firebase SDK and Firebase Admin SDK versions.
+- @firebase/rules-unit-testing version and peer compatibility.
+
+Identify every mismatch.
+
+Do not arbitrarily upgrade or downgrade Firebase, Firebase Admin, Vite, React, or other dependencies. Preserve the currently approved dependency versions unless there is evidence of an incompatibility.
+
+C. Verify npm CI installation
+
+In a non-production, isolated environment:
+
+1. Verify whether npm ci --legacy-peer-deps succeeds.
+2. Record the actual npm and Node versions.
+3. Capture the full installation output.
+4. Confirm that lockfile mismatch is not being hidden or confused with peer dependency conflicts.
+5. Do not claim success unless the command actually finishes with exit code 0.
+
+D. Controlled remediation only after inspection
+
+If package.json and package-lock.json differ:
+
+- Explain the exact differences first.
+- Determine which manifest represents the approved application dependency state.
+- Do not silently select newer dependency versions.
+- Make only the minimum necessary lockfile correction, and only on the candidate branch.
+- Re-run npm ci and the build/typecheck.
+- Recompute all hashes after every file modification.
+- Update SHA256SUMS.txt using actual current files.
+- Verify the checksum list with sha256sum -c SHA256SUMS.txt.
+
+Do not include the handoff ZIP itself in its own checksum list.
+
+E. Final report
+
+Provide:
+
+1. Actual Git branch and commit.
+2. Complete package.json/package-lock comparison.
+3. Actual npm ci result and exit code.
+4. Actual hashes and checksum verification output.
+5. List of files changed, if any.
+6. Build and typecheck results.
+7. Remaining blockers.
+
+STRICT RESTRICTIONS:
+
+- Do not push, merge, deploy, publish, or alter production Firebase.
+- Do not modify production rules or production data.
+- Do not claim GitHub Actions passed without an actual successful run.
+- If changes are made, regenerate the handoff ZIP and report its actual byte size and SHA-256.
+
+Final recommendation must be either:
+SAFE FOR CANDIDATE BRANCH PUSH
+or
+BLOCKED — FURTHER CORRECTION REQUIRED.
+
+
+==================================================================================
+
+
+SEERAAI PRO — PHASE 8B.6.6.1
+
+LEGACY STORAGE RULES IDENTIFICATION & CANDIDATE COMPARISON
+
+STRICT READ-ONLY AUDIT
+
+Inspect the exact Storage Rules source I provided.
+
+Determine whether this source is:
+
+1. The currently deployed production "storage.rules";
+2. The current repository "storage.rules";
+3. An older baseline file;
+4. Or a separate candidate file.
+
+Do not assume.
+
+Compare its complete content with:
+
+- "storage.rules.phase8b5.4.integrated.candidate"
+- "storage.rules.candidate"
+- The actual Storage Rules shown in the current Firebase project configuration.
+
+Report:
+
+- Exact file paths and SHA-256 hashes.
+- Git branch and commit containing each version.
+- Whether the production Storage Rules are identical to this source.
+- Whether the Phase 8B.6.5 candidate actually removes all the permissive conditions identified in this source.
+- Every path and operation in the existing app that depends on these rules.
+- Whether the candidate rules preserve existing legitimate workflows.
+- Any remaining cross-institution access or unauthorized document access.
+
+Pay special attention to:
+
+- "allow read: if true"
+- "allow write: if isSignedIn()"
+- email-based admin bypasses
+- unrestricted "/court_audio"
+- institution-wide "legal_docs" access
+- missing size, contentType and metadata validation
+- whether all writes and deletes are restricted to authorized roles.
+
+Do not change any file.
+Do not publish or deploy any rules.
+Do not modify production Firebase.
+Do not push, merge or commit.
+
+End with a clear result:
+"LEGACY RULES CONFIRMED"
+or
+"CURRENT PRODUCTION RULES CONFIRMED"
+or
+"SOURCE IDENTITY UNVERIFIED".
+
+Include exact evidence and line numbers.

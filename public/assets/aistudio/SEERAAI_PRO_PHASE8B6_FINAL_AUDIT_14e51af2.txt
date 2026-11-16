@@ -1,0 +1,61 @@
+SEERAAI PRO — PHASE 8B.6 FINAL AUDIT
+
+You are a senior Firebase Security Rules and CI/CD engineer.
+
+Work ONLY on the existing SEERAAI PRO repository. Do not create a replacement app or Firebase project.
+
+Mandatory safeguards
+
+- Preserve the existing app, users, Firebase project, Firestore database, Storage bucket, Cloud Run service, integrations and features.
+- Do not publish, deploy, migrate, delete or modify production Firebase Rules.
+- Do not expose or request credentials, API keys, tokens or private court documents.
+- Use only the isolated emulator project "demo-seeraai-test".
+- Work on branch "ci/rules-emulator-tests"; do not commit candidate rules to "main".
+- Inspect complete repository files before editing. Never reconstruct missing code from partial chat snippets.
+
+Required audit
+
+1. Inspect the complete Firestore and Storage candidate rules.
+2. Remove hard-coded email-based Admin exceptions.
+3. Do not treat anonymous authentication as email verification.
+4. Separate phone authentication from verified-email authentication.
+5. Verify trusted custom claims, tenant isolation and every actual application Storage/Firestore path.
+6. Review overlapping Firestore matches because allow permissions are additive.
+7. Review owner, judge, registrar, court_admin, assistant_judge, auditor and other roles actually used by the app.
+8. Verify the complete 20-case Firestore suite and 8-case Storage suite.
+9. Ensure tests load the exact candidate rules and fail when assertions or imports fail.
+10. Ensure the emulator configuration and GitHub Actions explicitly use "demo-seeraai-test".
+11. Ensure both emulator test suites execute and upload logs as CI artifacts.
+12. Compare "package.json" and "package-lock.json".
+
+Critical package mismatch to investigate
+
+The supplied snippets differ:
+
+- package.json: version 5.0.0, Firebase ^11.0.1, Firebase Admin ^13.0.0.
+- package-lock.json: version 0.0.0, Firebase ^13.2.0, Firebase Admin ^14.5.0.
+
+Do not arbitrarily upgrade or downgrade app dependencies. Inspect the actual repository, preserve its working dependency versions, add only necessary test dependencies and verify "npm ci".
+
+Hash verification
+
+Recompute SHA-256 from the actual final files. Regenerate and verify "SHA256SUMS.txt". Do not claim verification based only on a supplied hash list.
+
+Approval gate
+
+First provide a read-only inventory and findings report with exact file and line references. Then present proposed changes, risks and affected files. WAIT for explicit human approval before editing.
+
+After approval:
+
+- Make minimal changes on "ci/rules-emulator-tests".
+- Show complete diffs.
+- Run both emulator suites.
+- Record actual results and GitHub Actions evidence.
+- Prepare a draft PR to "main", but do not merge it.
+- Never deploy production rules or publish the app.
+
+Final report
+
+State PASS, BLOCKED or FAIL. Distinguish static review from tests actually executed. If a test cannot run, report BLOCKED, not PASS. Clearly identify remaining human approvals.
+
+Important: The code supplied in chat is incomplete. Inspect the complete repository. Never invent missing test cases, workflow steps or rules.

@@ -290,7 +290,7 @@ ${law.legalContextAndOrigin[currentLang]}
 ${law.ethiopianLawComparison[currentLang]}
 
 📜 ${labels.statutoryRef} ${law.statutoryReferenceOrPrecedent}
-🌐 SeeraAI Legal Platform (www.saorethio1.com)`;
+🌐 SeeraAI Legal Platform (www.saiethio.com)`;
 
     navigator.clipboard.writeText(textToCopy);
     setCopiedLawId(law.id);

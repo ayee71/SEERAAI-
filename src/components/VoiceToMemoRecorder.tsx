@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { Language, translations } from '../i18n/translations';
-import { generateLegalContent } from '../services/api';
+import { generateLegalContent, transcribeSpeechAudio } from '../services/api';
 
 export interface StructuredLegalMemo {
   id: string;
@@ -99,10 +99,13 @@ export const VoiceToMemoRecorder: React.FC<VoiceToMemoRecorderProps> = ({
 
   // Memo Generation State
   const [isOrganizingMemo, setIsOrganizingMemo] = useState(false);
+  const [isTranscribingAI, setIsTranscribingAI] = useState(false);
+  const [useHighAccuracy, setUseHighAccuracy] = useState(true);
   const [currentMemo, setCurrentMemo] = useState<StructuredLegalMemo | null>(null);
   const [memoDisplayLang, setMemoDisplayLang] = useState<Language>(currentLang);
   const [copiedMemo, setCopiedMemo] = useState(false);
   const [savedSuccessMsg, setSavedSuccessMsg] = useState<string | null>(null);
+  const [verbatimMode, setVerbatimMode] = useState<boolean>(false);
 
   // Memos History Archive
   const [savedMemos, setSavedMemos] = useState<StructuredLegalMemo[]>(() => {
@@ -261,6 +264,58 @@ export const VoiceToMemoRecorder: React.FC<VoiceToMemoRecorderProps> = ({
       recognitionRef.current?.stop();
     } catch (e) {
       console.warn('Recognition stop error:', e);
+    }
+
+    // If High Accuracy is enabled, process audio via Gemini
+    if (useHighAccuracy) {
+      processAiTranscription();
+    }
+  };
+
+  // Process AI Transcription using recorded audio chunks
+  const processAiTranscription = async () => {
+    if (audioChunksRef.current.length === 0) return;
+
+    setIsTranscribingAI(true);
+    setMicError(null);
+
+    try {
+      const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current?.mimeType || 'audio/webm' });
+      
+      // Convert to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onloadend = () => {
+          const base64String = reader.result as string;
+          resolve(base64String.split(',')[1]);
+        };
+      });
+      reader.readAsDataURL(audioBlob);
+      const base64Data = await base64Promise;
+
+      const response = await transcribeSpeechAudio({
+        audioData: base64Data,
+        mimeType: audioBlob.type,
+        language: speechDialect === 'om-ET' ? 'om' : speechDialect === 'am-ET' ? 'am' : 'en',
+        legalMode: true,
+        verbatimMode: verbatimMode,
+      });
+
+      if (response.transcription) {
+        setRawTranscript((prev) => {
+          const trimmed = prev.trim();
+          // If the browser transcript is significantly shorter, or we just want to prefer AI
+          return response.transcription;
+        });
+      }
+    } catch (err: any) {
+      console.error('AI Transcription error:', err);
+      // Don't set error if we already have some text from browser
+      if (!rawTranscript.trim()) {
+        setMicError(currentLang === 'om' ? 'Rakkoo gara barreeffamaatti jijjiiruu: ' + err.message : 'Transcription Error: ' + err.message);
+      }
+    } finally {
+      setIsTranscribingAI(false);
     }
   };
 
@@ -599,6 +654,44 @@ ENGLISH
               <option value="en-US">🇺🇸 English (en-US)</option>
             </select>
           </div>
+
+          {/* High Accuracy Mode Toggle */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setUseHighAccuracy(!useHighAccuracy)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all text-[10px] font-bold uppercase tracking-tighter ${
+                useHighAccuracy 
+                ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' 
+                : 'bg-slate-900 border-slate-700 text-slate-500'
+              }`}
+            >
+              <Sparkles className={`w-3 h-3 ${useHighAccuracy ? 'animate-pulse' : ''}`} />
+              <span>{currentLang === 'om' ? 'Qulqullina Olaanaa (AI)' : 'High Accuracy (AI)'}</span>
+              <div className={`w-6 h-3 rounded-full relative transition-all ${useHighAccuracy ? 'bg-emerald-500' : 'bg-slate-700'}`}>
+                <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${useHighAccuracy ? 'right-0.5' : 'left-0.5'}`}></div>
+              </div>
+            </button>
+          </div>
+
+          {/* Verbatim Mode Toggle */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setVerbatimMode(!verbatimMode)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all text-[10px] font-bold uppercase tracking-tighter ${
+                verbatimMode 
+                ? 'bg-rose-500/10 border-rose-500/50 text-rose-400' 
+                : 'bg-slate-900 border-slate-700 text-slate-500'
+              }`}
+            >
+              <Mic className={`w-3 h-3 ${verbatimMode ? 'animate-pulse' : ''}`} />
+              <span>{currentLang === 'om' ? 'Akkuma dubbatametti (Verbatim)' : 'Verbatim (Exact)'}</span>
+              <div className={`w-6 h-3 rounded-full relative transition-all ${verbatimMode ? 'bg-rose-500' : 'bg-slate-700'}`}>
+                <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${verbatimMode ? 'right-0.5' : 'left-0.5'}`}></div>
+              </div>
+            </button>
+          </div>
         </div>
 
         {/* Live Audio Visualizer Animation when recording */}
@@ -622,6 +715,26 @@ ENGLISH
                   }}
                 />
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* AI Transcribing State */}
+        {isTranscribingAI && (
+          <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between gap-4 animate-pulse">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <RotateCcw className="w-5 h-5 text-emerald-400 animate-spin" />
+                <Sparkles className="w-3 h-3 text-amber-400 absolute -top-1 -right-1" />
+              </div>
+              <span className="text-xs font-bold text-emerald-300">
+                {currentLang === 'om' ? 'AI\'n sagalee keessan gara barreeffamaatti jijjiiraa jira (High Accuracy Mode)...' : 'AI ድምጽዎን ወደ ጽሑፍ በመለወጥ ላይ ነው (ከፍተኛ ጥራት)...'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
             </div>
           </div>
         )}

@@ -165,7 +165,7 @@ export async function createSharedDraft(
     console.warn('LocalStorage draft cache error:', storageErr);
   }
 
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://www.saorethio1.com';
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://www.saiethio.com';
   const shareUrl = `${baseUrl}/?draftToken=${shareToken}`;
 
   return { draft: newDraft, shareUrl };

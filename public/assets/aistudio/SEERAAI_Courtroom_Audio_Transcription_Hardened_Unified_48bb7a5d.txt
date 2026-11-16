@@ -1,0 +1,1122 @@
+SEERAAI — COURTROOM AUDIO RECORDING & TRANSCRIPTION
+Unified hardened reference implementation
+Version: 3.0
+Target: TypeScript + React + Express + Firebase Admin + Google Gen AI SDK
+
+IMPORTANT HONESTY NOTE
+---------------------
+No source code can honestly be guaranteed "10/10" before it is compiled, tested in
+your exact SEERAAI repository, deployed, and security-reviewed. This package is
+designed as a substantially hardened reference implementation. The realistic
+pre-deployment target is 9.5/10. The remaining score depends on integration,
+provider limits, device/browser tests, court policy, and independent security
+testing.
+
+This is ONE DOCUMENT containing the files to create. It is NOT one TypeScript
+file. Copy each section into the exact path shown below.
+
+FILE MAP
+--------
+1. client/services/CourtroomAudioService.ts
+2. client/hooks/useCourtroomRecorder.ts
+3. server/middleware/requireCourtUser.ts
+4. server/routes/transcribe.ts
+5. server/app.ts (integration excerpt)
+6. shared/transcriptionSchemas.ts
+7. .env.example
+8. TESTING_AND_DEPLOYMENT.md
+
+CORE DESIGN DECISIONS
+---------------------
+- The browser records audio locally and returns a Blob.
+- Short clips may be sent as base64 to the API.
+- Long hearings must be uploaded to private Firebase Storage and processed by
+  an asynchronous job. Do NOT increase JSON body limits to accommodate hours
+  of audio.
+- Firebase ID tokens are verified server-side.
+- Institution, role, and case authorization are enforced through an explicit
+  authorization adapter. You MUST connect that adapter to your real Firestore
+  schema before deployment.
+- Original audio is preserved separately from the transcript.
+- A transcript is a draft and must be checked by an authorized human.
+- The model must mark uncertain speech rather than invent words.
+- Do not log audio, transcript text, credentials, or confidential case content.
+
+===============================================================================
+1. client/services/CourtroomAudioService.ts
+===============================================================================
+*/
+
+export type RecordingState = "idle" | "recording" | "paused" | "stopped";
+
+export interface AudioRecordingResult {
+  blob: Blob;
+  mimeType: string;
+  durationSeconds: number;
+  sizeBytes: number;
+}
+
+export interface CourtroomAudioCallbacks {
+  onStateChange?: (state: RecordingState) => void;
+  onDurationChange?: (seconds: number) => void;
+  onVolumeChange?: (dbFS: number) => void;
+  onError?: (error: Error) => void;
+}
+
+export interface CourtroomAudioOptions {
+  timesliceMs?: number;
+  audioBitsPerSecond?: number;
+  audioConstraints?: MediaTrackConstraints;
+  callbacks?: CourtroomAudioCallbacks;
+}
+
+type BrowserWindow = Window & {
+  webkitAudioContext?: typeof AudioContext;
+};
+
+export class CourtroomAudioService {
+  private stream: MediaStream | null = null;
+  private recorder: MediaRecorder | null = null;
+  private chunks: Blob[] = [];
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private source: MediaStreamAudioSourceNode | null = null;
+
+  private timerId: ReturnType<typeof setInterval> | null = null;
+  private volumeFrameId: number | null = null;
+  private elapsedMs = 0;
+  private segmentStartedAt: number | null = null;
+
+  private stopPromise: Promise<AudioRecordingResult | null> | null = null;
+  private resolveStop:
+    | ((result: AudioRecordingResult | null) => void)
+    | null = null;
+  private rejectStop: ((error: Error) => void) | null = null;
+
+  private callbacks: CourtroomAudioCallbacks;
+  private readonly options: CourtroomAudioOptions;
+  private disposed = false;
+
+  public state: RecordingState = "idle";
+  public durationSeconds = 0;
+
+  constructor(options: CourtroomAudioOptions = {}) {
+    this.options = {
+      timesliceMs: 1000,
+      audioBitsPerSecond: 128000,
+      ...options,
+    };
+    this.callbacks = options.callbacks ?? {};
+  }
+
+  public setCallbacks(callbacks: CourtroomAudioCallbacks): void {
+    this.callbacks = callbacks;
+  }
+
+  private setState(state: RecordingState): void {
+    this.state = state;
+    this.callbacks.onStateChange?.(state);
+  }
+
+  private toError(value: unknown): Error {
+    return value instanceof Error ? value : new Error(String(value));
+  }
+
+  private reportError(value: unknown): Error {
+    const error = this.toError(value);
+    this.callbacks.onError?.(error);
+    return error;
+  }
+
+  private chooseMimeType(): string | undefined {
+    if (typeof MediaRecorder === "undefined") return undefined;
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/mp4",
+      "audio/ogg;codecs=opus",
+      "audio/webm",
+    ];
+    return candidates.find((type) => MediaRecorder.isTypeSupported(type));
+  }
+
+  private async setupAnalyser(stream: MediaStream): Promise<void> {
+    const win = window as BrowserWindow;
+    const AudioContextCtor = win.AudioContext ?? win.webkitAudioContext;
+    if (!AudioContextCtor) return;
+
+    try {
+      const context = new AudioContextCtor();
+      this.audioContext = context;
+      if (context.state === "suspended") await context.resume();
+
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.75;
+      source.connect(analyser);
+
+      this.source = source;
+      this.analyser = analyser;
+    } catch {
+      await this.closeAudioContext();
+      // Audio metering is optional; the recording can still continue.
+    }
+  }
+
+  public async startRecording(): Promise<void> {
+    if (this.disposed) throw new Error("Audio service has been disposed.");
+    if (this.state === "recording" || this.state === "paused") {
+      throw new Error("Waraabbiin duraan adeemaa jira.");
+    }
+    if (
+      typeof window === "undefined" ||
+      !window.isSecureContext ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      throw new Error(
+        "Microphone fayyadamuuf HTTPS fi browser deeggaru barbaachisa.",
+      );
+    }
+    if (typeof MediaRecorder === "undefined") {
+      throw new Error("Browser kun MediaRecorder hin deeggaru.");
+    }
+
+    await this.releaseResources();
+    this.chunks = [];
+    this.elapsedMs = 0;
+    this.durationSeconds = 0;
+    this.segmentStartedAt = null;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: this.options.audioConstraints ?? {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      this.stream = stream;
+      await this.setupAnalyser(stream);
+
+      const mimeType = this.chooseMimeType();
+      const recorderOptions: MediaRecorderOptions = {
+        audioBitsPerSecond: this.options.audioBitsPerSecond ?? 128000,
+      };
+      if (mimeType) recorderOptions.mimeType = mimeType;
+
+      const recorder = new MediaRecorder(stream, recorderOptions);
+      this.recorder = recorder;
+
+      this.stopPromise = new Promise<AudioRecordingResult | null>(
+        (resolve, reject) => {
+          this.resolveStop = resolve;
+          this.rejectStop = reject;
+        },
+      );
+
+      recorder.addEventListener("dataavailable", (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) this.chunks.push(event.data);
+      });
+
+      recorder.addEventListener(
+        "error",
+        (event: Event) => {
+          const domEvent = event as Event & { error?: DOMException };
+          const error = this.reportError(
+            domEvent.error ?? new Error("MediaRecorder error."),
+          );
+          // Stop event is still responsible for finalizing the pending promise.
+          if (recorder.state !== "inactive") {
+            try {
+              recorder.stop();
+            } catch {
+              this.rejectStop?.(error);
+            }
+          } else {
+            this.rejectStop?.(error);
+          }
+        },
+        { once: true },
+      );
+
+      recorder.addEventListener(
+        "stop",
+        () => {
+          void this.finishRecording(recorder);
+        },
+        { once: true },
+      );
+
+      stream.getAudioTracks().forEach((track) => {
+        track.addEventListener(
+          "ended",
+          () => {
+            if (this.state === "recording" || this.state === "paused") {
+              this.reportError(new Error("Microphone connection addaan cite."));
+              void this.stopRecording();
+            }
+          },
+          { once: true },
+        );
+      });
+
+      recorder.start(Math.max(250, this.options.timesliceMs ?? 1000));
+      this.segmentStartedAt = performance.now();
+      this.setState("recording");
+      this.startTimer();
+      this.startVolumeMeter();
+    } catch (error) {
+      await this.releaseResources();
+      this.recorder = null;
+      this.resolveStop?.(null);
+      this.clearStopHandlers();
+      this.setState("idle");
+      throw this.reportError(error);
+    }
+  }
+
+  public pauseRecording(): void {
+    if (!this.recorder || this.state !== "recording") return;
+    try {
+      this.recorder.pause();
+      this.closeActiveSegment();
+      this.stopTimer();
+      this.stopVolumeMeter();
+      this.setState("paused");
+    } catch (error) {
+      this.reportError(error);
+    }
+  }
+
+  public resumeRecording(): void {
+    if (!this.recorder || this.state !== "paused") return;
+    try {
+      this.recorder.resume();
+      this.segmentStartedAt = performance.now();
+      this.setState("recording");
+      this.startTimer();
+      this.startVolumeMeter();
+    } catch (error) {
+      this.reportError(error);
+    }
+  }
+
+  public stopRecording(): Promise<AudioRecordingResult | null> {
+    if (this.stopPromise) {
+      if (this.recorder && this.recorder.state !== "inactive") {
+        this.closeActiveSegment();
+        this.stopTimer();
+        this.stopVolumeMeter();
+        try {
+          this.recorder.stop();
+        } catch (error) {
+          this.rejectStop?.(this.toError(error));
+        }
+      }
+      return this.stopPromise;
+    }
+    return Promise.resolve(null);
+  }
+
+  private async finishRecording(recorder: MediaRecorder): Promise<void> {
+    // Ignore stale stop events from a recorder replaced by a later session.
+    if (this.recorder !== recorder) return;
+
+    this.closeActiveSegment();
+    this.stopTimer();
+    this.stopVolumeMeter();
+
+    const mimeType =
+      recorder.mimeType || this.chunks[0]?.type || "application/octet-stream";
+    const blob =
+      this.chunks.length > 0
+        ? new Blob(this.chunks, { type: mimeType })
+        : null;
+
+    await this.releaseResources();
+    this.recorder = null;
+
+    const result: AudioRecordingResult | null = blob
+      ? {
+          blob,
+          mimeType,
+          durationSeconds: this.durationSeconds,
+          sizeBytes: blob.size,
+        }
+      : null;
+
+    this.setState("stopped");
+    this.resolveStop?.(result);
+    this.clearStopHandlers();
+  }
+
+  private clearStopHandlers(): void {
+    this.resolveStop = null;
+    this.rejectStop = null;
+    this.stopPromise = null;
+  }
+
+  private closeActiveSegment(): void {
+    if (this.segmentStartedAt !== null) {
+      this.elapsedMs += performance.now() - this.segmentStartedAt;
+      this.segmentStartedAt = null;
+    }
+    this.updateDuration();
+  }
+
+  private updateDuration(): void {
+    const activeMs =
+      this.segmentStartedAt === null
+        ? 0
+        : performance.now() - this.segmentStartedAt;
+    const seconds = Math.floor((this.elapsedMs + activeMs) / 1000);
+    if (seconds !== this.durationSeconds) {
+      this.durationSeconds = seconds;
+      this.callbacks.onDurationChange?.(seconds);
+    }
+  }
+
+  private startTimer(): void {
+    this.stopTimer();
+    this.timerId = setInterval(() => this.updateDuration(), 250);
+  }
+
+  private stopTimer(): void {
+    if (this.timerId !== null) clearInterval(this.timerId);
+    this.timerId = null;
+  }
+
+  public getVolumeDbFS(): number {
+    if (!this.analyser) return -60;
+    const samples = new Float32Array(this.analyser.fftSize);
+    this.analyser.getFloatTimeDomainData(samples);
+
+    let sumSquares = 0;
+    for (const sample of samples) sumSquares += sample * sample;
+    const rms = Math.sqrt(sumSquares / samples.length);
+    const db = 20 * Math.log10(Math.max(rms, 1e-6));
+    return Math.max(-60, Math.min(0, db));
+  }
+
+  private startVolumeMeter(): void {
+    if (!this.analyser) return;
+    this.stopVolumeMeter();
+
+    const tick = () => {
+      if (!this.analyser || this.state !== "recording") return;
+      this.callbacks.onVolumeChange?.(this.getVolumeDbFS());
+      this.volumeFrameId = requestAnimationFrame(tick);
+    };
+    this.volumeFrameId = requestAnimationFrame(tick);
+  }
+
+  private stopVolumeMeter(): void {
+    if (this.volumeFrameId !== null) {
+      cancelAnimationFrame(this.volumeFrameId);
+    }
+    this.volumeFrameId = null;
+  }
+
+  private async closeAudioContext(): Promise<void> {
+    this.source?.disconnect();
+    this.source = null;
+    this.analyser = null;
+
+    const context = this.audioContext;
+    this.audioContext = null;
+    if (context && context.state !== "closed") {
+      try {
+        await context.close();
+      } catch {
+        // Context may already have been closed by the browser.
+      }
+    }
+  }
+
+  private async releaseResources(): Promise<void> {
+    this.stopTimer();
+    this.stopVolumeMeter();
+
+    const stream = this.stream;
+    this.stream = null;
+    stream?.getTracks().forEach((track) => track.stop());
+
+    await this.closeAudioContext();
+  }
+
+  public async dispose(): Promise<void> {
+    if (this.disposed) return;
+    if (this.recorder && this.recorder.state !== "inactive") {
+      await this.stopRecording();
+    } else if (this.stopPromise) {
+      await this.stopPromise.catch(() => null);
+    } else {
+      await this.releaseResources();
+    }
+    this.disposed = true;
+  }
+}
+
+/*
+===============================================================================
+2. client/hooks/useCourtroomRecorder.ts
+===============================================================================
+*/
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AudioRecordingResult,
+  CourtroomAudioService,
+  RecordingState,
+} from "../services/CourtroomAudioService";
+
+export interface CourtroomRecorderHook {
+  state: RecordingState;
+  durationSeconds: number;
+  volumeDbFS: number;
+  error: string | null;
+  result: AudioRecordingResult | null;
+  audioUrl: string | null;
+  start: () => Promise<void>;
+  pause: () => void;
+  resume: () => void;
+  stop: () => Promise<AudioRecordingResult | null>;
+  clear: () => void;
+}
+
+export function useCourtroomRecorder(): CourtroomRecorderHook {
+  const serviceRef = useRef<CourtroomAudioService | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+
+  const [state, setState] = useState<RecordingState>("idle");
+  const [durationSeconds, setDurationSeconds] = useState(0);
+  const [volumeDbFS, setVolumeDbFS] = useState(-60);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<AudioRecordingResult | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const service = new CourtroomAudioService({
+      callbacks: {
+        onStateChange: setState,
+        onDurationChange: setDurationSeconds,
+        onVolumeChange: setVolumeDbFS,
+        onError: (err) => setError(err.message),
+      },
+    });
+    serviceRef.current = service;
+
+    return () => {
+      void service.dispose();
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    };
+  }, []);
+
+  const clear = useCallback(() => {
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    audioUrlRef.current = null;
+    setAudioUrl(null);
+    setResult(null);
+    setError(null);
+    setDurationSeconds(0);
+    setVolumeDbFS(-60);
+    setState("idle");
+  }, []);
+
+  const start = useCallback(async () => {
+    setError(null);
+    setResult(null);
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    audioUrlRef.current = null;
+    setAudioUrl(null);
+
+    try {
+      await serviceRef.current?.startRecording();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Recording failed.");
+    }
+  }, []);
+
+  const pause = useCallback(() => serviceRef.current?.pauseRecording(), []);
+  const resume = useCallback(() => serviceRef.current?.resumeRecording(), []);
+
+  const stop = useCallback(async () => {
+    try {
+      const recording = await serviceRef.current?.stopRecording() ?? null;
+      if (recording) {
+        setResult(recording);
+        const url = URL.createObjectURL(recording.blob);
+        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = url;
+        setAudioUrl(url);
+      }
+      return recording;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not stop recording.");
+      return null;
+    }
+  }, []);
+
+  return {
+    state,
+    durationSeconds,
+    volumeDbFS,
+    error,
+    result,
+    audioUrl,
+    start,
+    pause,
+    resume,
+    stop,
+    clear,
+  };
+}
+
+/*
+===============================================================================
+3. server/middleware/requireCourtUser.ts
+===============================================================================
+*/
+
+import type { NextFunction, Request, Response } from "express";
+import { getAuth } from "firebase-admin/auth";
+
+export interface CourtUser {
+  uid: string;
+  institutionId: string;
+  role: string;
+  email?: string;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      courtUser?: CourtUser;
+    }
+  }
+}
+
+/**
+ * Verify Firebase ID token. This proves identity only.
+ * Authorization for institution/case access must also be performed.
+ */
+export async function requireCourtUser(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const header = req.headers.authorization;
+    if (!header?.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Authentication required." });
+      return;
+    }
+
+    const token = header.slice("Bearer ".length).trim();
+    if (!token) {
+      res.status(401).json({ error: "Authentication required." });
+      return;
+    }
+
+    const decoded = await getAuth().verifyIdToken(token, true);
+    const institutionId =
+      typeof decoded.institutionId === "string" ? decoded.institutionId : "";
+    const role = typeof decoded.role === "string" ? decoded.role : "";
+
+    if (!institutionId || !role) {
+      res.status(403).json({ error: "Institution membership is required." });
+      return;
+    }
+
+    req.courtUser = {
+      uid: decoded.uid,
+      institutionId,
+      role,
+      email: decoded.email,
+    };
+    next();
+  } catch {
+    res.status(401).json({ error: "Invalid or expired authentication token." });
+  }
+}
+
+/*
+IMPORTANT AUTHORIZATION INTEGRATION:
+- Firebase custom claims above must be assigned only by trusted server code.
+- Do not let a client set its own institutionId or role.
+- Before production, add a server-side Firestore lookup for the user's active
+  membership and the requested case's institution.
+- If your system stores roles/membership in Firestore rather than custom claims,
+  replace the claims lookup with that authoritative server-side lookup.
+*/
+
+/*
+===============================================================================
+4. shared/transcriptionSchemas.ts
+===============================================================================
+*/
+
+import { z } from "zod";
+
+export const TranscriptionRequestSchema = z.object({
+  audioData: z.string().min(1).max(20_000_000),
+  mimeType: z.string().min(1).max(100),
+  language: z.enum(["auto", "om", "am", "en"]).default("auto"),
+  verbatimMode: z.boolean().default(true),
+  caseId: z.string().min(1).max(128),
+});
+
+export const TranscriptionResponseSchema = z.object({
+  transcription: z.string().min(1),
+  languageSegments: z.array(
+    z.object({
+      language: z.enum(["om", "am", "en", "unknown"]),
+      text: z.string(),
+    }),
+  ).default([]),
+  uncertainSegments: z.array(
+    z.object({
+      text: z.string(),
+      reason: z.string(),
+    }),
+  ).default([]),
+});
+
+export type TranscriptionResponse = z.infer<
+  typeof TranscriptionResponseSchema
+>;
+
+/*
+===============================================================================
+5. server/routes/transcribe.ts
+===============================================================================
+*/
+
+import { Router, Request, Response } from "express";
+import { randomUUID } from "node:crypto";
+import { GoogleGenAI } from "@google/genai";
+import { z } from "zod";
+import { requireCourtUser } from "../middleware/requireCourtUser";
+import {
+  TranscriptionRequestSchema,
+  TranscriptionResponseSchema,
+} from "../../shared/transcriptionSchemas";
+
+// YOU MUST IMPLEMENT this adapter against your actual Firestore schema.
+// It must return true only if this authenticated user is authorized to access
+// this exact case within their institution.
+async function userCanAccessCase(
+  _uid: string,
+  _institutionId: string,
+  _role: string,
+  _caseId: string,
+): Promise<boolean> {
+  throw new Error(
+    "Implement userCanAccessCase using your production Firestore RBAC schema.",
+  );
+}
+
+const router = Router();
+const apiKey = process.env.GEMINI_API_KEY;
+const modelName =
+  process.env.GEMINI_TRANSCRIPTION_MODEL || "gemini-2.5-flash";
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+
+const ALLOWED_MIME_TYPES = new Set([
+  "audio/webm",
+  "audio/mp4",
+  "audio/ogg",
+  "audio/wav",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/aac",
+  "audio/flac",
+]);
+
+const MAX_AUDIO_BYTES = 15 * 1024 * 1024;
+
+function decodeBase64Audio(input: string): Buffer {
+  const stripped = input.replace(
+    /^data:audio\/[a-zA-Z0-9.+-]+(?:;codecs=[^;,]+)?;base64,/i,
+    "",
+  );
+  const compact = stripped.replace(/\s/g, "");
+
+  if (!compact || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) {
+    throw new Error("Invalid base64 audio data.");
+  }
+
+  const buffer = Buffer.from(compact, "base64");
+  if (!buffer.length) throw new Error("Audio payload is empty.");
+
+  const normalizedInput = compact.replace(/=+$/, "");
+  const normalizedOutput = buffer.toString("base64").replace(/=+$/, "");
+  if (normalizedInput !== normalizedOutput) {
+    throw new Error("Malformed base64 audio data.");
+  }
+  return buffer;
+}
+
+function buildPrompt(
+  language: "auto" | "om" | "am" | "en",
+  verbatimMode: boolean,
+): string {
+  const languageInstruction = {
+    auto: "Identify Afaan Oromoo, Amharic, English, and any language switches.",
+    om: "Afaan Oromoo is expected as the primary language; preserve other languages as spoken.",
+    am: "Amharic is expected as the primary language; preserve other languages as spoken.",
+    en: "English is expected as the primary language; preserve other languages as spoken.",
+  }[language];
+
+  return `
+You transcribe Ethiopian legal proceeding audio. You are not a judge and must
+not interpret, summarize, correct, or complete the legal content.
+
+LANGUAGE:
+${languageInstruction}
+
+TRANSCRIPTION:
+${
+  verbatimMode
+    ? "Verbatim: preserve repetitions, fillers, false starts, and the words actually spoken."
+    : "Faithful readable transcript: preserve meaning and all material statements; never summarize."
+}
+
+STRICT RULES:
+1. Transcribe only audible speech.
+2. Do not invent names, dates, case numbers, legal provisions, or missing words.
+3. Preserve Afaan Oromoo spelling and vowel distinctions as accurately as possible.
+4. Write Amharic in Ethiopic script.
+5. Preserve English words in English.
+6. Preserve code-switching; do not translate.
+7. Mark unclear speech as [unclear] and explain the uncertainty in uncertainSegments.
+8. Do not infer speaker identity or official role from voice.
+9. Do not add legal analysis, commentary, or facts.
+10. Return only JSON matching this exact structure:
+{
+  "transcription": "complete transcript",
+  "languageSegments": [
+    {"language":"om|am|en|unknown","text":"spoken segment"}
+  ],
+  "uncertainSegments": [
+    {"text":"unclear span","reason":"brief reason"}
+  ]
+}
+`;
+}
+
+router.post(
+  "/api/transcribe",
+  requireCourtUser,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!ai) {
+        res.status(503).json({ error: "Transcription service is not configured." });
+        return;
+      }
+
+      const parsed = TranscriptionRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: "Invalid request.",
+          details: parsed.error.flatten(),
+        });
+        return;
+      }
+
+      const user = req.courtUser;
+      if (!user) {
+        res.status(401).json({ error: "Authentication required." });
+        return;
+      }
+
+      const {
+        audioData,
+        language,
+        verbatimMode,
+        caseId,
+      } = parsed.data;
+
+      const allowed = await userCanAccessCase(
+        user.uid,
+        user.institutionId,
+        user.role,
+        caseId,
+      );
+      if (!allowed) {
+        res.status(403).json({ error: "You cannot access this case." });
+        return;
+      }
+
+      const normalizedMime = parsed.data.mimeType
+        .split(";")[0]
+        .trim()
+        .toLowerCase()
+        .replace("audio/x-wav", "audio/wav");
+
+      if (!ALLOWED_MIME_TYPES.has(normalizedMime)) {
+        res.status(415).json({ error: "Unsupported audio MIME type." });
+        return;
+      }
+
+      const audioBuffer = decodeBase64Audio(audioData);
+      if (audioBuffer.byteLength > MAX_AUDIO_BYTES) {
+        res.status(413).json({
+          error: "Audio clip is too large. Use the private-storage job workflow.",
+        });
+        return;
+      }
+
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  mimeType: normalizedMime,
+                  data: audioBuffer.toString("base64"),
+                },
+              },
+              { text: buildPrompt(language, verbatimMode) },
+            ],
+          },
+        ],
+        config: {
+          temperature: 0,
+          responseMimeType: "application/json",
+        },
+      });
+
+      const responseText = response.text?.trim();
+      if (!responseText) {
+        res.status(502).json({ error: "Transcription provider returned no result." });
+        return;
+      }
+
+      let raw: unknown;
+      try {
+        raw = JSON.parse(responseText);
+      } catch {
+        res.status(502).json({ error: "Transcription provider returned invalid JSON." });
+        return;
+      }
+
+      const validated = TranscriptionResponseSchema.safeParse(raw);
+      if (!validated.success) {
+        // Do not return raw model output: it may contain confidential data.
+        res.status(502).json({
+          error: "Transcription result did not match the required schema.",
+        });
+        return;
+      }
+
+      // TODO: Write a metadata-only audit event using your approved audit service.
+      // Never log audio or transcript text. Preserve original audio separately.
+      res.status(200).json({
+        ...validated.data,
+        modelUsed: modelName,
+        mimeType: normalizedMime,
+        reviewRequired: true,
+      });
+    } catch (error) {
+      // Log only a request ID and sanitized error category in production.
+      const errorId = randomUUID();
+      console.error("Transcription request failed. Error ID:", errorId);
+      res.status(500).json({
+        error: "Transcription failed. Please try again.",
+        errorId,
+      });
+    }
+  },
+);
+
+export default router;
+
+/*
+===============================================================================
+6. server/app.ts — EXPRESS INTEGRATION EXCERPT
+===============================================================================
+*/
+
+import express from "express";
+import transcribeRouter from "./routes/transcribe";
+
+const app = express();
+
+// Short-clip route only. Keep the payload limit small and deliberate.
+app.use(express.json({ limit: "22mb" }));
+
+// Add production rate limiting, HTTPS enforcement, CORS allowlist,
+// request IDs, centralized error handling, and monitoring before deployment.
+app.use(transcribeRouter);
+
+export default app;
+
+/*
+===============================================================================
+7. .env.example
+===============================================================================
+*/
+
+GEMINI_API_KEY=SET_IN_SERVER_SECRET_MANAGER
+GEMINI_TRANSCRIPTION_MODEL=gemini-2.5-flash
+# Never put GEMINI_API_KEY in Vite variables, client code, or GitHub commits.
+
+/*
+===============================================================================
+8. CLIENT REQUEST HELPER
+===============================================================================
+*/
+
+import type { AudioRecordingResult } from "./services/CourtroomAudioService";
+
+export interface TranscriptionRequestOptions {
+  language?: "auto" | "om" | "am" | "en";
+  verbatimMode?: boolean;
+  caseId: string;
+  firebaseIdToken: string;
+}
+
+export async function transcribeShortRecording(
+  recording: AudioRecordingResult,
+  options: TranscriptionRequestOptions,
+): Promise<unknown> {
+  if (recording.sizeBytes > 15 * 1024 * 1024) {
+    throw new Error("Clip exceeds the short-recording limit.");
+  }
+
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read audio file."));
+    reader.onload = () => {
+      const dataUrl = String(reader.result ?? "");
+      const comma = dataUrl.indexOf(",");
+      if (comma < 0) {
+        reject(new Error("Invalid audio data URL."));
+        return;
+      }
+      resolve(dataUrl.slice(comma + 1));
+    };
+    reader.readAsDataURL(recording.blob);
+  });
+
+  const response = await fetch("/api/transcribe", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${options.firebaseIdToken}`,
+    },
+    body: JSON.stringify({
+      audioData: base64,
+      mimeType: recording.mimeType,
+      language: options.language ?? "auto",
+      verbatimMode: options.verbatimMode ?? true,
+      caseId: options.caseId,
+    }),
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      typeof body.error === "string"
+        ? body.error
+        : `Transcription failed (${response.status}).`,
+    );
+  }
+  return body;
+}
+
+/*
+===============================================================================
+9. TESTING_AND_DEPLOYMENT.md
+===============================================================================
+
+DEPENDENCIES
+------------
+Client:
+  npm install
+
+Server:
+  npm install express @google/genai zod firebase-admin
+  npm install -D @types/express @types/node typescript
+
+REQUIRED INTEGRATION BEFORE RUNNING
+-----------------------------------
+[ ] Put each section into the exact file path above.
+[ ] Fix relative import paths to match your existing SEERAAI monorepo.
+[ ] Initialize Firebase Admin exactly once using your existing Firebase project.
+[ ] Set GEMINI_API_KEY in server secret manager only.
+[ ] Implement userCanAccessCase() against the real Firestore collections/rules.
+[ ] Assign institutionId and role custom claims only from trusted admin code.
+[ ] Add rate limiting and request ID middleware.
+[ ] Add an audit service that stores metadata only, not audio/transcript content.
+[ ] Add private Firebase Storage upload and asynchronous processing for long audio.
+[ ] Ensure Storage Rules deny public reads and writes.
+[ ] Confirm the model supports the exact MIME/container/codec recorded by each
+    browser. If unsupported, transcode server-side using a controlled pipeline.
+[ ] Check the current model name, audio limits, pricing, and region availability
+    in Google's official documentation before production deployment.
+
+MANUAL DEVICE TESTS
+-------------------
+1. HTTPS page: microphone permission accepted.
+2. HTTPS page: permission denied gives a useful error.
+3. Start -> speak -> Pause -> Resume -> Stop.
+4. Confirm paused time is not added to active recording duration.
+5. Confirm the audio Blob is non-empty and playback works.
+6. Test microphone unplugged during recording.
+7. Test browser tab close/navigation during recording.
+8. Test Android Chrome and desktop Chrome/Edge/Safari as applicable.
+9. Test Afaan Oromoo only, Amharic only, English only, and mixed speech.
+10. Test two or more speakers, background noise, low volume, and interruptions.
+11. Test unclear names, dates, case numbers, legal provisions, and numbers.
+12. Verify uncertain segments are not silently replaced with guesses.
+13. Test expired token, missing token, wrong institution, wrong role, and
+    unauthorized case ID. All must be denied.
+14. Test malformed base64, unsupported MIME, oversized clip, provider timeout,
+    provider quota, malformed model JSON, and empty model response.
+15. Verify no audio, transcript, token, or secret appears in server logs.
+
+LEGAL / COURT RECORD SAFEGUARDS
+-------------------------------
+- Keep the original audio immutable and separate from edited transcript text.
+- Compute and store SHA-256 of the original file at upload time.
+- Store recording ID, case ID, operator UID, institution ID, timestamps,
+  duration, file size, MIME type, model identifier, and job ID in an audit log.
+- Restrict access to the audio and transcript according to court policy.
+- Require authorized human review and approval before treating a transcript
+  as an official record.
+- Keep a correction history; do not overwrite the original transcript silently.
+- Define retention, backup, deletion, and legal-hold rules with the institution.
+
+KNOWN LIMITATIONS
+-----------------
+- Gemini transcription is not guaranteed to be word-perfect, especially for
+  Afaan Oromoo dialects, names, overlapping speakers, courtroom acoustics,
+  and legal terminology.
+- This short-clip endpoint is synchronous and not designed for full hearings.
+- userCanAccessCase() intentionally fails closed until implemented. It must not
+  be replaced with `return true`.
+- Firebase custom claims are only one possible membership model. If SEERAAI
+  uses Firestore membership documents, verify those documents server-side.
+- This reference does not implement a full asynchronous Storage transcription
+  worker, immutable object retention, SHA-256 persistence, or production audit
+  service. Those must be integrated with the existing SEERAAI architecture.
+
+FINAL ENGINEERING ASSESSMENT
+----------------------------
+Code structure and safeguards: improved substantially.
+Ready to paste into production without integration: NO.
+Ready for controlled integration and test: YES, after implementing the marked
+authorization, storage, audit, and deployment items.
+
+Do not describe this implementation as 10/10 or production-ready until:
+- it type-checks in the actual repository,
+- all tests pass on target devices,
+- authorization tests prove denied access,
+- storage/audit controls are verified,
+- and a security review is completed.
+*/

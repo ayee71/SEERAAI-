@@ -8,14 +8,37 @@ export interface WatermarkOptions {
   role?: string;
 }
 
-export const applyCourtWatermarkPDF = (doc: any, caseNumberOrOptions: string | WatermarkOptions = '') => {
+import gurbichaCourtLogo from '../assets/images/gurbicha_court_logo.png';
+
+export interface WatermarkOptions {
+  caseNumber?: string;
+  courtName?: string;
+  timestamp?: string;
+}
+
+export const applyCourtWatermarkPDF = (doc: any, options: WatermarkOptions = {}) => {
   try {
-    const text = typeof caseNumberOrOptions === 'string' 
-      ? `OFFICIAL COURT COPY - ${caseNumberOrOptions}` 
-      : (caseNumberOrOptions.text || `OFFICIAL COURT COPY - ${caseNumberOrOptions.courtName || 'SEERAAI'}`);
+    const { caseNumber, courtName = 'MANA MURTII AANAA GURBICHA', timestamp = new Date().toLocaleString() } = options;
+    
+    // Add Logo (Seal)
+    doc.addImage(gurbichaCourtLogo, 'PNG', 10, 10, 20, 20);
+    
+    // Header Text
+    doc.setFontSize(12);
+    doc.setTextColor(50, 50, 50);
+    doc.text('Mana Murtii Ol/Go/Baha Oromiyaatti', 40, 15);
+    doc.setFontSize(14);
+    doc.setTextColor(194, 65, 12); // Orange-ish
+    doc.text('MANA MURTII AANAA GURBICHA', 40, 22);
     doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Gurbicha District Court', 40, 28);
+    
+    // Footer Watermark
+    doc.setFontSize(8);
     doc.setTextColor(150, 150, 150);
-    doc.text(text, 14, 285);
+    doc.text(`CASE: ${caseNumber || 'N/A'} | PRINTED: ${timestamp}`, 10, 285);
+    doc.text('OFFICIAL LEGAL DOCUMENT - AUTHORIZED COPY', 10, 290);
   } catch (e) {
     console.error('Watermark error:', e);
   }

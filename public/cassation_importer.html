@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="om">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#172554">
+  <title>SEERAAI — Cassation Index Importer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js"></script>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .drop-zone { border: 2px dashed #94a3b8; transition: .18s ease; }
+    .drop-zone.dragover { border-color: #4f46e5; background: #eef2ff; }
+    .case-card { animation: fadeIn .18s ease-out; }
+    @keyframes fadeIn { from {opacity:0; transform:translateY(4px)} to {opacity:1; transform:translateY(0)} }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .safe-wrap { overflow-wrap:anywhere; white-space:pre-wrap; }
+    button:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid #a5b4fc; outline-offset:2px; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-800">
+  <header class="bg-indigo-950 text-white shadow-lg">
+    <div class="mx-auto max-w-7xl px-4 py-5 sm:px-6">
+      <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-[.22em] text-indigo-300">SEERAAI · Legal research tools</div>
+          <h1 class="mt-1 text-2xl font-bold sm:text-3xl">Cassation Index File Importer</h1>
+          <p class="mt-1 max-w-3xl text-sm text-indigo-200">Faayila seeraa galchi → barruu guutuu eegi → murtiiwwan addaan baasi → damee seeraatiin ramadi → JSON / JavaScript buufadhu.</p>
+        </div>
+        <div class="rounded-xl border border-indigo-800 bg-indigo-900/70 px-4 py-3 text-sm">
+          <div class="font-semibold">Local-first processing</div>
+          <div class="mt-1 text-indigo-200">Faayilli gara serverii hin ergamu. Browser kee keessatti qofa qophaa'a.</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-12">
+    <section class="space-y-5 lg:col-span-4">
+      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-lg font-bold">1. Faayila galchi</h2>
+          <span class="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">MULTI-FILE</span>
+        </div>
+        <p class="mt-1 text-sm text-slate-500">Faayiloota tokkoo ol yeroo tokkotti filachuu dandeessa.</p>
+        <label id="dropZone" for="fileInput" class="drop-zone mt-4 flex cursor-pointer flex-col items-center rounded-xl px-4 py-8 text-center">
+          <svg aria-hidden="true" class="h-10 w-10 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 16.5v2A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-2"/></svg>
+          <span class="mt-3 font-semibold text-slate-800">Faayila asitti harkisi ykn cuqaasi</span>
+          <span class="mt-1 text-xs text-slate-500">TXT · MD · DOCX · PDF · HTML</span>
+          <input id="fileInput" class="sr-only" type="file" multiple accept=".txt,.md,.docx,.pdf,.html,.htm">
+        </label>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <button id="processBtn" type="button" disabled class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">Faayila qopheessi</button>
+          <button id="clearBtn" type="button" class="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Hunda haqi</button>
+        </div>
+        <div id="fileList" class="mt-4 space-y-2" aria-live="polite"></div>
+        <div id="status" class="mt-4 hidden rounded-lg p-3 text-sm" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+        <h3 class="font-bold text-amber-950">Hubachiisa barbaachisaa</h3>
+        <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
+          <li>Barruun PDF/DOCX keessaa baafame akkaataa faayila jalqabaa guutummaatti hin fakkaatu; garuu barruun baafame hin haqamu.</li>
+          <li>PDF suuraa/scanned yoo ta'e barruu baafamuu dhiisuu danda'a. OCR addaa barbaada.</li>
+          <li>Ramaddiin damee seeraa jechoota ijoo irratti hundaa'a; namaan sakatta'amee mirkanaa'uu qaba.</li>
+          <li>Ragaan hunda hin adda baane rawText keessatti ni kuufama; lakkoofsa ykn seera hin beekamne hin uumu.</li>
+        </ul>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 class="font-bold">2. Bu'aa al-ergi</h3>
+        <p class="mt-1 text-sm text-slate-500">JSON ragaa fi barruu jalqabaa hunda qaba. JavaScript ammoo dataset SEERAAI keessatti galchuuf mijata.</p>
+        <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+          <button id="jsonBtn" type="button" disabled class="rounded-lg bg-emerald-700 px-3 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">JSON buufadhu</button>
+          <button id="jsBtn" type="button" disabled class="rounded-lg bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:bg-slate-300">JavaScript buufadhu</button>
+        </div>
+        <button id="txtBtn" type="button" disabled class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400">Barruu guutuu (.txt) buufadhu</button>
+        <p class="mt-3 text-xs text-slate-500">Faayilli JavaScript: <span class="mono">export const CASSATION_DATABASE = ...</span> jedhu qaba.</p>
+      </div>
+    </section>
+
+    <section class="space-y-5 lg:col-span-8">
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div class="text-xs text-slate-500">Faayila</div><div id="statFiles" class="mt-1 text-2xl font-bold tabular-nums">0</div></div>
+        <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div class="text-xs text-slate-500">Murtii adda bahe</div><div id="statCases" class="mt-1 text-2xl font-bold tabular-nums">0</div></div>
+        <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div class="text-xs text-slate-500">Damee seeraa</div><div id="statCategories" class="mt-1 text-2xl font-bold tabular-nums">0</div></div>
+        <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div class="text-xs text-slate-500">Hin ramadamne</div><div id="statUnknown" class="mt-1 text-2xl font-bold tabular-nums">0</div></div>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 class="text-lg font-bold">3. Murtiiwwan adda bahan</h2>
+            <p class="mt-1 text-sm text-slate-500">Ramaddii ofumaan kenname sirreessuu dandeessa. Raw text yeroo hunda ni tura.</p>
+          </div>
+          <div class="flex flex-col gap-2 sm:flex-row">
+            <input id="searchInput" type="search" placeholder="Galmee, falmitoota, jecha ijoo barbaadi..." class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-64" disabled>
+            <select id="categoryFilter" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled><option value="">Damee hunda</option></select>
+          </div>
+        </div>
+        <div id="resultsNote" class="mt-4 text-xs text-slate-500">Faayila jalqaba galchi.</div>
+        <div id="caseList" class="mt-3 space-y-3"></div>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 class="text-lg font-bold">4. Akkaataa kuusaa ragaa</h2>
+        <p class="mt-1 text-sm text-slate-500">Ragaan hin badneef wantoonni armaan gadii al-ergii keessatti ni kuufamu.</p>
+        <div class="mt-3 grid gap-2 sm:grid-cols-2">
+          <div class="rounded-lg bg-slate-50 p-3 text-sm"><div class="font-semibold">Document-level</div><div class="mt-1 text-slate-600">Maqaa faayila, barruu guutuu, preamble, odeeffannoo extraction.</div></div>
+          <div class="rounded-lg bg-slate-50 p-3 text-sm"><div class="font-semibold">Case-level</div><div class="mt-1 text-slate-600">Lakkoofsa galmee, maqaa falmitootaa, guyyaa, fuula, jildii, keewwata, ramaddii fi rawText.</div></div>
+          <div class="rounded-lg bg-slate-50 p-3 text-sm"><div class="font-semibold">Madda</div><div class="mt-1 text-slate-600">Faayila murtii tokkoon tokkoo irraa dhufe waliin walqabsiisa.</div></div>
+          <div class="rounded-lg bg-slate-50 p-3 text-sm"><div class="font-semibold">Mirkaneessa</div><div class="mt-1 text-slate-600">Haala jalqabaa: hin mirkanoofne. Madda jalqabaa ilaaluun namaan jijjiirama.</div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-slate-200 bg-white py-5 text-center text-xs text-slate-500">SEERAAI · Cassation Index Importer · Browser keessatti qofa hojjetu</footer>
+
+<script>
+(() => {
+  'use strict';
+
+  const CATEGORY_OPTIONS = [
+    'የፍትሐ ብሔር ሥነ-ሥርዓት / Civil Procedure',
+    'የፍርድ አፈፃፀም / Execution',
+    'የማስረጃ ሕግ / Evidence',
+    'የይርጋ ጊዜ / Limitation',
+    'የዳኝነት ሥልጣን / Jurisdiction',
+    'የይግባኝ ሥርዓት / Appeal',
+    'የውልና ንብረት ሕግ / Contract & Property',
+    'የመሬት ሕግ / Land',
+    'የአሠሪና ሠራተኛ ሕግ / Labour',
+    'የወንጀል ሕግ / Criminal',
+    'የቤተሰብና ውርስ ሕግ / Family & Succession',
+    'የንግድና ባንክ ሕግ / Commercial & Banking',
+    'የአስተዳደር ሕግ / Administrative',
+    'ሌሎች / Other',
+    'ምደባ ያልተደረገ / Unclassified'
+  ];
+
+  const state = { selectedFiles: [], documents: [], cases: [] };
+  const $ = (id) => document.getElementById(id);
+  const fileInput = $('fileInput');
+  const dropZone = $('dropZone');
+
+  function setStatus(message, kind = 'info') {
+    const el = $('status');
+    if (!el) return;
+    el.className = 'mt-4 rounded-lg p-3 text-sm';
+    const styles = {
+      info: 'bg-indigo-50 text-indigo-800',
+      success: 'bg-emerald-50 text-emerald-800',
+      warning: 'bg-amber-50 text-amber-900',
+      error: 'bg-rose-50 text-rose-800'
+    };
+    el.classList.add(...(styles[kind] || styles.info).split(' '));
+    el.textContent = message;
+    el.classList.remove('hidden');
+  }
+
+  function escapeText(value) {
+    return String(value ?? '').replace(/\u0000/g, '');
+  }
+
+  function renderSelectedFiles() {
+    const list = $('fileList');
+    if (!list) return;
+    list.replaceChildren();
+    if (!state.selectedFiles.length) {
+      const p = document.createElement('p');
+      p.className = 'text-xs text-slate-400';
+      p.textContent = 'Faayilli hin filatamne.';
+      list.append(p);
+    }
+    state.selectedFiles.forEach((file, index) => {
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm';
+      const left = document.createElement('div');
+      left.className = 'min-w-0';
+      const name = document.createElement('div');
+      name.className = 'truncate font-medium text-slate-700';
+      name.textContent = file.name;
+      const size = document.createElement('div');
+      size.className = 'text-xs text-slate-400';
+      size.textContent = `${(file.size / 1024).toFixed(1)} KB`;
+      left.append(name, size);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'shrink-0 rounded px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50';
+      remove.textContent = 'Haqi';
+      remove.setAttribute('aria-label', `${file.name} haqi`);
+      remove.addEventListener('click', () => {
+        state.selectedFiles.splice(index, 1);
+        renderSelectedFiles();
+        if ($('processBtn')) $('processBtn').disabled = state.selectedFiles.length === 0;
+      });
+      row.append(left, remove);
+      list.append(row);
+    });
+    if ($('processBtn')) $('processBtn').disabled = state.selectedFiles.length === 0;
+  }
+
+  function addFiles(files) {
+    const allowed = /\.(txt|md|docx|pdf|html?)$/i;
+    const incoming = Array.from(files || []);
+    const accepted = incoming.filter(file => allowed.test(file.name));
+    const rejected = incoming.filter(file => !allowed.test(file.name));
+    accepted.forEach(file => {
+      if (!state.selectedFiles.some(existing => existing.name === file.name && existing.size === file.size && existing.lastModified === file.lastModified)) {
+        state.selectedFiles.push(file);
+      }
+    });
+    renderSelectedFiles();
+    if (rejected.length) setStatus(`Faayila hin deeggaramne: ${rejected.map(f => f.name).join(', ')}. TXT, MD, DOCX, PDF ykn HTML fayyadami.`, 'warning');
+    else if (accepted.length) setStatus(`${accepted.length} faayila dabalame. “Faayila qopheessi” cuqaasi.`, 'success');
+  }
+
+  async function extractText(file) {
+    const extension = (file.name.split('.').pop() || '').toLowerCase();
+    if (extension === 'txt' || extension === 'md' || extension === '') {
+      return { text: await file.text(), method: 'plain-text', notes: [] };
+    }
+    if (extension === 'html' || extension === 'htm') {
+      const html = await file.text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      doc.querySelectorAll('script,style,noscript').forEach(node => node.remove());
+      return { text: doc.body ? doc.body.innerText : (doc.documentElement.textContent || ''), method: 'html-text', notes: ['HTML keessaa barruun qofa baafame.'] };
+    }
+    if (extension === 'docx') {
+      if (!window.mammoth) throw new Error('Mammoth library hin argamne. Internet connection ilaali; DOCX amma hin banamne.');
+      const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+      return { text: result.value || '', method: 'docx-raw-text', notes: ['DOCX keessaa barruun baafame; bifa fuulaa, gabatee fi suuraan akka barruu jalqabaatti hin eegamne.', ...(result.messages || []).map(m => m.message) ] };
+    }
+    if (extension === 'pdf') {
+      const pdfjs = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs');
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+      const data = new Uint8Array(await file.arrayBuffer());
+      const pdf = await pdfjs.getDocument({ data }).promise;
+      const pages = [];
+      let textCount = 0;
+      for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+        const page = await pdf.getPage(pageNo);
+        const content = await page.getTextContent();
+        const textItems = content.items.filter(item => (item.str || '').trim());
+        const pageLines = [];
+        let currentLine = [];
+        let previousY = null;
+        for (const item of textItems) {
+          const y = Array.isArray(item.transform) ? Math.round(item.transform[5]) : null;
+          if (previousY !== null && y !== null && Math.abs(y - previousY) > 3) {
+            if (currentLine.length) pageLines.push(currentLine.join(' ').trim());
+            currentLine = [];
+          }
+          currentLine.push(item.str.trim());
+          if (y !== null) previousY = y;
+        }
+        if (currentLine.length) pageLines.push(currentLine.join(' ').trim());
+        const pageText = pageLines.join('\n').replace(/[ \t]+/g, ' ').trim();
+        if (pageText) textCount++;
+        pages.push(`\n===== PDF PAGE ${pageNo} =====\n${pageText}`);
+      }
+      const notes = [];
+      if (textCount === 0) notes.push("PDF kana barruu filatamuu danda'u hin qabu fakkaata; scanned image ta'uu danda'a. OCR barbaachisa.");
+      else if (textCount < pdf.numPages) notes.push(`${pdf.numPages - textCount} fuula irratti barruun hin argamne; fuulota suuraa/scanned ta'an OCR barbaaduu danda'u.`);
+      notes.push('PDF keessaa barruun baafame; caasaan fuulaa fi suuraan akka jalqabaatti hin eegamne. Mallattoo fuulaa PDF keessatti tursiifameera.');
+      return { text: pages.join('\n'), method: 'pdf-text-layer', notes };
+    }
+    throw new Error(`Gosa faayila ${extension} hin deeggaramu.`);
+  }
+
+  function classifyCase(text) {
+    const s = String(text || '').toLowerCase();
+    const has = (...words) => words.some(word => s.includes(word.toLowerCase()));
+    if (has('አሠሪ', 'ሠራተኛ', 'ሰራተኛ', 'የሥራ ውል', 'የስራ ውል', 'አዋጅ ቁ. 377', 'labour')) return CATEGORY_OPTIONS[8];
+    if (has('ወንጀል', 'የወንጀል', 'ወንጀለኛ', 'criminal')) return CATEGORY_OPTIONS[9];
+    if (has('ውርስ', 'ወራሽ', 'ጋብቻ', 'ፍቺ', 'ቤተሰብ', 'family')) return CATEGORY_OPTIONS[10];
+    if (has('መሬት', 'ይዞታ', 'የመሬት', 'land')) return CATEGORY_OPTIONS[7];
+    if (has('ባንክ', 'የንግድ', 'ንግድ ሕግ', 'ቼክ', 'commercial')) return CATEGORY_OPTIONS[11];
+    if (has('የአስተዳደር', 'አስተዳደር አካል', 'መንግስት መ/ቤት', 'administrative')) return CATEGORY_OPTIONS[12];
+    if (has('ይርጋ', 'የጊዜ ገደብ', 'ጊዜ ገደብ', 'limitation')) return CATEGORY_OPTIONS[3];
+    if (has('የዳኝነት ስልጣን', 'ሥልጣን', 'ስልጣን', 'ሰሚነት', 'jurisdiction')) return CATEGORY_OPTIONS[4];
+    if (has('ማስረጃ', 'ምስክር', 'የማስረጃ', 'evidence')) return CATEGORY_OPTIONS[2];
+    if (has('አፈፃፀም', 'አፈጻጸም', 'ፍርድ ባለዕዳ', 'ሐራጅ', 'የፍርድ አፈ', 'execution')) return CATEGORY_OPTIONS[1];
+    if (has('ይግባኝ', 'ይግባኝ ሰሚ', 'appeal')) return CATEGORY_OPTIONS[5];
+    if (has('ውል', 'ንብረት', 'ሽያጭ', 'መያዣ', 'contract', 'property')) return CATEGORY_OPTIONS[6];
+    if (has('ፍ/ብ/ሥ/ሥ', 'የፍ/ብ/ሥ/ሥ', 'ሥነ-ሥርዓት', 'ክስ', 'ተከሳሽ', 'ከሳሽ', 'ብይን', 'ዳኝነት', 'ፍርድ ቤት')) return CATEGORY_OPTIONS[0];
+    return CATEGORY_OPTIONS[14];
+  }
+
+  function findEntryMarkers(text) {
+    const regex = /^[ \t]{0,12}(\d{1,4})\s*[.)]\s*(.*)$/gm;
+    const markers = [];
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const n = Number(match[1]);
+      if (n >= 1 && n <= 5000) {
+        markers.push({ number: n, start: match.index, contentStart: match.index + match[0].length - match[2].length, titleFirstLine: match[2] || '' });
+      }
+    }
+    return markers.filter((m, i) => {
+      if (m.titleFirstLine.trim()) return true;
+      const prev = markers[i - 1];
+      const next = markers[i + 1];
+      return Boolean((prev && Math.abs(m.number - prev.number) <= 2) || (next && Math.abs(next.number - m.number) <= 2));
+    });
+  }
+
+  function parseDate(segment) {
+    const months = 'መስከረም|ጥቅምት|ኅዳር|ህዳር|ታህሳስ|ጥር|የካቲት|መጋቢት|ሚያዝያ|ግንቦት|ሰኔ|ሐምሌ|ነሐሴ|ጳጉሜን';
+    const re = new RegExp(`(${months})\\s*(?:\\n|\\s)+([0-3]?\\d\\s*[/.-]\\s*[12][0-9]{3})`, 'u');
+    const m = segment.match(re);
+    return m ? `${m[1]} ${m[2].replace(/\s/g, '')}` : '';
+  }
+
+  function parseVolume(segment, priorText) {
+    const full = `${priorText || ''}\n${segment}`;
+    const matches = [...full.matchAll(/ቅጽ\s*([0-9]{1,2})/gu)];
+    return matches.length ? Number(matches[matches.length - 1][1]) : null;
+  }
+
+  function parseCaseNumber(segment) {
+    const lawCut = segment.search(/(?:የፍ\s*\/|አዋጅ\s*ቁ\.?|የፍትሐብሔር|የፍትሐ ብሔር)/u);
+    const searchPart = lawCut >= 0 ? segment.slice(lawCut) : segment;
+    const candidates = [...searchPart.matchAll(/(?:^|\n|\s)(0?\d{4,5})(?=\s|$)/gu)].map(m => m[1]);
+    const valid = candidates.find(v => !(v.length === 4 && Number(v) >= 1900 && Number(v) <= 2099));
+    if (valid) return valid;
+    const fallback = [...segment.matchAll(/(?:^|\n)\s*(0?\d{4,5})\s+/gu)].map(m => m[1]);
+    return fallback.find(v => !(v.length === 4 && Number(v) >= 1900 && Number(v) <= 2099)) || '';
+  }
+
+  function cleanLines(value) {
+    return String(value || '').split(/\r?\n/).map(line => line.replace(/\u00a0/g, ' ').trim()).filter(Boolean);
+  }
+
+  function parseEntry(segment, number, sourceName, priorText) {
+    const lines = cleanLines(segment);
+    const normalized = segment.replace(/\r/g, '');
+    const caseNumber = parseCaseNumber(normalized);
+    const date = parseDate(normalized);
+    const volume = parseVolume(normalized, priorText);
+    const lawLines = lines.filter(line => /የፍ\s*\/|አዋጅ\s*ቁ\.?|የፍትሐብሔር|የፍትሐ ብሔር|ቁ\.?\s*\d+/u.test(line));
+    const legalProvisions = [...new Set(lawLines)].join(' | ');
+
+    let summaryLines = [];
+    for (const line of lines) {
+      if (/^\d{1,4}\s*[.)]/u.test(line)) {
+        summaryLines.push(line.replace(/^\d{1,4}\s*[.)]\s*/u, ''));
+        continue;
+      }
+      if (caseNumber && line.includes(caseNumber)) break;
+      if (/የፍ\s*\/|አዋጅ\s*ቁ\.?/u.test(line)) break;
+      if (/^www\./i.test(line) || /^===== PDF PAGE/i.test(line)) continue;
+      if (/^ቅጽ\s*\d+/u.test(line)) continue;
+      summaryLines.push(line);
+    }
+    const summary = summaryLines.join(' ').replace(/\s+/g, ' ').trim();
+
+    let parties = '';
+    if (caseNumber) {
+      const at = normalized.indexOf(caseNumber);
+      if (at >= 0) {
+        let after = normalized.slice(at + caseNumber.length);
+        const monthNames = 'መስከረም|ጥቅምት|ኅዳር|ህዳር|ታህሳስ|ጥር|የካቲት|መጋቢት|ሚያዝያ|ግንቦት|ሰኔ|ሐምሌ|ነሐሴ|ጳጉሜን';
+        const dateMatch = after.match(new RegExp(`${monthNames}\\s*(?:\\n|\\s)+[0-3]?\\d\\s*[/.-]\\s*[12][0-9]{3}`));
+        if (dateMatch && dateMatch.index >= 0) after = after.slice(0, dateMatch.index);
+        parties = after.split(/\r?\n/).map(line => line.trim()).filter(line => line && !/^www\./i.test(line) && !/^\d{1,3}$/.test(line) && !/^ቅጽ\s*\d+/u.test(line)).join(' ').replace(/\s+/g, ' ').trim();
+        parties = parties.replace(/^(?:የፍ\s*\/[^\n]*\s*)+/u, '').trim();
+      }
+    }
+
+    const pageCandidates = [...normalized.matchAll(/(?:^|\n)\s*(\d{1,3})\s*(?=\n|$)/gu)].map(m => Number(m[1]));
+    const likelyPage = pageCandidates.length ? pageCandidates[pageCandidates.length - 1] : null;
+
+    return {
+      entryNumber: number,
+      caseNumber: caseNumber || null,
+      parties: parties || null,
+      decisionDate: date || null,
+      volume: volume,
+      indexPageCandidate: likelyPage,
+      summary: summary || null,
+      legalProvisions: legalProvisions || null,
+      category: classifyCase(`${summary}\n${legalProvisions}\n${parties}`),
+      verificationStatus: 'UNVERIFIED',
+      sourceFile: sourceName,
+      rawText: segment
+    };
+  }
+
+  function parseDocument(text, fileName, method, notes) {
+    const sourceText = String(text ?? '');
+    const markers = findEntryMarkers(sourceText);
+    const entries = [];
+    if (markers.length) {
+      const preamble = sourceText.slice(0, markers[0].start);
+      if (preamble.trim()) {
+        entries.push({
+          entryNumber: null, caseNumber: null, parties: null, decisionDate: null, volume: parseVolume(preamble, ''),
+          indexPageCandidate: null, summary: 'Lakkoofsa galmee jalqabaa hin qabne barruu / pre-index text',
+          legalProvisions: null, category: classifyCase(preamble), verificationStatus: 'UNVERIFIED',
+          sourceFile: fileName, rawText: preamble,
+          extractionNote: 'Barruun kun galmee lakkoofsaan adda bahe dura waan argameef, murtii lakkoofsa qabu waliin ofumaan hin walitti hidhamne.'
+        });
+      }
+      for (let i = 0; i < markers.length; i++) {
+        const start = markers[i].start;
+        const end = i + 1 < markers.length ? markers[i + 1].start : sourceText.length;
+        const segment = sourceText.slice(start, end);
+        const priorText = sourceText.slice(0, start);
+        entries.push(parseEntry(segment, markers[i].number, fileName, priorText));
+      }
+    } else if (sourceText.trim()) {
+      entries.push({
+        entryNumber: null, caseNumber: null, parties: null, decisionDate: null, volume: null,
+        indexPageCandidate: null, summary: null, legalProvisions: null,
+        category: CATEGORY_OPTIONS[14], verificationStatus: 'UNVERIFIED', sourceFile: fileName,
+        rawText: sourceText, extractionNote: 'Lakkoofsi jalqabaa murtii hin argamne; barruun guutuun akka document tokkootti eegame.'
+      });
+    }
+    const preamble = markers.length ? sourceText.slice(0, markers[0].start) : '';
+    return {
+      id: `doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      fileName,
+      importedAt: new Date().toISOString(),
+      extractionMethod: method,
+      extractionNotes: notes || [],
+      entryCount: entries.length,
+      preamble,
+      sourceText,
+      entries
+    };
+  }
+
+  async function processFiles() {
+    if (!state.selectedFiles.length) return;
+    if ($('processBtn')) $('processBtn').disabled = true;
+    setStatus('Faayiloota dubbisaa fi qindeessaa jira...', 'info');
+    const freshDocs = [];
+    const errors = [];
+    for (const file of state.selectedFiles) {
+      try {
+        const extracted = await extractText(file);
+        if (!extracted.text || !extracted.text.trim()) {
+          extracted.notes.push('Barruu hin baane. PDF scanned yoo taʼe OCR barbaachisa.');
+        }
+        freshDocs.push(parseDocument(extracted.text, file.name, extracted.method, extracted.notes));
+      } catch (error) {
+        errors.push(`${file.name}: ${error.message || String(error)}`);
+      }
+    }
+    state.documents = state.documents.concat(freshDocs);
+    state.cases = state.documents.flatMap(doc => doc.entries.map((entry, index) => ({ ...entry, _docId: doc.id, _entryIndex: index })));
+    updateStats();
+    populateCategoryFilter();
+    renderCases();
+    const total = freshDocs.reduce((sum, doc) => sum + doc.entryCount, 0);
+    if (errors.length) setStatus(`${freshDocs.length} faayila qophaa'e; ${total} galmee adda ba'e. Rakkoo: ${errors.join(' | ')}`, 'warning');
+    else setStatus(`${freshDocs.length} faayila qophaa'e; ${total} galmee adda ba'e. Barruun guutuun kuufameera.`, 'success');
+    if ($('processBtn')) $('processBtn').disabled = state.selectedFiles.length === 0;
+  }
+
+  function updateStats() {
+    if ($('statFiles')) $('statFiles').textContent = String(state.documents.length);
+    if ($('statCases')) $('statCases').textContent = String(state.cases.length);
+    if ($('statCategories')) $('statCategories').textContent = String(new Set(state.cases.map(c => c.category)).size);
+    if ($('statUnknown')) $('statUnknown').textContent = String(state.cases.filter(c => c.category === CATEGORY_OPTIONS[14]).length);
+    const hasData = state.documents.length > 0;
+    if ($('jsonBtn')) $('jsonBtn').disabled = !hasData;
+    if ($('jsBtn')) $('jsBtn').disabled = !hasData;
+    if ($('txtBtn')) $('txtBtn').disabled = !hasData;
+    if ($('searchInput')) $('searchInput').disabled = !hasData;
+    if ($('categoryFilter')) $('categoryFilter').disabled = !hasData;
+  }
+
+  function populateCategoryFilter() {
+    const select = $('categoryFilter');
+    if (!select) return;
+    const current = select.value;
+    select.replaceChildren();
+    const all = document.createElement('option');
+    all.value = '';
+    all.textContent = 'Damee hunda';
+    select.append(all);
+    const used = [...new Set(state.cases.map(c => c.category))].sort((a, b) => CATEGORY_OPTIONS.indexOf(a) - CATEGORY_OPTIONS.indexOf(b));
+    used.forEach(category => {
+      const option = document.createElement('option');
+      option.value = category;
+      option.textContent = category;
+      select.append(option);
+    });
+    if (used.includes(current)) select.value = current;
+  }
+
+  function createField(label, value, className = '') {
+    const wrapper = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400';
+    title.textContent = label;
+    const content = document.createElement('div');
+    content.className = `safe-wrap text-sm text-slate-700 ${className}`.trim();
+    content.textContent = value || 'Hin adda baane';
+    wrapper.append(title, content);
+    return wrapper;
+  }
+
+  function renderCases() {
+    const list = $('caseList');
+    if (!list) return;
+    list.replaceChildren();
+    const query = $('searchInput')?.value?.trim()?.toLocaleLowerCase() || '';
+    const category = $('categoryFilter')?.value || '';
+    const filtered = state.cases.filter(item => {
+      if (category && item.category !== category) return false;
+      if (!query) return true;
+      const haystack = [item.entryNumber, item.caseNumber, item.parties, item.decisionDate, item.summary, item.legalProvisions, item.category, item.rawText].join(' ').toLocaleLowerCase();
+      return haystack.includes(query);
+    });
+    if ($('resultsNote')) $('resultsNote').textContent = `${filtered.length} / ${state.cases.length} galmee mul'ataa jiru. Ramaddii tokkoon tokkoo jijjiiruun ni danda'ama.`;
+    if (!filtered.length) {
+      const empty = document.createElement('div');
+      empty.className = 'rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500';
+      empty.textContent = state.cases.length ? 'Bu’aan barbaacha kanaa hin argamne.' : 'Faayila jalqaba galchi.';
+      list.append(empty);
+      return;
+    }
+    filtered.forEach(item => {
+      const card = document.createElement('article');
+      card.className = 'case-card rounded-xl border border-slate-200 bg-white p-4 shadow-sm';
+      const top = document.createElement('div');
+      top.className = 'flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between';
+      const left = document.createElement('div');
+      left.className = 'min-w-0';
+      const heading = document.createElement('div');
+      heading.className = 'flex flex-wrap items-center gap-2';
+      const badge = document.createElement('span');
+      badge.className = 'rounded-md bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-800';
+      badge.textContent = item.caseNumber ? `Galmee ${item.caseNumber}` : (item.entryNumber ? `Madda ${item.entryNumber}` : 'Barruu guutuu');
+      const entryBadge = document.createElement('span');
+      entryBadge.className = 'rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600';
+      entryBadge.textContent = item.entryNumber ? `Index #${item.entryNumber}` : 'No index number';
+      heading.append(badge, entryBadge);
+      const title = document.createElement('h3');
+      title.className = 'mt-2 font-semibold text-slate-900';
+      title.textContent = item.summary || 'Mata-dureen ofumaan adda hin baane';
+      left.append(heading, title);
+      const source = document.createElement('div');
+      source.className = 'shrink-0 text-xs text-slate-500';
+      source.textContent = item.sourceFile;
+      top.append(left, source);
+      card.append(top);
+
+      const grid = document.createElement('div');
+      grid.className = 'mt-4 grid gap-3 sm:grid-cols-2';
+      grid.append(
+        createField('Falmitoota', item.parties),
+        createField('Guyyaa murtii', item.decisionDate),
+        createField('Keewwata / Seera caqasame', item.legalProvisions),
+        createField('Jildii / Fuula tilmaamaa', `Jildii: ${item.volume ?? 'Hin adda baane'} · Fuula: ${item.indexPageCandidate ?? 'Hin adda baane'}`)
+      );
+      card.append(grid);
+
+      const controls = document.createElement('div');
+      controls.className = 'mt-4 flex flex-col gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:items-center sm:justify-between';
+      const categoryWrap = document.createElement('label');
+      categoryWrap.className = 'flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-slate-500 sm:flex-row sm:items-center';
+      const categoryLabel = document.createElement('span');
+      categoryLabel.textContent = 'Damee seeraa:';
+      const categorySelect = document.createElement('select');
+      categorySelect.className = 'min-w-0 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-medium text-slate-700';
+      CATEGORY_OPTIONS.forEach(optionText => {
+        const option = document.createElement('option');
+        option.value = optionText;
+        option.textContent = optionText;
+        categorySelect.append(option);
+      });
+      categorySelect.value = CATEGORY_OPTIONS.includes(item.category) ? item.category : CATEGORY_OPTIONS[14];
+      categorySelect.addEventListener('change', () => {
+        const original = state.cases.find(c => c._docId === item._docId && c._entryIndex === item._entryIndex);
+        if (original) {
+          original.category = categorySelect.value;
+          const doc = state.documents.find(d => d.id === item._docId);
+          if (doc && doc.entries[item._entryIndex]) doc.entries[item._entryIndex].category = categorySelect.value;
+          updateStats();
+          populateCategoryFilter();
+          if ($('categoryFilter')) $('categoryFilter').value = category;
+        }
+      });
+      categoryWrap.append(categoryLabel, categorySelect);
+
+      const verification = document.createElement('span');
+      verification.className = 'rounded-md bg-amber-50 px-2.5 py-2 text-xs font-semibold text-amber-800';
+      verification.textContent = 'Mirkaneessa: hin mirkanoofne';
+      controls.append(categoryWrap, verification);
+      card.append(controls);
+
+      const details = document.createElement('details');
+      details.className = 'mt-3 rounded-lg bg-slate-50 p-3';
+      const summaryLabel = document.createElement('summary');
+      summaryLabel.className = 'cursor-pointer text-xs font-bold text-indigo-700';
+      summaryLabel.textContent = 'Barruu jalqabaa guutuu ilaali (rawText)';
+      const raw = document.createElement('pre');
+      raw.className = 'mono safe-wrap mt-3 max-h-80 overflow-auto rounded-md border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-700';
+      raw.textContent = escapeText(item.rawText);
+      details.append(summaryLabel, raw);
+      card.append(details);
+      list.append(card);
+    });
+  }
+
+  function exportPayload() {
+    return {
+      schemaVersion: '1.0.0',
+      generatedAt: new Date().toISOString(),
+      description: 'Federal Supreme Court Cassation decision index import. Parsed fields are heuristic; sourceText and rawText preserve extracted text for review.',
+      categories: CATEGORY_OPTIONS,
+      documents: state.documents,
+      cases: state.documents.flatMap(doc => doc.entries.map(entry => ({ ...entry, sourceDocumentId: doc.id })))
+    };
+  }
+
+  function downloadBlob(content, filename, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  function exportJson() {
+    const payload = exportPayload();
+    downloadBlob(JSON.stringify(payload, null, 2), 'seeraai-cassation-database.json', 'application/json;charset=utf-8');
+  }
+
+  function exportJs() {
+    const payload = exportPayload();
+    const js = `/* Generated by SEERAAI Cassation Index Importer.\n * IMPORTANT: Parsed fields require source verification.\n * Complete extracted source text is preserved in documents[].sourceText.\n */\nexport const CASSATION_DATABASE = ${JSON.stringify(payload, null, 2)};\n\nexport default CASSATION_DATABASE;\n`;
+    downloadBlob(js, 'seeraai-cassation-database.js', 'text/javascript;charset=utf-8');
+  }
+
+  function exportAllText() {
+    const content = state.documents.map(doc => `\n\n########## SOURCE FILE: ${doc.fileName} ##########\n\n${doc.sourceText}`).join('\n');
+    downloadBlob(content, 'seeraai-cassation-source-text.txt', 'text/plain;charset=utf-8');
+  }
+
+  function clearAll() {
+    state.selectedFiles = [];
+    state.documents = [];
+    state.cases = [];
+    if (fileInput) fileInput.value = '';
+    if ($('searchInput')) $('searchInput').value = '';
+    if ($('categoryFilter')) $('categoryFilter').value = '';
+    if ($('status')) $('status').classList.add('hidden');
+    renderSelectedFiles();
+    updateStats();
+    populateCategoryFilter();
+    renderCases();
+  }
+
+  if (fileInput) fileInput.addEventListener('change', event => addFiles(event.target.files));
+  if ($('processBtn')) $('processBtn').addEventListener('click', processFiles);
+  if ($('clearBtn')) $('clearBtn').addEventListener('click', clearAll);
+  if ($('jsonBtn')) $('jsonBtn').addEventListener('click', exportJson);
+  if ($('jsBtn')) $('jsBtn').addEventListener('click', exportJs);
+  if ($('txtBtn')) $('txtBtn').addEventListener('click', exportAllText);
+  if ($('searchInput')) $('searchInput').addEventListener('input', renderCases);
+  if ($('categoryFilter')) $('categoryFilter').addEventListener('change', renderCases);
+
+  if (dropZone) {
+    ['dragenter', 'dragover'].forEach(type => dropZone.addEventListener(type, event => {
+      event.preventDefault();
+      dropZone.classList.add('dragover');
+    }));
+    ['dragleave', 'drop'].forEach(type => dropZone.addEventListener(type, event => {
+      event.preventDefault();
+      dropZone.classList.remove('dragover');
+    }));
+    dropZone.addEventListener('drop', event => addFiles(event.dataTransfer.files));
+  }
+
+  renderSelectedFiles();
+  updateStats();
+  renderCases();
+})();
+</script>
+</body>
+</html>

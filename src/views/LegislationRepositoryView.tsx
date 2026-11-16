@@ -23,6 +23,11 @@ import {
   subscribeToStoredTelegramDocs
 } from '../services/telegramLegalHarvesterService';
 import { exportLegalDocumentToPdf } from '../services/legalDocumentExport';
+import { ShareToClassroomModal } from '../components/ShareToClassroomModal';
+import { Share, GraduationCap, ClipboardList, Search, Sparkles } from 'lucide-react';
+import { AdvancedLegalSearch } from '../components/AdvancedLegalSearch';
+import { HighlightText } from '../components/HighlightText';
+import { LegalKnowledgeBaseManagement } from '../components/LegalKnowledgeBaseManagement';
 
 interface LegislationRepositoryViewProps {
   currentLang: Language;
@@ -37,7 +42,7 @@ export const LegislationRepositoryView: React.FC<LegislationRepositoryViewProps>
   onNavigateToAnalysis,
   onNavigateToCassation,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'all_laws' | 'telegram_harvester'>('all_laws');
+  const [activeSubTab, setActiveSubTab] = useState<'all_laws' | 'advanced_search' | 'telegram_harvester' | 'source_management'>('all_laws');
   const [stats, setStats] = useState<SyncStats>(getLegislationSyncStats());
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
 
@@ -60,7 +65,7 @@ export const LegislationRepositoryView: React.FC<LegislationRepositoryViewProps>
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Telegram Ingestion & Harvesting States
-  const [telegramChannelInput, setTelegramChannelInput] = useState('https://t.me/wakoyeb');
+  const [telegramChannelInput, setTelegramChannelInput] = useState('https://t.me/seeraai_ethio');
   const [telegramSearchQuery, setTelegramSearchQuery] = useState('');
   const [selectedChannelHandle, setSelectedChannelHandle] = useState<string>('all');
   const [harvestedPosts, setHarvestedPosts] = useState<TelegramLegalPost[]>([]);
@@ -68,6 +73,7 @@ export const LegislationRepositoryView: React.FC<LegislationRepositoryViewProps>
   const [harvestToast, setHarvestToast] = useState<string | null>(null);
   const [expandedTelegramPostId, setExpandedTelegramPostId] = useState<string | null>(null);
   const [isBatchIngesting, setIsBatchIngesting] = useState(false);
+  const [classroomShareItem, setClassroomShareItem] = useState<LegalEnactment | null>(null);
 
   useEffect(() => {
     refreshData();
@@ -181,7 +187,7 @@ ${item.keyPrinciples ? item.keyPrinciples[currentLang] || item.keyPrinciples.om 
 KEEYYATTOOTA SEERAA (ARTICLES):
 ${(item.fullTextArticles || []).map(a => `\n[${a.articleNumber} - ${a.title || ''}]\n${a.content[currentLang] || a.content.om}`).join('\n')}
 
-Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
+Maddi: SAI Ethio Legal Intelligence (www.saiethio.com)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
     const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
@@ -193,6 +199,12 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handleShareToKeep = (item: LegalEnactment) => {
+    const title = encodeURIComponent(`SeeraAI: ${item.number} - ${item.title[currentLang] || item.title.om}`);
+    const text = encodeURIComponent(`${item.summary[currentLang] || item.summary.om}\n\nLink: ${window.location.origin}`);
+    window.open(`https://keep.google.com/#create?title=${title}&text=${text}`, '_blank');
   };
 
   // Telegram Harvesting handler
@@ -253,10 +265,10 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
           </div>
           <p className="text-xs sm:text-sm text-slate-400 max-w-3xl">
             {currentLang === 'om'
-              ? 'Labsiilee Caffee Oromiyaa fi Mana Marii Bakka Bu\'oota Itoophiyaa, dambiilee, qajeelfamoota fi murtiilee dhaddacha ijibbaataa hanga ammaatti bahan hunda kan kuusu, Telegram (@wakoyeb) irraa waraabu fi yeroo yeroon ofiin update godhu.'
+              ? 'Labsiilee Caffee Oromiyaa fi Mana Marii Bakka Bu\'oota Itoophiyaa, dambiilee, qajeelfamoota fi murtiilee dhaddacha ijibbaataa hanga ammaatti bahan hunda kan kuusu, Telegram (@seeraai_ethio) irraa waraabu fi yeroo yeroon ofiin update godhu.'
               : currentLang === 'am'
-              ? 'እስከ አሁን የወጡ የጨፌ ኦሮሚያ እና የኢትዮጵያ ህዝብ ተወካዮች ምክር ቤት አዋጆች፣ ደንቦች፣ መመሪያዎች እና የሰበር ውሳኔዎችን ማከማቻ፣ ከቴሌግራም ቻናል (@wakoyeb) መረጃ ማሰባሰቢያ እና ራስ-አዘምን ስርአት።'
-              : 'Unified repository for Caffee Oromiyaa enactments, FDRE Federal proclamations, regulations, directives, Telegram legal harvesting (@wakoyeb), and cassation precedents with live auto-update.'}
+              ? 'እስከ አሁን የወጡ የጨፌ ኦሮሚያ እና የኢትዮጵያ ህዝብ ተወካዮች ምክር ቤት አዋጆች፣ ደንቦች፣ መመሪያዎች እና የሰበር ውሳኔዎችን ማከማቻ፣ ከቴሌግራም ቻናል (@seeraai_ethio) መረጃ ማሰባሰቢያ እና ራስ-አዘምን ስርአት።'
+              : 'Unified repository for Caffee Oromiyaa enactments, FDRE Federal proclamations, regulations, directives, Telegram legal harvesting (@seeraai_ethio), and cassation precedents with live auto-update.'}
           </p>
         </div>
 
@@ -276,6 +288,18 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
           </button>
           <button
             type="button"
+            onClick={() => setActiveSubTab('advanced_search')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeSubTab === 'advanced_search'
+                ? 'bg-amber-500 text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>{currentLang === 'om' ? 'Barbaacha Gadi-fagoo (Advanced Search)' : 'የላቀ ፍለጋ (Advanced Search)'}</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveSubTab('telegram_harvester')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeSubTab === 'telegram_harvester'
@@ -285,6 +309,18 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
           >
             <span>🌐</span>
             <span>{currentLang === 'om' ? 'Social Media & Web Hub' : currentLang === 'am' ? 'ሶሻል ሚዲያ እና ዌብ መረጃ' : 'Social Media & Web Hub'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('source_management')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeSubTab === 'source_management'
+                ? 'bg-amber-500 text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span>⚖️</span>
+            <span>{currentLang === 'om' ? "Kuusaa Seeraa & Fe'iisa" : currentLang === 'am' ? 'የሕግ ማከማቻ እና ሰነድ መጫኛ' : 'Knowledge Base & Upload'}</span>
           </button>
         </div>
       </div>
@@ -414,6 +450,15 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
       </div>
 
       {/* ========================================================================= */}
+      {/* SUBTAB 4: AUTHORITATIVE LEGAL KNOWLEDGE BASE & SOURCE UPLOAD PIPELINE     */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'source_management' && (
+        <div className="animate-in fade-in duration-200">
+          <LegalKnowledgeBaseManagement currentLang={currentLang} />
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* SUBTAB 2: TELEGRAM CHANNEL LEGAL HARVESTER & SOCIAL MEDIA INGESTION HUB   */}
       {/* ========================================================================= */}
       {activeSubTab === 'telegram_harvester' && (
@@ -495,13 +540,13 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="flex-1 space-y-1">
                   <label className="text-[11px] font-bold text-slate-400">
-                    Channel / Group Telegram Link (fakkeenyaaf: https://t.me/wakoyeb):
+                    Channel / Group Telegram Link (fakkeenyaaf: https://t.me/seeraai_ethio):
                   </label>
                   <input
                     type="text"
                     value={telegramChannelInput}
                     onChange={(e) => setTelegramChannelInput(e.target.value)}
-                    placeholder="https://t.me/wakoyeb ykn @channel_name"
+                    placeholder="https://t.me/seeraai_ethio ykn @seeraai_ethio"
                     className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-400 font-mono"
                   />
                 </div>
@@ -573,12 +618,12 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedChannelHandle('wakoyeb')}
+                  onClick={() => setSelectedChannelHandle('seeraai_ethio')}
                   className={`px-3 py-1 rounded-xl text-xs font-bold cursor-pointer transition-all ${
-                    selectedChannelHandle === 'wakoyeb' ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-400'
+                    selectedChannelHandle === 'seeraai_ethio' ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-400'
                   }`}
                 >
-                  @wakoyeb
+                  @seeraai_ethio
                 </button>
               </div>
             </div>
@@ -705,6 +750,25 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
               </div>
             )}
           </div>
+        </div>
+      )}
+      {/* ========================================================================= */}
+      {/* SUBTAB 3: ADVANCED TRILINGUAL LEGAL SEARCH                                 */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'advanced_search' && (
+        <div className="animate-in fade-in duration-200">
+          <AdvancedLegalSearch 
+            currentLang={currentLang}
+            onSelectResult={(doc) => {
+              // When a document is selected from search, we could navigate or expand
+              // For now we rely on the component's internal results display
+              const validTypes: any[] = ['proclamation', 'regulation', 'directive', 'cassation_decision'];
+              if (validTypes.includes(doc.sourceType)) {
+                setActiveSubTab('all_laws');
+                setSearchQuery(doc.proclamationNumber || doc.decisionNumber || doc.id);
+              }
+            }}
+          />
         </div>
       )}
 
@@ -835,11 +899,11 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
                           </div>
 
                           <h3 className="text-base font-bold text-slate-100 font-serif leading-snug">
-                            {item.title[currentLang] || item.title.om}
+                            <HighlightText text={item.title[currentLang] || item.title.om} query={searchQuery} />
                           </h3>
 
                           <p className="text-xs text-slate-400">
-                            <strong>Qaama Baase:</strong> {item.authority[currentLang] || item.authority.om}
+                            <strong>Qaama Baase:</strong> <HighlightText text={item.authority[currentLang] || item.authority.om} query={searchQuery} />
                           </p>
                         </div>
 
@@ -851,6 +915,24 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
                             title="Citation Waraabbadhu (Copy Citation)"
                           >
                             <span>{copiedId === item.id ? '✅' : '📋'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setClassroomShareItem(item)}
+                            className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-blue-400 border border-slate-800 hover:border-slate-700 cursor-pointer transition-all"
+                            title="Qoodi (Share to Classroom)"
+                          >
+                            <GraduationCap className="w-5 h-5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleShareToKeep(item)}
+                            className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-amber-500 border border-slate-800 hover:border-slate-700 cursor-pointer transition-all"
+                            title="Keep irratti kuusi (Save to Keep)"
+                          >
+                            <ClipboardList className="w-5 h-5" />
                           </button>
 
                           <button
@@ -874,7 +956,7 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
 
                       {/* Summary Preview */}
                       <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-slate-300 leading-relaxed font-sans">
-                        {item.summary[currentLang] || item.summary.om}
+                        <HighlightText text={item.summary[currentLang] || item.summary.om} query={searchQuery} />
                       </div>
 
                       {/* Expanded Full-Text Articles & Key Principles */}
@@ -890,10 +972,10 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
                                 {item.fullTextArticles.map((art, idx) => (
                                   <div key={idx} className="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-1.5">
                                     <div className="text-xs font-bold text-emerald-300 font-mono">
-                                      {art.articleNumber} {art.title ? `• ${art.title}` : ''}
+                                      <HighlightText text={`${art.articleNumber} ${art.title ? `• ${art.title}` : ''}`} query={searchQuery} />
                                     </div>
                                     <p className="text-xs text-slate-200 leading-relaxed">
-                                      {art.content[currentLang] || art.content.om}
+                                      <HighlightText text={art.content[currentLang] || art.content.om} query={searchQuery} />
                                     </p>
                                   </div>
                                 ))}
@@ -908,7 +990,7 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
                                 <span>Yaada Seeraa Dirqisiisaa (Binding Legal Principle):</span>
                               </h4>
                               <p className="text-xs text-slate-200 leading-relaxed font-serif italic">
-                                "{item.keyPrinciples[currentLang] || item.keyPrinciples.om}"
+                                "<HighlightText text={item.keyPrinciples[currentLang] || item.keyPrinciples.om} query={searchQuery} />"
                               </p>
                             </div>
                           )}
@@ -945,6 +1027,14 @@ Maddi: SAI Ethio Legal Intelligence (www.saorethio1.com)
             )}
           </div>
         </div>
+      )}
+      {/* Classroom Share Modal */}
+      {classroomShareItem && (
+        <ShareToClassroomModal
+          title={classroomShareItem.title[currentLang] || classroomShareItem.title.om}
+          description={classroomShareItem.summary[currentLang] || classroomShareItem.summary.om}
+          onClose={() => setClassroomShareItem(null)}
+        />
       )}
     </div>
   );

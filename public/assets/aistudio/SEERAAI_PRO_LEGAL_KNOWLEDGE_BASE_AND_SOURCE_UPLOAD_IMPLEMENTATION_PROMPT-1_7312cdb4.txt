@@ -1,0 +1,421 @@
+SEERAAI PRO — LEGAL KNOWLEDGE BASE & LEGAL SOURCE UPLOAD
+CONTROLLED IMPLEMENTATION PROMPT — VERSION 1.0
+
+PURPOSE
+Extend the EXISTING SEERAAI PRO application with two connected capabilities:
+(1) an evidence-grounded Ethiopian legal research and question-answering engine that answers from approved Ethiopian laws and verified cassation decisions; and
+(2) a secure legal-source upload, review, approval, versioning, and publication workflow for authorized users.
+
+This is an extension of the existing application, NOT a request to create a new app, replace the current architecture, or rebuild the project. Preserve existing users, authentication, Firebase project, Firestore data, Storage files, court-document features, existing legal repository, existing integrations, and working application features.
+
+============================================================
+A. NON-NEGOTIABLE EXECUTION AND SAFETY RULES
+============================================================
+
+1. Begin by inspecting the existing repository and the current implementation. Identify the existing legal Q&A/RAG services, legal repository, Telegram/cassation source integration, Firebase configuration, Firestore rules, Storage rules, user-role model, backend routes, document-processing pipeline, and UI components.
+2. Reuse and extend existing services wherever possible. Do not create a duplicate legal repository, a second authentication system, a replacement database, or parallel upload infrastructure when an existing component can safely be extended.
+3. Do not rename, remove, overwrite, or break existing routes, collections, fields, user accounts, court-document records, or application features.
+4. Do not access, modify, delete, migrate, or test against production court records or sensitive real-user documents.
+5. Do not deploy, publish, or change production Firebase rules, Storage rules, indexes, Cloud Run, hosting, DNS, domain settings, or production environment variables.
+6. Work only in the local development/test environment. Use Firebase Emulator if it is configured and available. If it is unavailable, report the exact blocker and mark emulator-dependent tests BLOCKED or NOT RUN. Never claim they passed.
+7. Do not print, expose, commit, or place API keys, service-account credentials, tokens, or private environment values in the client bundle, logs, screenshots, test reports, or source control.
+8. Do not install packages or introduce a new paid service, vector database, OCR provider, or infrastructure dependency without first identifying why it is necessary and documenting the proposed change. Prefer existing dependencies and services.
+9. Do not silently change Firebase data schemas or security rules. First document the existing schema and propose a backward-compatible migration. Implement local-only schema/rule changes only when safe and testable; list any deployment-dependent steps separately for explicit approval.
+10. Do not claim that the system is legally accurate merely because the build succeeds or a model returns an answer. Legal accuracy must be evaluated against a reviewer-approved test set and source citations.
+11. Keep the Public Legal AI knowledge base strictly separate from confidential institutional court records, internal judicial information, and each user's private case documents.
+12. If an instruction conflicts with preserving existing user data, production safety, or access control, stop the conflicting operation and report the conflict rather than guessing.
+
+============================================================
+B. FEATURE ONE — ETHIOPIAN LEGAL KNOWLEDGE BASE AND GROUNDED AI
+============================================================
+
+OBJECTIVE
+Make SEERAAI PRO answer legal questions using an approved, searchable, traceable corpus of Ethiopian legal materials. The AI must retrieve relevant source passages first and then formulate its answer from those passages. It must not rely on unsupported model memory when the question requires Ethiopian law or cassation authority.
+
+B1. LEGAL SOURCES TO SUPPORT
+Design the source model so it can distinguish at least:
+- Federal Constitution and federal legislation.
+- Federal proclamations, regulations, directives, and other officially issued legal instruments.
+- Oromia regional constitution and Oromia regional laws, proclamations, regulations, directives, and other officially issued instruments.
+- Other regional laws only where the source is present and its jurisdiction is clearly identified.
+- Federal Supreme Court Cassation Division decisions.
+- Oromia Supreme Court cassation decisions, where authentic source documents are available.
+- Other court decisions only if the system labels their court, jurisdiction, status, and source accurately.
+- Official gazettes and official court publications.
+- Secondary commentary or summaries, clearly labelled as secondary material and never represented as the original law or judgment.
+
+Do not assume that every uploaded decision is authentic, current, binding, or precedential. Record the source and verification status. Do not state that a cassation interpretation is binding, universally applicable, or still current unless the relevant legal basis and source material support that statement.
+
+B2. LEGAL SOURCE AUTHORITY AND VERIFICATION
+For every source, record:
+- Source type and jurisdiction (Federal, Oromia, another region, or other).
+- Official title in the original language, plus any verified alternative title.
+- Issuing institution or court.
+- Proclamation/regulation/directive number and year, where applicable.
+- Official Gazette number, publication date, and page range, where available.
+- Enactment date, effective date, amendment date, repeal date, and applicable period, where known.
+- For cassation decisions: court, division/chamber, case/file number, volume, decision date, page range, parties or anonymized case label where legally appropriate, legal issue, and relevant holding/principle when verified.
+- Original language and available translations.
+- Original source URL or publication reference, if available.
+- File checksum/hash, upload date, uploader, reviewer, approver, and verification notes.
+- Verification state: UNVERIFIED, UNDER_REVIEW, VERIFIED, REJECTED, SUPERSEDED, or ARCHIVED.
+
+A file being uploaded is NOT proof that it is an official or authentic legal source. Require a documented verification step before publication to the shared legal knowledge base.
+
+B3. LEGAL VALIDITY AND TEMPORAL VERSIONING
+The retrieval engine must consider the date relevant to the user's legal question. It must:
+- Determine or ask for the relevant date when the date changes which law applies.
+- Prefer the version effective on the relevant date, not automatically the newest file.
+- Track amendment, repeal, replacement, and supersession relationships where the information is verified.
+- Preserve previous versions and their effective periods; do not overwrite the historical text.
+- Distinguish enactment date, publication date, and effective date.
+- Support Ethiopian and Gregorian dates as separate fields where available. Do not silently convert an uncertain date or invent a date.
+- Flag unresolved temporal conflicts for human legal review.
+
+B4. SEARCH AND RETRIEVAL DESIGN
+Inspect the existing retrieval engine before changing it. Extend it to support, as appropriate to the current architecture:
+- Exact text and citation search for article numbers, proclamation numbers, file numbers, case numbers, years, and legal phrases.
+- Full-text search and semantic/vector retrieval, using existing infrastructure where available.
+- Hybrid retrieval and reranking when supported by the current stack.
+- Query expansion across Afaan Oromoo, Amharic, and English while preserving the user's intended legal issue.
+- Search filters for jurisdiction, source type, issuing authority/court, language, verification state, effective dates, and legal topic.
+- Retrieval ONLY from VERIFIED and PUBLISHED shared legal sources, except where an authorized reviewer explicitly uses a separate review workspace.
+- Retrieval results that retain source ID, exact document version, article/paragraph, page number, and chunk location.
+- Deduplication so the same source is not returned repeatedly as different records.
+- A clear distinction between original legal text, official translation, unofficial translation, summaries, and AI-generated explanation.
+
+Never include UNVERIFIED, REJECTED, or unpublished documents in public Legal AI answers. User-uploaded personal case documents must not enter the shared national legal knowledge base automatically.
+
+B5. ANSWER GENERATION RULES
+For every legal question:
+1. Identify the issue, jurisdiction, legal subject, and relevant date if material.
+2. Retrieve the most relevant approved legal provisions and cassation decisions.
+3. Check whether the retrieved documents actually support each important legal proposition.
+4. Draft the answer in the user's selected language: Afaan Oromoo, Amharic, or English.
+5. Cite the source immediately beside the proposition it supports.
+6. Distinguish statutory text, court holding/principle, factual analogy, and the AI's explanation.
+7. Explain important differences between a precedent's facts and the user's facts; do not treat superficially similar cases as identical.
+8. Identify conflicts, amendments, repeals, or uncertainty instead of concealing them.
+9. Where the source base is insufficient, say clearly that the available verified sources do not establish the answer. Ask for the missing date, jurisdiction, or facts only when necessary.
+10. Do not invent statutes, articles, sub-articles, proclamation numbers, case numbers, volumes, dates, page references, quotations, holdings, or source URLs.
+
+CITATION REQUIREMENTS
+For laws, cite the full available particulars, such as:
+- Name/title of the law.
+- Proclamation/regulation/directive number and year.
+- Relevant article and sub-article.
+- Gazette number, date, and page, when available.
+- Version/effective date applicable to the issue.
+
+For cassation decisions, cite the available particulars, such as:
+- Court and Cassation Division.
+- Case/file number.
+- Volume (jildii), decision date, and page (fuula), when available.
+- The exact proposition or holding supported by the passage.
+
+A citation must link to the exact approved source document and, where technically possible, open at the cited page or passage. If a source does not contain reliable page numbering, do not fabricate one; say that the page reference is unavailable.
+
+B6. LEGAL REASONING AND SOURCE CONFLICTS
+- Do not treat a secondary summary as stronger than the original official legal text.
+- Do not automatically assume that a newer document overrides an older one unless the legal relationship is established.
+- Do not infer repeal, amendment, or binding effect from similarity or date alone.
+- When federal and Oromia rules are both relevant, identify the jurisdiction and explain the applicable legal basis without inventing a hierarchy.
+- When two sources appear inconsistent, present the relevant passages, dates, source status, and unresolved issue. Do not silently choose one.
+- Separate ratio/holding from obiter or background discussion only when the decision text supports that distinction. Do not manufacture a legal principle from a case summary.
+- Do not describe a judgment as a binding precedent merely because it is a cassation decision; verify the applicable legal basis and the actual scope of the holding.
+- Do not give a guaranteed case outcome. Explain the legal analysis and material factual uncertainties.
+
+B7. RESPONSE FORMAT
+Use a clear structure appropriate to the complexity of the question, preferably:
+1. Gaaffii/Issue (the legal issue).
+2. Seera Hojiirra Oolu / Applicable Law.
+3. Murtiiwwan Dhaddacha Ijibbaataa Waliin Walqabatan / Relevant Cassation Decisions.
+4. Xiinxala Seeraa / Legal Analysis applying sources to facts.
+5. Xumura / Conclusion.
+6. Madda / Sources, with clickable precise citations.
+7. Daangaa Ragaa / Evidence limitations, where needed.
+
+Do not force this full structure on a simple definition question. Keep disclaimers proportionate and do not substitute a generic disclaimer for source-based legal analysis.
+
+B8. LANGUAGE AND TRANSLATION
+- Support Afaan Oromoo, Amharic, and English end-to-end in query understanding, search, citation labels, and answer generation.
+- Preserve original legal text and original-language source metadata.
+- Clearly label unofficial translations and AI translations as non-authoritative.
+- Do not translate an article or holding in a way that changes its legal meaning.
+- Where the meaning is uncertain, quote or cite the original wording and state the translation limitation.
+
+============================================================
+C. FEATURE TWO — SECURE LEGAL SOURCE UPLOAD, REVIEW AND PUBLISHING
+============================================================
+
+OBJECTIVE
+Add a secure administration interface that allows authorized staff to upload Ethiopian laws and cassation decisions, extract and review their content, verify their metadata and authenticity, approve them, and publish them to the Legal Knowledge Base for AI retrieval.
+
+C1. ROLES AND PERMISSIONS
+Inspect the existing authentication and role model. Reuse it and map permissions to existing roles where possible. Do not create an insecure parallel role system.
+
+The permission design must distinguish at least:
+- Legal Repository Administrator: manage repository settings and authorized users, subject to existing admin controls.
+- Legal Source Uploader/Editor: upload files, enter metadata, correct draft metadata, and submit sources for review.
+- Legal Source Reviewer/Approver: review authenticity, extracted text, metadata, citations, and approve/reject publication. Prefer a separate approver from the uploader (two-person review) where the existing staffing model allows it.
+- General Public/User: search and read only published/verified sources; cannot publish, alter, or delete shared legal sources.
+- Institutional court roles: must not gain legal-repository administration rights merely because they are court staff. Keep court permissions separate.
+
+Enforce permissions on the backend and in Firebase Security Rules/Storage Rules. Hiding a button in the UI is not authorization. Deny access by default. Test direct API and direct Storage access, not only the visible interface.
+
+C2. SUPPORTED FILES AND SAFE UPLOAD
+First inspect the existing upload pipeline and existing file-size policy. Reuse it where safe. Provide configurable, documented limits rather than silently changing existing limits.
+
+At minimum, assess support for:
+- PDF, including scanned/image-only PDFs.
+- DOCX.
+- Plain text where it is already supported.
+
+For all uploads:
+- Validate file extension, MIME type, and file signature on the server.
+- Enforce configured file-size limits on both client and server.
+- Generate safe storage names; do not trust raw user filenames as storage paths.
+- Compute a cryptographic checksum to identify duplicate or changed documents.
+- Prevent path traversal and unsafe file handling.
+- Never execute macros, scripts, embedded active content, or uploaded code.
+- Keep original files immutable after submission; corrections should create a new version or a new reviewed record.
+- Use the existing Firebase Storage infrastructure if appropriate; do not store large original files or extracted full documents in localStorage/IndexedDB.
+- Do not expose private Storage paths or privileged download tokens to unauthorized users.
+
+If a malware-scanning service is not already available, do not falsely claim files were virus-scanned. Record the scan status as NOT AVAILABLE or NOT RUN and document the residual risk.
+
+C3. EXTRACTION, OCR AND QUALITY CONTROL
+- Extract embedded text from searchable PDFs and DOCX using the existing backend pipeline where possible.
+- Detect scanned/image-only PDFs and route them to the existing OCR facility if present.
+- If OCR is unavailable, mark extraction as BLOCKED/NEEDS OCR rather than publishing empty or guessed text.
+- Preserve page boundaries, article/paragraph headings, section numbers, tables, footnotes, and document order as accurately as possible.
+- Record extraction method, OCR engine/version if available, timestamp, and per-page confidence where supported.
+- Low-confidence, garbled, incomplete, or structurally damaged text must require human review.
+- Provide a preview that allows a reviewer to compare the original page with extracted text.
+- Never silently correct legal text, article numbering, case numbers, dates, names, or holdings through AI.
+- AI may suggest metadata or an extractive summary, but a human reviewer must confirm it before publication.
+
+C4. METADATA ENTRY FORM
+The upload interface should collect relevant fields dynamically by source type.
+
+Common fields:
+- Document title.
+- Source type.
+- Jurisdiction.
+- Issuing body/court.
+- Original language.
+- Publication/source reference and official URL where available.
+- Publication date and effective date, if applicable.
+- Verification state and evidence/verification note.
+- Tags/subjects.
+
+Additional legal-instrument fields:
+- Instrument type.
+- Proclamation/regulation/directive number and year.
+- Gazette number and page range.
+- Enactment, effective, amendment, repeal, or expiry dates, where known.
+- Relationship to amended/repealed/replaced instruments.
+
+Additional cassation-decision fields:
+- Court and Cassation Division.
+- Case/file number.
+- Volume/jildii.
+- Decision date.
+- Page range/fuula.
+- Legal issue and subject tags.
+- Holding/principle, only after reviewer verification.
+- Related laws and cited decisions, only when extracted from the source and checked.
+
+Support Ethiopian and Gregorian date fields separately when supplied. Validate required fields by source type. Do not force a guessed value into a required field; allow the record to remain in draft/needs-information status.
+
+C5. REVIEW AND PUBLICATION WORKFLOW
+Implement an auditable state machine, adapting to the existing architecture:
+DRAFT → UPLOADED → PROCESSING → NEEDS_REVIEW → APPROVED → PUBLISHED
+Alternative outcomes: REJECTED, NEEDS_CORRECTION, PROCESSING_FAILED, SUPERSEDED, ARCHIVED.
+
+Rules:
+- A source must never be searchable by the public Legal AI before APPROVED and PUBLISHED.
+- Uploading does not itself approve or publish a document.
+- Reviewers must be able to inspect the original file, extracted pages, OCR warnings, metadata, checksum, and duplicate/version warnings.
+- Approval and publication must be logged with actor, timestamp, action, and source version.
+- Reject or return incomplete sources with a reason.
+- Reprocessing must not erase the previous original file or audit trail.
+- Only approved content may be chunked/indexed into the production-facing legal retrieval corpus. During local development, use test-only data.
+
+C6. VERSIONING, AMENDMENTS AND DUPLICATES
+- Detect identical files by checksum and warn before creating duplicate records.
+- Permit a new version when a law or decision is corrected, officially republished, or amended.
+- Keep immutable version history and link versions using explicit relationships.
+- Do not overwrite old law text: it may be relevant to historical disputes.
+- Support statuses such as in-force, amended, repealed, expired, superseded, and unknown only where source evidence supports the status.
+- A new upload must not automatically mark an older source repealed or superseded.
+
+C7. AUDIT AND MONITORING
+Record an audit trail for:
+- Upload start/completion/failure.
+- Metadata creation and edits.
+- Extraction/OCR processing and failures.
+- Review, approval, rejection, and publication.
+- Version creation and source status changes.
+- Indexing/removal from the searchable corpus.
+- Download/access events where required by the existing privacy policy.
+
+Audit records must be append-only or otherwise protected against unauthorized alteration. Do not log secrets, full sensitive document text, authentication tokens, or unnecessary personal information.
+
+============================================================
+D. DATA ARCHITECTURE AND FIREBASE INTEGRATION
+============================================================
+
+1. Inspect the existing Firebase project structure and repository collections before proposing paths. Do not create a new Firebase project.
+2. Use Firebase Storage for original legal-source files where appropriate, Firestore for metadata/workflow/audit records, and the existing backend for extraction, indexing, retrieval, and answer generation.
+3. Keep large document contents out of Firestore documents where doing so would exceed safe document-size limits. Store text/chunks using the existing suitable storage design and keep precise references in metadata.
+4. Every chunk/index record must retain sourceId, sourceVersionId, jurisdiction, sourceType, verification/publication status, language, page, article/paragraph, and checksum/version reference.
+5. Ensure an answer can resolve every citation back to the exact original file and version.
+6. Keep shared published legal sources, private user uploads, and confidential institutional court records in separately authorized data domains. No cross-domain retrieval without explicit permission and a documented use case.
+7. Apply least-privilege Firestore and Storage rules. Validate every server route/callable independently. Do not assume that client-side role checks are sufficient.
+8. If an existing legal repository or Telegram cassation integration exists, assess provenance and verification status. Existing Telegram content must not automatically be treated as an official source; mark it as unverified until independently checked against an authentic source.
+9. Avoid hard-coded assumptions about collection names, roles, or institution claims. Map to the actual existing schema and document the mapping.
+10. If schema changes, indexes, security rules, or migrations are needed, prepare a backward-compatible local migration plan and tests. Do not deploy them.
+
+Suggested logical entities (adapt to existing schema rather than copying blindly):
+- LegalSource: stable source identity and core metadata.
+- LegalSourceVersion: immutable file/text/version metadata.
+- LegalSourceChunk: extracted passage with page/article/paragraph location and retrieval metadata.
+- LegalSourceReview: reviewer actions, outcome, and evidence.
+- LegalSourceAuditEvent: append-only workflow event.
+- LegalSourceIndexState: indexing status and exact indexed version.
+
+============================================================
+E. USER EXPERIENCE REQUIREMENTS
+============================================================
+
+Public Legal AI experience:
+- The answer should display citations as clickable source references.
+- Users should be able to open the source title and relevant page/passage where supported.
+- Clearly show whether a source is federal, Oromia, another regional source, or a cassation decision.
+- Clearly distinguish official original text from unofficial/AI translation and secondary summaries.
+- Show a concise note when no sufficiently verified legal source was found.
+- Do not expose editor/reviewer tools to public users.
+
+Authorized repository-management experience:
+- Add an authorized Legal Sources/Knowledge Base management screen within the existing app navigation.
+- Provide upload, metadata entry, extraction preview, review queue, approve/reject/return-for-correction, version history, and indexing status.
+- Provide search/filter by jurisdiction, source type, court/institution, year, language, status, and title/number.
+- Provide clear progress/error messages without claiming successful upload, extraction, approval, or indexing until the backend confirms each operation.
+- Support responsive Android/mobile layouts as well as desktop.
+- Provide Afaan Oromoo, Amharic, and English labels consistent with the existing i18n system.
+- Accessibility: keyboard navigation, readable contrast, descriptive labels, and clear validation messages.
+
+============================================================
+F. TESTING AND ACCEPTANCE CRITERIA
+============================================================
+
+Do not mark this feature complete until the following tests have been run or explicitly marked BLOCKED/NOT RUN with reasons.
+
+F1. BUILD AND REGRESSION
+- TypeScript/typecheck.
+- Lint.
+- Existing local build.
+- Existing application smoke tests.
+- Existing authentication and logout flows.
+- Existing court-document and offline-data functionality must not regress.
+- Existing Telegram/legal Q&A integrations must not regress.
+
+F2. UPLOAD SECURITY AND WORKFLOW
+- Authorized uploader can upload a supported test law and test cassation decision.
+- Unauthorized public user cannot upload, edit, approve, publish, or delete shared legal sources by calling backend endpoints directly.
+- Court staff roles do not accidentally inherit repository-admin permissions.
+- Invalid MIME/signature, oversized file, malformed file, duplicate file, and unsafe filename are rejected or safely handled.
+- Original file checksum and metadata are recorded.
+- Extraction failure and OCR-unavailable states are visible and do not publish the document.
+- Reviewer can inspect source page against extracted text.
+- Uploader cannot approve their own source if two-person review is enabled.
+- Unapproved source does not appear in public search or AI retrieval.
+- Approved and published source becomes retrievable only after confirmed indexing.
+- Version updates preserve the earlier version and audit history.
+- Direct Firestore and Storage access tests confirm unauthorized access is denied.
+
+F3. LEGAL RETRIEVAL AND ANSWER QUALITY
+Create or use a test set reviewed by a qualified Ethiopian legal professional. Include questions requiring:
+- Federal law only.
+- Oromia law only.
+- Comparison of federal and Oromia sources where legally relevant.
+- A cassation decision with exact case/file number, volume, date, and page.
+- A law version effective at a past date.
+- An amended/repealed/superseded instrument.
+- A question for which the repository contains no answer.
+- Similar-looking but legally distinguishable cassation decisions.
+- Afaan Oromoo, Amharic, and English queries.
+- A question containing a false article number or fabricated case citation.
+
+Acceptance requirements:
+- Every material legal proposition is supported by a retrieved source or clearly marked as general explanation that is not established by the repository.
+- Every displayed citation resolves to the correct approved source and version.
+- No invented article number, proclamation number, case number, volume, date, page, quotation, or holding.
+- No unverified Telegram/source material presented as official law or an authenticated judgment.
+- Historical questions retrieve the applicable historical version when the relevant date is provided.
+- Insufficient evidence produces an honest limitation response, not a confident guess.
+- The answer language matches the selected language without losing citations or legal distinctions.
+- Conflicting or unclear sources are disclosed for human review.
+
+F4. DATA ISOLATION AND PRIVACY
+- A public user cannot retrieve another user's private uploaded case files.
+- A public user cannot retrieve confidential institutional court documents.
+- Private user uploads are not indexed into the shared legal knowledge base.
+- A legal repository editor cannot access unrelated confidential court files merely by having repository access.
+- No source upload exposes API keys, service-account credentials, or privileged Storage tokens.
+
+F5. EVIDENCE REPORT
+For each test, report:
+- Test ID and purpose.
+- Environment (local browser, unit, emulator, staging — clearly distinguished).
+- Exact command or test procedure.
+- PASS / FAIL / BLOCKED / NOT RUN.
+- Evidence and observed result.
+- Defect or limitation.
+
+Do not claim a test passed if it was not executed. Do not substitute mocked tests for real Firebase authorization tests without clearly labelling them as mocks.
+
+============================================================
+G. IMPLEMENTATION SEQUENCE
+============================================================
+
+PHASE 1 — READ-ONLY DISCOVERY
+- Map current legal AI/RAG code, existing sources, upload pipeline, Firebase collections, Storage paths, rules, roles, backend routes, and i18n.
+- Identify what already exists and can be reused.
+- List missing capabilities, security defects, migration risks, and dependencies.
+- Provide exact file paths and a proposed architecture. Do not edit files in this phase.
+
+PHASE 2 — IMPLEMENTATION PLAN
+- Present a file-by-file implementation plan.
+- Identify schema/rules/index changes and their risks.
+- Identify which work is local-only and which later requires explicit production approval.
+- Identify any new dependency/service and justify why existing infrastructure is insufficient.
+- Define the legal-source verification workflow and reviewer responsibilities.
+
+PHASE 3 — NARROW LOCAL IMPLEMENTATION
+After discovery and plan, implement only the scoped local changes needed for the two features. Preserve existing behavior and backward compatibility. Keep production untouched.
+
+PHASE 4 — LOCAL TESTING
+Run available unit, integration, browser, security, legal-retrieval, multilingual, and regression tests. Use synthetic/public test materials only. Use Firebase Emulator if genuinely configured and available. Mark unavailable tests BLOCKED/NOT RUN.
+
+PHASE 5 — FINAL REVIEW
+Provide a consolidated report containing:
+1. Existing architecture reused.
+2. Exact files created/changed and why.
+3. Data model and security changes.
+4. Upload workflow and legal review controls.
+5. Retrieval and citation behavior.
+6. Test matrix with PASS/FAIL/BLOCKED/NOT RUN.
+7. Known defects and residual risks.
+8. Migration steps not yet applied.
+9. Production actions requiring separate explicit approval.
+10. A clear release recommendation: GO, CONDITIONAL GO, or NO-GO, justified by evidence.
+
+============================================================
+H. FINAL NON-NEGOTIABLE LEGAL SAFETY PRINCIPLE
+============================================================
+
+SEERAAI PRO must be a source-grounded legal research assistant, not a law-making authority and not a substitute for judicial determination. Its core promise is traceability: the user must be able to see which verified law, article, cassation decision, volume, date, and page supports the answer. When the source is missing, uncertain, outdated, unverified, or conflicting, the system must say so plainly and must not manufacture legal authority.
+
+END OF PROMPT

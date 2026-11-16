@@ -1,0 +1,456 @@
+SEERAAI PRO – TELEGRAM LEGAL PARSER & FIRESTORE SECURITY AUDIT
+============================================================
+
+1. WALIIGALAAN: MADAALLII KOO
+-----------------------------
+Madaallii koodii jalqabaa: 3/10
+
+- Telegram parser: 4/10
+- Firestore Security Rules: 2/10
+- Qindoomina fi amanamummaa odeeffannoo: 3/10
+
+Sababa madaalliin gadi aanaa ta'eef:
+1. Seerri parser galmee lakkoofsi isaa hin beekamne illee akka murtii Dhaddacha Ijibbaataatti ramada. Kun ramaddii seeraa sobaa uuma.
+2. Barruun Afaan Oromoo tokko gara Afaan Amaaraa fi Ingiliffaatti hiikame fakkeessee bakka afaanota sadanitti wal fakkaatee kaa'ama. Kun hiika miti.
+3. Summary fi keyPrinciples qabiyyee seeraa irraa hin baafamne; barreeffama jalqabaa qofa gabaabsee fi jecha waliigalaa kaa'a.
+4. publishDate guyyaa Telegram irratti maxxanfame osoo hin taane guyyaa parser hojjetame dha.
+5. Murtii Telegram tokko irratti ergaa hedduun yoo jiraate ID'n duraanii walitti bu'uu danda'a; referenceNumber qofaan ID ijaarameera.
+6. Oromiyaa irratti jechi "Oromiyaa" ykn "Caffee" jiraachuun qofti aangoo seeraa murteessuuf gahaa miti.
+7. Gosa seeraa keessaa labor fi civil_contract qofa addaan baasa; yakka, lafa, maatii fi gosa biroo sirriitti hin adda baasu.
+8. Firestore keessatti namni account qabu kamiyyuu galmeewwan seeraa barreessuu, fooyyessuu fi haquu danda'a.
+9. /cases keessatti namni account qabu kamiyyuu galmeewwan falmii hunda dubbisuu, barreessuu fi haquu danda'a. Kun iccitii galmee mana murtii fi nageenya ragaa irratti balaa guddaa dha.
+10. user_documents keessatti abbaa galmee ta'uun mirkanaa'us, update irratti userId jijjiiruu hin dhowwamu.
+
+Yaada murteessaa: Koodiin jalqabaa bu'uura yaadaaf ni tajaajila; garuu production keessatti, keessumaa galmeewwan mana murtii qabatanii hojjechuuf, akkuma jirutti fayyadamuun nageenya hin qabu.
+
+
+2. KOOLEE PARSER FOYYA'EE – TypeScript
+--------------------------------------
+Faayila fakkeenyaa: server/telegram/telegram-legal-parser.ts
+
+Hubachiisa: Parser kun barruu irraa odeeffannoo mul'atu baasa. Murtii dhugaa ta'uu, lakkoofsa galmee sirrii ta'uu, keewwata seeraa sirrii ta'uu ykn hiika afaanii mirkaneessuu HIN danda'u. Waan hin mirkanoofne "unknown" ykn duwwaa godha; hin uumu.
+
+-------------------- CODE START --------------------
+
+export type LegalDocumentType =
+  | 'cassation_decision'
+  | 'proclamation'
+  | 'regulation'
+  | 'directive'
+  | 'unknown';
+
+export type LegalJurisdiction = 'federal' | 'oromia' | 'unknown';
+
+export type LegalCategory =
+  | 'civil_contract'
+  | 'labor'
+  | 'property_land'
+  | 'criminal'
+  | 'family'
+  | 'administrative'
+  | 'procedure'
+  | 'constitutional'
+  | 'other'
+  | 'unknown';
+
+export type LocalizedText = {
+  om?: string;
+  am?: string;
+  en?: string;
+};
+
+export interface ParsedTelegramLegalContent {
+  id: string;
+  messageId: number;
+  channelHandle: string;
+  postUrl: string;
+
+  // Telegram irraa dhugumaan argame yoo kenname qofa guutama.
+  // Guyyaa import godhame waliin wal hin makinaa.
+  publishDate: string | null;
+  ingestedAt: string;
+
+  // Lakkoofsi wabii hin argamne yoo ta'e null dha; lakkoofsa hin uumamu.
+  referenceNumber: string | null;
+  type: LegalDocumentType;
+  jurisdiction: LegalJurisdiction;
+  category: LegalCategory;
+
+  // Ramaddiin kun tilmaama jechoota irratti hundaa'a; ragaa seeraa mirkanaa'e miti.
+  categoryConfidence: 'low' | 'medium' | 'unknown';
+
+  // Hiikni/summariziin ogeessaan hin mirkanoofne yoo ta'e hin guutamin.
+  title?: LocalizedText;
+  summary?: LocalizedText;
+  keyPrinciples?: LocalizedText;
+
+  // Keewwata barruu keessaa baafame qofa; sirrii ta'uu isaa madda seeraa waliin mirkaneessi.
+  keyArticles: string[];
+
+  rawText: string;
+  tags: string[];
+  warnings: string[];
+}
+
+const CASE_REFERENCE_RE =
+  /(?:lakk\.?\s*galmee|lakkoofsa\s*galmee|የ\s*ሰ[\s./-]*መ[\s./-]*ቁ\.?)[\s:#-]*([0-9][0-9\s/.-]*)/iu;
+
+const PROCLAMATION_RE =
+  /(?:\blabsii\b|\bproclamation\b|አዋጅ)\s*(?:(?:lakk\.?|lakkoofsa|no\.?)\s*|ቁጥር\s*)?([0-9]{1,5}\s*\/\s*[0-9]{2,4})/iu;
+
+const REGULATION_RE =
+  /(?:\bdambii\b|\bregulation\b|ደንብ)\s*(?:(?:lakk\.?|lakkoofsa|no\.?)\s*|ቁጥር\s*)?([0-9]{1,5}\s*\/\s*[0-9]{2,4})/iu;
+
+const DIRECTIVE_RE =
+  /(?:\bqajeelfama\b|\bdirective\b|መመሪያ)\s*(?:(?:lakk\.?|lakkoofsa|no\.?)\s*|ቁጥር\s*)?([0-9]{1,5}\s*\/\s*[0-9]{2,4})/iu;
+
+const ARTICLE_RE =
+  /(?:\bkeewwata\b|\bkeeyyata\b|\barticle\b|\bart\.?\b|አንቀጽ)\s*(\d+(?:\s*\(\s*(?:\d+|[a-z])\s*\))*)/giu;
+
+const CATEGORY_TERMS: Record<Exclude<LegalCategory, 'other' | 'unknown'>, string[]> = {
+  civil_contract: ['waliigaltee', 'contract', 'liiqii', 'debt', 'ውል'],
+  labor: ['hojjetaa', 'hojii', 'employment', 'labour', 'labor', 'ሠራተኛ', 'የሥራ'],
+  property_land: ['lafa', 'qabeenya', 'land', 'property', 'መሬት', 'ንብረት'],
+  criminal: ['yakka', 'criminal', 'crime', 'offence', 'offense', 'ወንጀል'],
+  family: ['maatii', 'gaa’ela', 'gaa\'ela', 'fuudhaa', 'heeruma', 'family', 'marriage', 'ቤተሰብ'],
+  administrative: ['bulchiinsa', 'administrative', 'administration', 'አስተዳደር'],
+  procedure: ['adeemsa falmii', 'civil procedure', 'criminal procedure', 'procedure', 'ሥነ ሥርዓት'],
+  constitutional: ['heera mootummaa', 'constitution', 'constitutional', 'ሕገ መንግሥት'],
+};
+
+function normalizeNumber(value: string): string {
+  return value.replace(/\s+/g, '').replace(/\.$/, '');
+}
+
+function toIsoDate(value?: Date | string | number): string | null {
+  if (value === undefined || value === null) return null;
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(parsed.getTime())) {
+    throw new Error('Telegram publish date sirrii miti.');
+  }
+  return parsed.toISOString();
+}
+
+function detectJurisdiction(header: string): LegalJurisdiction {
+  const hasOromia =
+    /naannoo\s+oromiyaa|oromia\s+national\s+regional\s+state|mana\s+murtii\s+waliigalaa\s+oromiyaa|supreme\s+court\s+of\s+oromia|caffee\s+oromiyaa/iu.test(header);
+
+  const hasFederal =
+    /federal\s+democratic\s+republic|federal\s+supreme\s+court|mana\s+murtii\s+waliigalaa\s+federaalaa| mootummaa\s+federaalaa|fdre/iu.test(header);
+
+  if (hasOromia && !hasFederal) return 'oromia';
+  if (hasFederal && !hasOromia) return 'federal';
+  return 'unknown';
+}
+
+function detectCategory(text: string): {
+  category: LegalCategory;
+  confidence: 'low' | 'medium' | 'unknown';
+} {
+  const normalized = text.toLocaleLowerCase();
+  const scores = Object.entries(CATEGORY_TERMS).map(([category, terms]) => ({
+    category: category as Exclude<LegalCategory, 'other' | 'unknown'>,
+    score: terms.reduce((total, term) => total + (normalized.includes(term) ? 1 : 0), 0),
+  }));
+
+  scores.sort((a, b) => b.score - a.score);
+  const first = scores[0];
+  const second = scores[1];
+
+  if (!first || first.score === 0 || first.score === second?.score) {
+    return { category: 'unknown', confidence: 'unknown' };
+  }
+
+  // Jechoota tokko irratti qofa hundaa'e amantaa gadi-aanaa qaba.
+  return {
+    category: first.category,
+    confidence: first.score >= 2 ? 'medium' : 'low',
+  };
+}
+
+function extractArticles(text: string): string[] {
+  const found = new Set<string>();
+  for (const match of text.matchAll(ARTICLE_RE)) {
+    const articleNumber = match[1];
+    if (articleNumber) found.add(articleNumber.replace(/\s+/g, ''));
+  }
+  return [...found];
+}
+
+export function parseTelegramLegalMessage(
+  rawText: string,
+  messageId: number,
+  handle: string,
+  telegramPublishDate?: Date | string | number,
+): ParsedTelegramLegalContent {
+  if (!Number.isSafeInteger(messageId) || messageId <= 0) {
+    throw new Error('Telegram messageId lakkoofsa positive sirrii ta\'uu qaba.');
+  }
+
+  const channelHandle = handle.trim().replace(/^@/, '');
+  if (!/^[A-Za-z0-9_]{1,64}$/.test(channelHandle)) {
+    throw new Error('Telegram channel handle sirrii miti. @ fi qubee/lakkoofsa qofa fayyadami.');
+  }
+
+  const text = rawText.normalize('NFC').trim();
+  if (!text) throw new Error('Telegram message duwwaa dha.');
+  if (text.length > 1_000_000) {
+    throw new Error('Telegram message baay\'ee dheeraa dha; gara systemitti galchuun dura qoodi.');
+  }
+
+  // Mata-duree/keeyyata jalqabaa irratti ramaddii goona; seera qaama barruu keessatti caqasameen
+  // sanada guutuu akka Labsii/Dambii/Qajeelfamaatti dogoggoraan hin ramadnu.
+  const header = text.split(/\r?\n/).slice(0, 10).join(' ').slice(0, 2000);
+
+  const caseMatch = CASE_REFERENCE_RE.exec(header);
+  const proclamationMatch = PROCLAMATION_RE.exec(header);
+  const regulationMatch = REGULATION_RE.exec(header);
+  const directiveMatch = DIRECTIVE_RE.exec(header);
+
+  let type: LegalDocumentType = 'unknown';
+  let referenceNumber: string | null = null;
+
+  if (directiveMatch?.[1]) {
+    type = 'directive';
+    referenceNumber = `Qajeelfama ${normalizeNumber(directiveMatch[1])}`;
+  } else if (regulationMatch?.[1]) {
+    type = 'regulation';
+    referenceNumber = `Dambii ${normalizeNumber(regulationMatch[1])}`;
+  } else if (proclamationMatch?.[1]) {
+    type = 'proclamation';
+    referenceNumber = `Labsii ${normalizeNumber(proclamationMatch[1])}`;
+  } else if (
+    caseMatch?.[1] ||
+    /dhaddacha\s+ijibbaataa|cassation\s+division|cassation\s+decision|የሰ\s*መ\s*ቁ/iu.test(header)
+  ) {
+    type = 'cassation_decision';
+    referenceNumber = caseMatch?.[1]
+      ? `Lakk. Galmee ${normalizeNumber(caseMatch[1])}`
+      : null;
+  }
+
+  const jurisdiction = detectJurisdiction(header);
+  const categoryResult = detectCategory(text);
+  const publishDate = toIsoDate(telegramPublishDate);
+  const keyArticles = extractArticles(text);
+  const warnings: string[] = [];
+
+  if (!publishDate) warnings.push('Guyyaan Telegram irratti maxxanfame hin kennamne; publishDate null dha.');
+  if (!referenceNumber) warnings.push('Lakkoofsi wabii mata-duree irraa hin argamne; ofumaan hin uumamne.');
+  if (type === 'unknown') warnings.push('Gosti sanadaa ifatti hin adda baane. Mirkaneessa namaatiin ramadi.');
+  if (jurisdiction === 'unknown') warnings.push('Aangoon seeraa Federaalaa/Oromiyaa mata-duree irraa hin mirkanoofne.');
+  if (categoryResult.confidence === 'low' || categoryResult.confidence === 'unknown') {
+    warnings.push('Gosti dhimmaa tilmaama jechootaa qofa; ogeessa seeraatiin mirkaneessi.');
+  }
+  if (keyArticles.length === 0) {
+    warnings.push('Keewwata lakkoofsa qabu parseriin hin argamne; keewwata hin uumne.');
+  }
+
+  return {
+    // ID'n channel + messageId irratti hundaa'a; lakkoofsi galmee wal fakkaatus postoonni hin walitti bu'an.
+    id: `tg_${channelHandle.toLowerCase()}_${messageId}`,
+    messageId,
+    channelHandle,
+    postUrl: `https://t.me/${channelHandle}/${messageId}`,
+    publishDate,
+    ingestedAt: new Date().toISOString(),
+    referenceNumber,
+    type,
+    jurisdiction,
+    category: categoryResult.category,
+    categoryConfidence: categoryResult.confidence,
+    keyArticles,
+    rawText: text,
+    tags: [channelHandle, type, categoryResult.category, ...(referenceNumber ? [referenceNumber] : [])],
+    warnings,
+  };
+}
+
+--------------------- CODE END ---------------------
+
+MURTEESSAA: Faayila parser kana keessatti import Firestore (collection, doc, setDoc, getDocs) hin barbaachisu; hin fayyadamne yoo ta'e irraa haqi. Kuusaan server-side Admin SDK fayyadamuun parser irraa adda ta'ee haa jiraatu.
+
+MURTEESSAA: title, summary fi keyPrinciples parseriin ofumaan hin guutu. Ogeessi qabiyyee sakatta'ee Afaan Oromoo, Afaan Amaaraa fi Afaan Ingiliffaan hiike/gabaabse booda qofa fields kana dabali. Yoo schema duraanii keessatti fields sadan dirqama ta'an, consumer code keessatti optional ta'uu isaanii ilaali; schema migration barbaachisuu danda'a.
+
+
+3. FIRESTORE SECURITY RULES FOYYA'AN
+------------------------------------
+Koodiin armaan gadii claim Firebase Auth keessatti admin, legalContentManager, role fi institutionId jedhaman jiraachuu isaa irratti hundaa'a.
+
+- admin: true ykn legalContentManager: true jechuun server/Admin SDK qofaan custom claim kenni.
+- role: judge, assistant_judge, registrar, legal_expert ykn auditor keessaa tokko.
+- institutionId: dhaabbata/ mana murtii fayyadamaan itti ramadame.
+- Public repository keessatti publicationStatus = 'published' fi redacted = true ta'e qofa dubbifama.
+- Firestore rules field tokko tokko qofa dhoksuu hin danda'an. Kanaaf rawText odeeffannoo dhuunfaa qabu public document keessa hin kaa'in; private collection keessatti kuusi, public copy qulqullaa'e qofa maxxansi.
+
+-------------------- RULES START --------------------
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function isLegalRepositoryManager() {
+      return signedIn() && (
+        request.auth.token.admin == true ||
+        request.auth.token.legalContentManager == true
+      );
+    }
+
+    function hasCourtRole() {
+      return signedIn() && request.auth.token.role in [
+        'judge', 'assistant_judge', 'registrar', 'legal_expert', 'auditor'
+      ];
+    }
+
+    function canEditCases() {
+      return signedIn() && request.auth.token.role in [
+        'judge', 'assistant_judge', 'registrar'
+      ];
+    }
+
+    function sameInstitution(data) {
+      return signedIn()
+        && request.auth.token.institutionId != null
+        && data.institutionId == request.auth.token.institutionId;
+    }
+
+    // Telegram legal repository: sanada maxxanfamee fi qulqullaa'e qofa public dha.
+    match /telegram_legal_documents/{docId} {
+      allow get, list: if resource.data.publicationStatus == 'published'
+                       && resource.data.redacted == true;
+      allow create, update, delete: if isLegalRepositoryManager();
+    }
+
+    // Official legislation repository: publish/review workflow qabaachuu qaba.
+    match /legislation_repository/{docId} {
+      allow get, list: if resource.data.publicationStatus == 'published'
+                       && resource.data.redacted == true;
+      allow create, update, delete: if isLegalRepositoryManager();
+    }
+
+    // User documents: abbaa galmee qofatu dubbisa/fooyyeessa/haqa.
+    match /user_documents/{docId} {
+      allow get, list: if signedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if signedIn()
+                    && request.resource.data.userId == request.auth.uid;
+
+      allow update: if signedIn()
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == resource.data.userId;
+
+      allow delete: if signedIn()
+                    && resource.data.userId == request.auth.uid;
+    }
+
+    // Court cases: dhaabbata tokko keessatti hojjettoota aangoo qaban qofa.
+    // Auditor dubbisuu danda'a; garuu galmee jijjiiruu hin danda'u.
+    match /cases/{caseId} {
+      allow get, list: if hasCourtRole() && sameInstitution(resource.data);
+
+      allow create: if canEditCases()
+                    && request.auth.token.institutionId != null
+                    && request.resource.data.institutionId == request.auth.token.institutionId;
+
+      allow update: if canEditCases()
+                    && sameInstitution(resource.data)
+                    && request.resource.data.institutionId == resource.data.institutionId;
+
+      allow delete: if isAdmin() && sameInstitution(resource.data);
+    }
+
+    // Waan biraa hunda dhoowwi. Match biraa keessatti allow if jiraannaan,
+    // Firestore rules keessatti allow tokko illee dhugaa ta'uun ni hayyama;
+    // kanaaf paths hunda addaan sakatta'i.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+--------------------- RULES END ---------------------
+
+BARBAACHISAA:
+A. Koodiin kun schema/token claims armaan olitti ibsaman yoo hin jirre, fayyadamaa dhugaa hunda dhoowwuu danda'a. Deploy dura Firebase Authentication custom claims fi token haala sirriin qopheessi.
+B. App kee keessatti role fi institutionId Firestore user profile keessaa yoo sakatta'amu, rules kana kallattiin hin maxxansin; helper functions fi get() rules keessatti hayyamamuun, schema kee waliin wal-simsiisi. Query /cases keessatti where('institutionId', '==', token institutionId) dabaluu qaba; /user_documents keessatti where('userId', '==', uid) dabaluu qaba, yoo hin taane Firestore query ni dida.
+C. Court cases kee /institutions/{institutionId}/cases/{caseId} fakkaatee yoo caaseffame, match path kana jijjiiruu qabda. Koodii jalqabaa keessatti /cases qofa waan mul'ateef as irratti /cases fayyadame.
+D. Litigants/abbootiin dhimmaa galmee isaanii akka dubbisan yoo barbaadame, participantUid ykn party IDs irratti hundaa'e seera addaa dabali. Rules armaan olii hojjettoota mana murtii qofaaf dha.
+E. Admin SDK Cloud Functions/Cloud Run keessatti Firestore Security Rules irra darba. Kanaaf endpoint server-side irratti Firebase Admin authentication, authorization fi input validation ofumaan mirkaneessi.
+
+
+4. INGESTION / KUUSAA TELEGRAM – YAADA NAGEENYAA
+------------------------------------------------
+Parserii browser/client irraa kallattiin public collection irratti barreessisuun hin gorfamu. Ingestion server-side (Cloud Functions ykn Cloud Run) keessatti raawwadhu.
+
+Flow gorfamu:
+1. Telegram irraa message, messageId, channelHandle fi Telegram publish timestamp fudhadhu.
+2. parseTelegramLegalMessage(...) fayyadami.
+3. Raw source private collection keessatti kuusi; access isaa hojii seeraa aangoo qabu qofaan daangeessi.
+4. Madda Telegram, link, lakkoofsa galmee/labsii fi guutummaa barruu namaan mirkaneessi.
+5. Ragaa mootummaa/galmee murtii irraa mirkanaa'e, personal data irraa qulqullaa'e qofa public copy godhi.
+6. Public document irratti publicationStatus='published' fi redacted=true kaa'i. Review hin xumuramne yoo ta'e 'draft' ykn 'pending_review' godhi.
+7. createdAt, updatedAt, verifiedByUid, verifiedAt fi audit log server-side irratti galmeessi.
+
+Telegram post link qofaan murtiin Dhaddacha Ijibbaataa dhugaa ta'uu hin mirkanaa'u. Link'n source tracing qofaaf gargaara; garuu ragaa original/official copy waliin mirkaneessuun barbaachisaa dha.
+
+
+5. TESTII DIRQAMA TA'E
+----------------------
+Parser unit tests:
+[ ] Lakk. Galmee 214539 jedhuun cassation decision adda baasa.
+[ ] Labsii 242/2014 jedhuun proclamation adda baasa.
+[ ] Dambii/Qajeelfama lakkoofsa qabu sirriitti adda baasa.
+[ ] Reference hin qabne irratti type='unknown' fi referenceNumber=null deebisa.
+[ ] Telegram message lama referenceNumber tokko qabanillee ID adda addaa argatu.
+[ ] publish date hin kennamne yoo ta'e null ta'a; guyyaa import godhame akka publishDate hin kaa'u.
+[ ] Afaan Amaaraa/English/Oromo keessatti keewwata hin arganne yoo ta'e keewwata hin uumu.
+[ ] keyArticles keessa 53(1)(a) fakkaatu sirriitti qabata.
+
+Firestore Emulator security tests:
+[ ] Anonymous user unpublished Telegram document dubbisuu hin danda'u.
+[ ] Authenticated ordinary user Telegram document barreessuu/fooyyessuu/haquu hin danda'u.
+[ ] Legal content manager/admin qofa legal repository barreessuu danda'a.
+[ ] Auditor case dubbisuu danda'a; case fooyyeessuu hin danda'u.
+[ ] Registrar/judge institution biraa keessaa case dubbisuu hin danda'u.
+[ ] User document abbaa isaa qofaan dubbifama; userId jijjiiruun abbummaa dabarsuun hin danda'amu.
+[ ] Litigant role hin hayyamamne yoo ta'e, /cases irratti access hin argatu.
+
+
+6. APP SEERAAI DURAA WALIIN WAL-SIMSIISUU
+-----------------------------------------
+Koodii kana SEERAAI keessatti galchuun dura wantoota armaan gadii mirkaneessi:
+
+1. ParsedTelegramLegalContent duraan project keessatti fayyadama irra jiraa? Yoo jiraate, fields haaraa messageId, ingestedAt, classificationConfidence fi warnings itti dabali; type/jurisdiction/category unions haaraa irratti consumer files sakatta'i.
+2. type='unknown', jurisdiction='unknown' fi category='unknown' UI keessatti sirriitti agarsiisuu qaba. Unknown akka cassation ykn federalitti jijjiiruun hin hayyamamu.
+3. title, summary fi keyPrinciples afaan sadaniin guutamuu isaanii osoo hin mirkaneessin UI keessatti akka hiikame hin agarsiisin.
+4. keyArticles parser irraa argaman "keewwata barruu keessaa baafame" jedhanii agarsiisi; "keewwata seeraa mirkanaa'e" hin jedhin hanga official source waliin walbira qabamutti.
+5. public repository fi private raw ingestion data adda baasuun nageenya fi iccitii galmee eega.
+6. Firestore rules duraan jiru guutummaatti bakka buusuu dura paths, roles, claims, institution schema fi existing rules hunda audit godhi. Seera haaraa guutuu itti dabaluun app duraan hojjetu dhoowwuu danda'a.
+
+
+7. XUMURA – MURTOO OGUMMAA
+-------------------------
+Koodii jalqabaa keessatti dogoggorri hamaan parseriin murtii hunda akka cassationitti ramaduu fi Firestore keessatti account qabu kamiyyuu galmee mana murtii hundaaf hayyama kennuu dha. Isaan kun sirreeffamuu qaban.
+
+Koodiin fooyya'e kun:
+- odeeffannoo hin jirre hin uumu;
+- unknown status fayyadama;
+- Telegram message ID irratti ID addaa uuma;
+- publish date fi ingestion date adda baasa;
+- title/summary/translation sobaa hin uumu;
+- case access institution fi role irratti daangessa;
+- repository writing admin/manager qofaaf kenna;
+- user document ownerId jijjiiruu ni dhoowwa.
+
+Garuu koodiin kun production keessatti guutummaatti nageenya qaba jechuu miti. Firebase custom claims, Firestore document schema, collection paths, Cloud Run/Functions endpoints, UI consumers fi existing institutional RBAC irratti integration test gochuun dirqama. Rules kana Firebase Emulator keessatti qoradhu; booda staging project irratti mirkaneessi; achiin booda production irratti deploy godhi.
+
+Mirkaneessa seeraa: Telegram parseriin madda seeraa original/official hin bakka bu'u. SEERAAI PRO keessatti barruun murtii, labsii, dambii fi qajeelfama tokko tokko official source/galmee mootummaa waliin mirkanaa'uu qaba. Wabii hin mirkanoofne irratti AI'n keewwata ykn lakkoofsa murtii hin tilmaamin.
+

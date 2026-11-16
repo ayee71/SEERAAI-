@@ -188,7 +188,7 @@ export const DocumentVoiceNoteModal: React.FC<DocumentVoiceNoteModalProps> = ({
         }
       }
     } catch (err: any) {
-      console.error('Microphone error:', err);
+      console.warn('Microphone access notice:', err?.name || err?.message || err);
       setRecordError(
         currentLang === 'om'
           ? 'Maaykirofooniin hin heyyamamne. Maaloo eeyyama kennaa.'

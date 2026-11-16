@@ -809,7 +809,7 @@ export async function autoGrantPremiumToAllPayingUsers(): Promise<{
   // Owner check
   const isOwnerUser = isOwnerEmail(auth.currentUser?.email) || 
     isOwnerEmail(localStorage.getItem('seera_owner_email')) ||
-    (isOwnerKey(localStorage.getItem('seera_owner_key')) && isOwnerEmail(localStorage.getItem('seera_cached_email')));
+    (await isOwnerKey(localStorage.getItem('seera_owner_key')) && isOwnerEmail(localStorage.getItem('seera_cached_email')));
 
   if (localUserHasVerifiedPayment || isOwnerUser) {
     localStorage.setItem('seera_is_premium', 'true');

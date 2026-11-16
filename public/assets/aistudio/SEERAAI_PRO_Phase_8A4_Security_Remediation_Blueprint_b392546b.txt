@@ -1,0 +1,390 @@
+SEERAAI PRO — PHASE 8A.4
+
+SECURITY REMEDIATION BLUEPRINT & CONTROLLED PATCH PLAN
+
+READ-ONLY ANALYSIS — NO CODE CHANGES — NO DEPLOYMENT
+
+You are acting as a Principal Firebase Security Architect, Senior Application Security Engineer, Ethiopian Legal Technology Systems Architect, and QA Lead.
+
+Your task is to analyze the existing SEERAAI PRO application and prepare a complete, evidence-based security remediation blueprint using the Phase 8A.3 findings and the actual source code currently available in this workspace.
+
+1. NON-NEGOTIABLE PROJECT PRESERVATION REQUIREMENTS
+
+This is an existing production-oriented application. You must improve the existing application, not create a replacement.
+
+Preserve all of the following:
+
+- Existing application and repository structure.
+- Existing Firebase project and configuration.
+- Existing Firestore database and all collections.
+- Existing Firebase Storage bucket.
+- Existing users, authentication accounts, and user roles.
+- Existing court institutions and tenant data.
+- Existing legal documents, uploaded files, and metadata.
+- Existing SEERAAI PRO features and modules.
+- Existing Cloud Functions and backend services.
+- Existing Cloud Run service and deployment configuration.
+- Existing integrations, APIs, and user interfaces.
+- Existing multilingual support: Afaan Oromoo, Amharic, and English.
+
+Firebase project ID: "leafy-rush-xvd6f"
+
+Firestore database ID: "ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478"
+
+Storage bucket: "leafy-rush-xvd6f.firebasestorage.app"
+
+Do not create a new Firebase project, database, storage bucket, application, or replacement architecture.
+
+2. STRICT READ-ONLY MODE
+
+At this stage, perform analysis only.
+
+STRICTLY PROHIBITED:
+
+- Do not edit or overwrite any file.
+- Do not create, delete, rename, or move files.
+- Do not modify Firestore Rules.
+- Do not modify Storage Rules.
+- Do not deploy or publish anything.
+- Do not run Firebase deployment commands.
+- Do not access, modify, or delete production user data.
+- Do not change Firebase Authentication settings or custom claims.
+- Do not install, remove, or upgrade packages.
+- Do not change Firebase project configuration.
+- Do not alter Cloud Run or Cloud Functions.
+- Do not execute database migrations.
+- Do not perform destructive tests.
+- Do not claim that a production vulnerability has been confirmed unless actual production evidence exists.
+
+You may inspect existing source files, configuration, scripts, tests, and documentation. You may perform static analysis without changing files.
+
+If a file or piece of evidence is unavailable, explicitly report it as NOT VERIFIED. Never invent source code, file paths, line numbers, test results, or deployment evidence.
+
+3. PHASE 8A.3 FINDINGS TO VALIDATE
+
+The previous read-only audit reported the following issues. Independently verify each finding against the actual workspace before accepting it.
+
+A. Firestore Rules
+
+The previous audit identified:
+
+1. Potential public read/write permissions using "if true" in:
+
+   - "institutions/{institutionId}/courtDocuments"
+   - "institutions/{institutionId}/auditLogs"
+   - "witness_schedules"
+   - Ten "telegram_*" collections
+   - Other analytics, feedback, discussion, and court-related collections.
+
+2. Broad permissions based only on "isSignedIn()", potentially allowing any authenticated account, including anonymous authentication accounts, to access resources without sufficient role or institution checks.
+
+3. Potentially undefined helper functions:
+
+   - "signedIn()"
+   - "isCourtReporterOrStaff()"
+
+4. Admin authorization based on email allowlists without consistently requiring verified email status.
+
+5. User profile updates that may permit modification of privileged fields, including:
+
+   - "role"
+   - "subscriptionTier"
+   - "courtId"
+   - "uid"
+
+6. A global wildcard rule:
+   "match /{document=**}"
+
+7. Missing or inconsistent tenant isolation across court collections and subcollections.
+
+IMPORTANT: Analyze overlapping Firestore match statements correctly. Firestore allow expressions from matching rules are additive (OR logic). A restrictive rule does not cancel a permissive matching rule. Explain precisely which users can access each affected resource. Do not incorrectly claim that a global admin-only rule makes a collection public by itself.
+
+B. Firebase Storage Rules
+
+The previous audit identified:
+
+1. Storage rules appear to allow uploads under:
+   "legal_docs/{institutionId}/{userId}/{allPaths=**}"
+
+2. Other application services reportedly upload to:
+   "institutions/{institutionId}/courtDocuments/..."
+
+3. Court logo uploads reportedly use:
+   "court_logos/{institutionId}/..."
+
+4. The Storage owner rule may check the UID but fail to verify that the user's institution ID matches the requested institution path.
+
+5. Some application roles may be excluded from institutional document access.
+
+6. Existing upload services may use synthetic user identifiers or fallback paths that do not match Firebase Authentication UIDs.
+
+7. A fallback mechanism may store document contents as base64 data URLs inside Firestore when Storage uploads fail.
+
+Verify all these findings against the actual implementation.
+
+C. Tenant Isolation
+
+The previous audit reported:
+
+1. Missing "institutionId" validation in some court services.
+2. Court case records and related subcollections may lack consistent institution ownership.
+3. Some court collections may not have explicit tenant-specific match rules.
+4. Custom claims such as "institutionId", "role", "courtRole", and "admin" may be required by rules.
+5. No "setCustomUserClaims" implementation was found in the previously inspected repository.
+6. Firebase Admin SDK operations bypass Firebase Security Rules and therefore require authorization and tenant checks in backend code.
+
+Verify the actual situation and distinguish source-code evidence from live Firebase state.
+
+4. REQUIRED TECHNICAL ANALYSIS
+
+Inspect the relevant existing files, including where available:
+
+- "firestore.rules"
+- "storage.rules"
+- "firebase.json"
+- "firebase-applet-config.json"
+- "src/services/firebase.ts"
+- "src/server/firebase-admin-config.ts"
+- "src/services/courtDocuments.ts"
+- "functions/src/courtDocuments.ts"
+- "src/services/courtInstitutionService.ts"
+- "src/services/storage.ts"
+- "src/services/courtCaseService.ts"
+- "src/services/witnessSchedulingService.ts"
+- "src/services/courtNotificationService.ts"
+- "server-app.ts"
+- Authentication and authorization services.
+- Admin and institution management services.
+- Existing CI/CD workflows.
+- Existing package scripts.
+- Existing tests and Firebase Emulator configuration.
+
+Do not assume that these files have the same contents or line numbers as the previous audit. Inspect the current workspace and report actual evidence.
+
+5. DESIGN THE TARGET SECURITY ARCHITECTURE
+
+Prepare a proposed security architecture that addresses the following requirements.
+
+A. Firestore authorization
+
+Design rules that enforce:
+
+- Deny-by-default access.
+- Authenticated user checks.
+- Verified email requirements where appropriate.
+- Role-based authorization.
+- Institution-based tenant isolation.
+- Document ownership and access controls.
+- Separate permissions for judges, assistant judges, registrars, court staff, auditors, and legal experts.
+- Proper administrator authorization.
+- Immutable protected user fields.
+- Restricted access to audit logs.
+- Restricted access to witness identities and schedules.
+- Restricted access to evidence, audio recordings, and court documents.
+- Safe handling of Telegram legal-source collections.
+- Proper validation of document creation, modification, and deletion.
+
+Do not assume that being signed in automatically grants access to court records.
+
+B. Storage authorization
+
+Design one consistent Storage path convention that works with the existing application.
+
+The design must ensure:
+
+- Institution ID is checked against authenticated claims or trusted authorization data.
+- Owner UID is checked correctly.
+- Authorized institutional roles can access permitted court documents.
+- Unauthorized users cannot access another institution's documents.
+- Upload, read, update, and delete permissions are separated.
+- File size and content type are validated.
+- Sensitive documents are not stored in publicly readable Firestore fields as an upload fallback.
+- Existing document references and metadata remain recoverable.
+
+Do not propose deleting existing files or changing their paths without a verified migration and backward-compatibility plan.
+
+C. Custom claims and role management
+
+Design a secure provisioning process for:
+
+- "institutionId"
+- "role"
+- "courtRole"
+- "admin"
+
+Explain:
+
+- Which trusted backend component should issue claims.
+- How administrator approval is verified.
+- How claims are updated and revoked.
+- How stale tokens are handled.
+- How existing users retain their legitimate access.
+- How unauthorized users are prevented from assigning themselves privileged roles.
+
+Never allow clients to grant themselves administrator or institutional roles.
+
+D. Firebase Admin SDK security
+
+Identify every relevant backend operation that uses Firebase Admin SDK.
+
+Specify the required server-side authorization checks, including:
+
+- User authentication.
+- Institution membership.
+- Role verification.
+- Resource ownership.
+- Tenant ID matching.
+- Audit logging.
+- Safe error handling.
+
+Do not assume Firebase Security Rules protect Admin SDK operations.
+
+6. PRIORITIZED REMEDIATION MATRIX
+
+Produce a table with these columns:
+
+| ID | Vulnerability | Affected File/Collection | Evidence | Severity | Exploitability | Proposed Fix | Dependencies | Regression Risk |
+
+Use the following severity categories:
+
+- P0 — Critical: unauthorized access to confidential court records, unrestricted writes, or cross-tenant exposure.
+- P1 — High: privilege escalation, weak administrative authorization, or serious tenant isolation failures.
+- P2 — Medium: insufficient validation, incomplete access restrictions, or operational security weaknesses.
+- P3 — Low: documentation, monitoring, or maintainability issues.
+
+Explain why each issue receives its assigned severity.
+
+Separate:
+
+1. Confirmed source-code defects.
+2. Potential security risks requiring additional verification.
+3. Production risks whose live status cannot currently be determined.
+
+7. PROPOSED PATCH PLAN — DO NOT APPLY PATCHES
+
+For every P0 and P1 issue, provide:
+
+1. Exact affected file.
+2. Exact function, collection, or rule block.
+3. Existing behavior.
+4. Proposed secure behavior.
+5. Proposed code or Rules changes as illustrative snippets or unified diffs.
+6. Required dependencies.
+7. Potential effects on existing users and features.
+8. Backward-compatibility considerations.
+9. Required migration, if any.
+10. Rollback strategy.
+
+These are proposals only. Do not write the proposed patches into the workspace.
+
+Do not remove a feature merely because its current authorization is unsafe. Redesign its authorization while preserving its intended functionality.
+
+8. TESTING STRATEGY
+
+Design a comprehensive Firebase Emulator testing plan.
+
+Include tests for:
+
+- Anonymous users.
+- Authenticated users without verified email.
+- Verified ordinary users.
+- Judges.
+- Assistant judges.
+- Registrars.
+- Auditors.
+- Legal experts.
+- Court administrators.
+- Global administrators.
+- Users from institution A attempting to access institution B.
+- Document owners attempting unauthorized updates.
+- Attempts to modify protected role fields.
+- Public read and write attempts.
+- Unauthorized document deletion.
+- Witness schedule confidentiality.
+- Audit log immutability.
+- Storage upload and download authorization.
+- Wrong institution ID in Storage paths.
+- Invalid file types and oversized uploads.
+- Server-side Admin SDK authorization.
+- Existing application workflows and regression behavior.
+
+For each test, provide:
+
+- Test name.
+- Given condition.
+- Expected result.
+- Security rule or backend control being tested.
+
+Do not access production data during testing.
+
+9. DEPLOYMENT READINESS REQUIREMENTS
+
+Create a deployment strategy that is separate from this read-only analysis.
+
+Explain the future safe sequence:
+
+1. Preserve and back up the current application and relevant configuration.
+2. Prepare proposed Firestore and Storage Rules.
+3. Validate Rules compilation.
+4. Run Firebase Emulator security tests.
+5. Run application regression tests.
+6. Validate tenant and role provisioning.
+7. Review migration and backward compatibility.
+8. Obtain explicit human approval.
+9. Deploy to the intended Firebase project only after approval.
+10. Verify deployed rules and monitor errors.
+
+Do not execute any of these deployment actions now.
+
+Explicitly identify what evidence would be required to confirm the actual production Firestore and Storage Rules currently published in Firebase.
+
+10. REQUIRED FINAL REPORT FORMAT
+
+Return a professional report with these sections:
+
+1. Executive Security Verdict.
+2. Scope and Methodology.
+3. Source-Code Findings and Evidence.
+4. Firestore Rules Security Assessment.
+5. Firebase Storage Security Assessment.
+6. Tenant Isolation Assessment.
+7. Authentication, Roles, and Custom Claims.
+8. Firebase Admin SDK Authorization.
+9. Prioritized P0-P3 Remediation Matrix.
+10. Proposed Patch Plan.
+11. Data Preservation and Backward Compatibility.
+12. Emulator and Regression Testing Plan.
+13. Deployment Readiness and Rollback Strategy.
+14. Outstanding Questions and Unverified Production Evidence.
+15. Recommended Next Phase.
+
+Use exact source file paths and verified line numbers wherever possible.
+
+Clearly label every claim as one of:
+
+- CONFIRMED IN SOURCE
+- NOT CONFIRMED
+- CANNOT DETERMINE FROM AVAILABLE EVIDENCE
+- PROPOSED DESIGN
+- REQUIRES HUMAN APPROVAL
+
+Do not describe a proposed fix as implemented.
+
+11. FINAL EXECUTION INSTRUCTION
+
+This request authorizes analysis and preparation of a remediation blueprint only.
+
+Do not modify the application or any Firebase configuration.
+
+At the end, provide a clear statement confirming:
+
+- Whether any files were modified.
+- Whether any files were created or deleted.
+- Whether any packages were installed.
+- Whether any Firebase data was accessed or modified.
+- Whether any Firestore or Storage Rules were published.
+- Whether any deployment occurred.
+
+If the report is too large, divide it into numbered parts without omitting findings.
+
+STOP after presenting the complete Phase 8A.4 Security Remediation Blueprint. Wait for explicit human approval before implementing any patch.

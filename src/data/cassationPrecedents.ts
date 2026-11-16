@@ -27,6 +27,8 @@ export interface CassationPrecedent {
     en: string;
   };
   statutoryProvisions: string[];
+  rating?: number;
+  ratingCount?: number;
 }
 
 export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
@@ -62,6 +64,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Appeals filed beyond statutory limitation without showing good cause for delay must be dismissed.',
     },
     statutoryProvisions: ['Civil Procedure Code Arts. 323, 325'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_214561',
@@ -92,6 +96,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Courts cannot exercise jurisdiction over matters expressly excluded from their judicial authority by statute.',
     },
     statutoryProvisions: ['Civil Procedure Code Art. 6'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_198742',
@@ -122,6 +128,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Commercial disputes exceeding statutory pecuniary limits fall under the original jurisdiction of higher courts.',
     },
     statutoryProvisions: ['Civil Procedure Code Art. 6', 'Commercial Code Art. 5'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_oromia_12345',
@@ -152,6 +160,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Administrative remedies must be exhausted before regular courts assume jurisdiction over urban land management disputes.',
     },
     statutoryProvisions: ['Civil Procedure Code Art. 6', 'Oromia Urban Land Proclamation'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_sdfy_1',
@@ -182,6 +192,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Bail is a constitutional right; it can only be denied under specific statutory exceptions defined in the Criminal Procedure Code.',
     },
     statutoryProvisions: ['Criminal Procedure Code Arts. 63, 67'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_admin_1',
@@ -212,6 +224,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Administrative decisions must adhere to principles of legality and due process; otherwise, they are subject to judicial review and nullification.',
     },
     statutoryProvisions: ['Tax Administration Proclamation No. 983/2016'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_28001',
@@ -242,6 +256,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'A lawfully registered mortgage confers absolute priority of execution; lack of actual notice by third-party claimants does not defeat secured creditor priority.',
     },
     statutoryProvisions: ['Commercial Code Art. 171', 'Civil Code Art. 3050'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_27542',
@@ -272,6 +288,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Failure to develop leasehold within statutory schedules empowers authorities to cancel leases, but lawful structural improvements demand fair compensation.',
     },
     statutoryProvisions: ['Urban Lands Lease Holding Proclamation No. 721/2011 Art. 22', 'Civil Code Art. 1808'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_16568',
@@ -302,6 +320,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Ascertainment of heirship alone does not transfer immediate title; succession partition applies strictly after liquidation of estate debts.',
     },
     statutoryProvisions: ['Civil Code Arts. 996, 1060, 1062'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_18274',
@@ -332,6 +352,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Under Civil Code Art. 2472, loan contracts exceeding statutory value cannot be proved by parole or witness evidence alone without written instrument.',
     },
     statutoryProvisions: ['Civil Code Arts. 2472, 2003'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_20295',
@@ -362,6 +384,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'An unlawfully dismissed employee is prima facie entitled to reinstatement unless the employment relationship is irretrievably damaged.',
     },
     statutoryProvisions: ['Labor Proclamation No. 1156/2019 Art. 43'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_21919',
@@ -392,6 +416,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Execution of a final judgment must be sought within 10 years from the date of finality.',
     },
     statutoryProvisions: ['Civil Procedure Code Arts. 372-380', 'Civil Code Art. 1845'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_24112',
@@ -422,6 +448,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Unilateral breach of material contractual obligations entitles the aggrieved party to seek judicial cancellation and restitution.',
     },
     statutoryProvisions: ['Civil Code Arts. 1784, 2874'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_29812',
@@ -452,6 +480,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'All assets acquired during marriage are presumed joint property subject to equal division unless proven otherwise.',
     },
     statutoryProvisions: ['Revised Family Code Proclamation No. 213/2000 Art. 60'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_32104',
@@ -482,6 +512,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Unauthorized transfer of public housing leases violates administrative regulations and is void.',
     },
     statutoryProvisions: ['Civil Code Art. 2965', 'Lease Regulations'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_36540',
@@ -512,6 +544,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Insurance indemnity actions must be filed within two years from the occurrence of the insured loss.',
     },
     statutoryProvisions: ['Commercial Code Art. 675', 'Civil Code Art. 1845'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_39811',
@@ -542,6 +576,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Criminal conviction requires proof beyond reasonable doubt; unresolved ambiguity benefits the accused.',
     },
     statutoryProvisions: ['Criminal Code Arts. 407-412', 'Criminal Procedure Code Art. 142'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_42109',
@@ -572,6 +608,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Gross breach of fiduciary duty or theft justifies summary termination without severance.',
     },
     statutoryProvisions: ['Labor Proclamation No. 1156/2019 Art. 27'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_45892',
@@ -602,6 +640,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Penalty interest rates cannot exceed the principal loan amount under civil law principles.',
     },
     statutoryProvisions: ['Civil Code Arts. 1771, 2475'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_51044',
@@ -632,6 +672,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Government-issued title deeds constitute prima facie evidence of lawful possession until legally nullified.',
     },
     statutoryProvisions: ['Civil Code Art. 1195', 'Urban Lands Proclamation'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_56120',
@@ -662,6 +704,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Cassation petitions must be filed within one year from the date of final appellate decision.',
     },
     statutoryProvisions: ['Federal Courts Proclamation Art. 23'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_61209',
@@ -692,6 +736,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Shareholders possess statutory rights to inspect company financial records and audit reports.',
     },
     statutoryProvisions: ['Commercial Code Art. 368'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_67412',
@@ -722,6 +768,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Long-term de facto marital cohabitation creates equitable property rights akin to registered marriage upon dissolution.',
     },
     statutoryProvisions: ['Revised Family Code Art. 95'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_72109',
@@ -752,6 +800,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Unilateral upward adjustment of urban lease rates by administrative fiat without contractual backing is invalid.',
     },
     statutoryProvisions: ['Urban Land Lease Proclamation No. 721/2011'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_78912',
@@ -782,6 +832,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'A third-party mortgagor is bound by the security agreement until full satisfaction of the underlying debt.',
     },
     statutoryProvisions: ['Civil Code Art. 3040', 'Banking Proclamation'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_84102',
@@ -812,6 +864,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Unlawful termination requires calculation of severance incorporating prospective benefits lost.',
     },
     statutoryProvisions: ['Labor Proclamation No. 1156/2019'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_89512',
@@ -842,6 +896,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Clerical or arithmetical errors in judgments can be corrected by the court at any time.',
     },
     statutoryProvisions: ['Civil Procedure Code Art. 336'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_93412',
@@ -872,6 +928,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'The state may establish public utility easements over private land subject to prompt compensation.',
     },
     statutoryProvisions: ['Civil Code Art. 1359', 'Expropriation Proclamation'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_98102',
@@ -902,6 +960,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Insurance companies are liable up to the statutory policy limit for third-party claims.',
     },
     statutoryProvisions: ['Commercial Code Art. 654', 'Insurance Proclamation'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_102912',
@@ -932,6 +992,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Allegations of document forgery require forensic expert examination and verification.',
     },
     statutoryProvisions: ['Criminal Code Art. 380', 'Criminal Procedure Code'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_108912',
@@ -962,6 +1024,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Failure to pay installments on condominium housing agreements justifies legal cancellation.',
     },
     statutoryProvisions: ['Civil Code Art. 2874', 'Housing Regulations'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_115024',
@@ -992,6 +1056,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Unexcused delay in construction execution triggers enforceable contractual liquidated damages.',
     },
     statutoryProvisions: ['Civil Code Arts. 1792, 2630'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_121402',
@@ -1022,6 +1088,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Temporary injunctions require showing a prima facie case and irreparable harm.',
     },
     statutoryProvisions: ['Civil Procedure Code Arts. 154-158'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_129812',
@@ -1052,6 +1120,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Validly executed collective agreements are legally binding on all covered employees and management.',
     },
     statutoryProvisions: ['Labor Proclamation No. 1156/2019 Arts. 130-140'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_135012',
@@ -1082,6 +1152,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Share transfers in commercial enterprises must comply with statutory registration and corporate bylaws.',
     },
     statutoryProvisions: ['Commercial Code Arts. 334, 345'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_142012',
@@ -1146,6 +1218,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Under the Oromia Rural Land Proclamation and the Constitution, rural land is non-alienable by private sale; unapproved land transfer contracts are null and void ab initio under Civil Code Art. 1716.',
     },
     statutoryProvisions: ['Labsii Lafa Baadiyyaa Oromiyaa Lakk. 130/1999', 'Civil Code Art. 1716', 'FDRE Constitution Art. 40(3)'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'oromia_cass_23491',
@@ -1176,6 +1250,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Customary marriage celebrated in accordance with Oromo traditions possesses full legal validity under the Oromia Family Code; credible elder testimony is sufficient to establish validity.',
     },
     statutoryProvisions: ['Heera Maatii Oromiyaa Labsii Lakk. 83/1995 Keewwata 28-35', 'Civil Code Art. 625'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'oromia_cass_34190',
@@ -1206,6 +1282,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Internal organizational bylaws cannot derogate from or diminish minimum statutory protections guaranteed to workers under the Labor Proclamation.',
     },
     statutoryProvisions: ['Labor Proclamation No. 1156/2019 Art. 134', 'Civil Code Art. 1676'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'oromia_cass_45812',
@@ -1236,6 +1314,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Warranty claims based on commercial defects must be instituted within the prescribed statutory period; failure bars judicial enforcement.',
     },
     statutoryProvisions: ['Commercial Code Arts. 232, 233', 'Civil Code Art. 2298'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'oromia_cass_56711',
@@ -1266,6 +1346,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Arbitral awards rendered within statutory jurisdiction are binding and enforceable unless afflicted by fundamental errors of law susceptible to cassation review.',
     },
     statutoryProvisions: ['Civil Procedure Code Arts. 315-319', 'Arbitration and Conciliation Proclamation No. 1237/2021'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'oromia_cass_79124',
@@ -1296,6 +1378,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Under expropriation laws, payment of verified fair market compensation and provision of substitute urban plot must precede actual eviction or demolition.',
     },
     statutoryProvisions: ['Expropriation of Landholdings Proclamation No. 1161/2019', 'FDRE Constitution Art. 40(8)'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'oromia_cass_88102',
@@ -1326,6 +1410,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Unpaid loans secured by collateral empower financial institutions to execute foreclosure sales following statutory notice.',
     },
     statutoryProvisions: ['Civil Code Art. 3060', 'Microfinance Proclamation'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'oromia_cass_94512',
@@ -1356,6 +1442,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Best interests of the child paramount principle governs custody and maintenance orders upon family dissolution.',
     },
     statutoryProvisions: ['Oromia Family Code', 'Revised Family Code Art. 210'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'oromia_cass_101202',
@@ -1386,6 +1474,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Sentencing must proportionate gravity of offense and potential for rehabilitation.',
     },
     statutoryProvisions: ['Criminal Code Arts. 88-95'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'oromia_cass_110240',
@@ -1416,6 +1506,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Unauthorized structures on urban leasehold land are subject to administrative removal following proper notice.',
     },
     statutoryProvisions: ['Urban Land Lease Proclamation No. 721/2011', 'Civil Code Art. 1185'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'oromia_cass_118912',
@@ -1446,6 +1538,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Execution objections must be adjudicated expeditiously by executing courts.',
     },
     statutoryProvisions: ['Civil Procedure Code Arts. 415-420'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'oromia_cass_125012',
@@ -1476,6 +1570,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Cancellation of contracts mandates restitution and proven compensatory damages.',
     },
     statutoryProvisions: ['Civil Code Arts. 1790, 1806'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_gorfe_21448',
@@ -1506,6 +1602,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'A contract for the sale of immovable property must be made in writing and authenticated before a notary public to be legally valid; non-compliance renders the contract void ab initio.',
     },
     statutoryProvisions: ['Civil Code Arts. 1723(1), 2877, 2878'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_enani_12371',
@@ -1536,6 +1634,8 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Under Civil Code Art. 2878, a contract of sale of immovable property cannot affect third parties unless registered. The prior unregistered buyer cannot raise the contract against a subsequent purchaser who obtained and registered title transfer.',
     },
     statutoryProvisions: ['Civil Code Arts. 2878, 2879, 1185', 'Proclamation No. 818/2014'],
+  rating: 0,
+  ratingCount: 0,
   },
   {
     id: 'cass_kebede_16109',
@@ -1566,6 +1666,70 @@ export const CASSATION_PRECEDENTS_DATA: CassationPrecedent[] = [
       en: 'Registration under Civil Code Art. 2878 serves as notice to third parties, but full constitutive transfer of ownership requires both valid cause and title transfer in the register.',
     },
     statutoryProvisions: ['Civil Code Arts. 2878, 1184, 1185'],
+  },
+  {
+    id: 'cass_206765',
+    courtJurisdiction: 'federal',
+    courtName: {
+      om: 'Mana Murtii Waliigalaa Federaalaa Dhaddacha Ijibbaataa',
+      am: 'የፌዴራል ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት',
+      en: 'Federal Supreme Court Cassation Division',
+    },
+    volume: 32,
+    fileNumber: '206765',
+    yearEC: 2012,
+    yearGC: 2020,
+    category: 'procedure',
+    parties: {
+      om: 'Ato Shooshay Abebe v. Wo/ro Axedde G/Tensaa\'ee',
+      am: 'አቶ ሾሻይ አበበ እና ወ/ሮ አፀደ ገ/ተንሳይ',
+      en: 'Ato Shooshay Abebe v. Wo/ro Axedde G/Tensaa\'ee',
+    },
+    legalIssue: {
+      om: 'Araarri raawwii murtii irratti taasifame falmii haaraa dhowwuuf akka "Res Judicata" ta\'ee tajaajiluu ni danda\'aa?',
+      am: 'በአፈጻጸም ሂደት ላይ የተደረገ ስምምነት የፍትሐብሔር ሥነ-ሥርዓት ሕግ ቁጥር 5(1) (Res Judicata) መቃወሚያ ሊቀርብበት ይችላል?',
+      en: 'Can a settlement agreement made during execution serve as Res Judicata?',
+    },
+    bindingPrinciple: {
+      om: 'Seerri Adeemsa Falmii sivilii keeyyata 5(1) fi 277 dalaguuf falmiin sun ijoo ta\'ee dhumachuu qaba. Raawwii irratti dhimmi dhiyaate murtii haaraa waan ta\'eef gara dhaddacha jalaatti deebi\'eera.',
+      am: 'የፍርድ አፈጻጸም ፍርድ ቤቱ ውሳኔው ወደ ተግባር እንዲለወጥ ከማድረግ ውጭ አዲስ መብትና ግዴታ መፍጠር አይችልም። ጉዳዩ በፍርድ ያለቀ ነው ተብሎ ውድቅ መደረጉ ስህተት በመሆኑ ተመልሷል።',
+      en: 'Execution courts cannot create new rights/obligations; settlements during execution are not res judicata.',
+    },
+    statutoryProvisions: ['Civil Procedure Code Arts. 5(1), 277'],
+    rating: 0,
+    ratingCount: 0,
+  },
+  {
+    id: 'cass_177968',
+    courtJurisdiction: 'federal',
+    courtName: {
+      om: 'Mana Murtii Waliigalaa Federaalaa Dhaddacha Ijibbaataa',
+      am: 'የፌዴራል ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት',
+      en: 'Federal Supreme Court Cassation Division',
+    },
+    volume: 32,
+    fileNumber: '177968',
+    yearEC: 2013,
+    yearGC: 2020,
+    category: 'commercial',
+    parties: {
+      om: 'Faabrikaa Saamunaa Naazreet v. Ato Miliyuon Makonnen (9)',
+      am: 'የናዝሬትና አርሲ ሳሙና ፋብሪካ ኃ/የተ/የግ/ማህበር እና አቶ ሚሊዮን መኮንን (9ሰዎች)',
+      en: 'Nazareth Soap Factory v. Ato Miliyuon Makonnen (9)',
+    },
+    legalIssue: {
+      om: 'Dhaaltesoonni kumpanii dhuunfaa keessatti dhuunfaan miseensa ta\'anii galmaahuuf seerri ni heyyamaa?',
+      am: 'የንግድ ሕግ አንቀጽ 328 እና 524(1) ድንጋጌዎች ወራሾች በአክሲዮን ድርሻቸው መሰረት በተናጠል አባል ሆነው እንዳይመዘገቡ ይከለክላል?',
+      en: 'Do commercial code provisions prohibit heirs from being registered individually as company members?',
+    },
+    bindingPrinciple: {
+      om: 'Kassasichi akka hiiketti, waliigalteen dhuunfaa kumpanii (Art 4.4) miseensota waliinii malee dhaaltesoota hin dhowwu. Dhuunfaan galmeeffamuun isaanii seeraan qofaa dha.',
+      am: 'የንግድ ሕጉ አንቀጽ 328(2) ድንጋጌ (አንድ ተወካይ መሾም) የሚሰራው ለአንድ አክሲዮን ብዙ የጋራ ባለሀብቶች ሲኖሩ ነው፤ ወራሾች የተከፋፈሉ ብዙ አክሲዮኖች ካሏቸው በተናጠል መመዝገብ ይችላሉ።',
+      en: 'Heirs holding separate share interests can register individually as company members.',
+    },
+    statutoryProvisions: ['Commercial Code Arts. 328, 524'],
+    rating: 0,
+    ratingCount: 0,
   },
 ];
 

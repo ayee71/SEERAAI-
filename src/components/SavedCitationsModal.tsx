@@ -17,6 +17,7 @@ import {
   downloadMarkdownBibliography,
   generateCassationBibliographyMarkdown,
 } from '../services/cassationBibliographyExport';
+import { DownloadBookmarksButton } from './DownloadBookmarksButton';
 import { CassationPrecedent } from '../data/cassationPrecedents';
 import {
   X,
@@ -183,15 +184,20 @@ export const SavedCitationsModal: React.FC<SavedCitationsModalProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+              <DownloadBookmarksButton
+                currentLang={currentLang}
+                variant="primary"
+                exportOptions={{ overrideCitations: filteredItems }}
+              />
               <button
                 type="button"
                 onClick={handleExportPDF}
                 disabled={filteredItems.length === 0}
-                className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-amber-300 border border-amber-500/30 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export PDF</span>
+                <span>Bibliography PDF</span>
               </button>
             </div>
           </div>

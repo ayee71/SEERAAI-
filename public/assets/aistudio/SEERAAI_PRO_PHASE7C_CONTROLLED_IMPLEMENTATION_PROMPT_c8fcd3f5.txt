@@ -1,0 +1,96 @@
+SEERAAI PRO — PHASE 7C: CONTROLLED NARROW IMPLEMENTATION
+STRICT SOURCE-CODE PATCH ONLY — NO PRODUCTION DEPLOYMENT
+
+AUTHORIZATION SCOPE
+The human has approved only a narrow implementation of the two Phase 7B.2 remediation goals:
+(1) safer sign-out/account-switch handling for local user data and pending offline edits; and
+(2) neutralization of unverified legal ticker placeholders.
+This is NOT authorization to redesign the application, rebuild it, change its architecture, migrate Firebase, change domains/DNS, deploy anything, or modify production data.
+
+NON-NEGOTIABLE GUARDRAILS
+- Work only in the EXISTING SEERAAI PRO repository and preserve the current application, Firebase project, users, documents, features, court workflows, and service configuration.
+- Do not create a replacement app or a new Firebase project.
+- Do not install, update, remove, or upgrade packages/dependencies.
+- Do not print, read aloud, copy, or expose API keys, credentials, tokens, private user content, or secrets.
+- Do not run commands that write to Firebase, Firestore, Storage, Auth, production databases, or external services.
+- Do not deploy Firestore rules, Storage rules, Hosting, Cloud Run, DNS, or any production service.
+- Do not modify firestore.rules, storage.rules, firebase.json, package.json, lockfiles, server-app.ts, server.ts, or environment files.
+- Do not modify unrelated files. If an additional source file is technically essential, STOP before editing and explain why, naming the exact path and the smallest proposed change. Wait for separate approval.
+- Before edits, inspect git status and preserve all pre-existing user changes. Never overwrite or discard unrelated modifications.
+
+MANDATORY PREFLIGHT — STOP ON MISMATCH
+1. Read the actual package.json and lockfile metadata and report the exact app version and Firebase SDK versions. Earlier reports conflict (v4.1.0/v5.0.0 and differing Firebase SDK versions). Do not assume either report is correct. Do not change versions.
+2. Confirm the actual exported names and behavior of handleSignOut(), backgroundSyncManager, getQueuedEdits(), queueEdit(), and any in-flight sync API. Do not invent methods.
+3. Verify the exact localStorage key constants from source. Earlier reports used both `seera_offline_queue` and `seera_ai_offline_queue`; use only the exact keys actually present in the checked-out source.
+4. Inspect the actual IndexedDB database name, object stores, schema/version, and whether records are user-scoped. Phase 7B.2 identified SeeraAIOfflineDB stores including documents, edits, sync_queue, and case_files. Do not assume a full database deletion is safe.
+5. Trace all read/write helpers for saved documents, drafts, offline edits, and cached case files. Identify local-only, queued-unsynced, and confirmed-cloud-synced data separately.
+6. Inspect the current sign-out flow, account-switch flow, multi-tab behavior, and the exact ticker array in index.html.
+7. If the current repository does not match the reports, or a required API/key/store cannot be verified, STOP without edits and return a discrepancy report.
+
+PATCH A — SAFE SIGN-OUT AND ACCOUNT SWITCH
+Implement the smallest safe change possible, based on verified source APIs.
+
+Required behavior:
+1. Add a sign-out operation lock before beginning cleanup. Prevent new local writes and prevent a second simultaneous sign-out/account switch while cleanup is running.
+2. Pause or coordinate background sync and safely await any already-running write/sync operation using the existing implementation. Do not invent an API or silently cancel a write.
+3. Inspect every pending offline edit and any local-only draft/cache that could contain user data. A zero-length sync queue alone does NOT prove that every local document is safely stored in the cloud.
+4. Distinguish confirmed cloud-synced records from pending-unsynced and local-only records. Only remove a record after confirming it is synced, or after the user explicitly confirms discarding the identified unsynced/local-only work.
+5. When pending/local-only user work exists, show clear options: “Retry Sync”, “Stay Signed In”, and “Discard Unsynced Changes & Sign Out”. The discard option must require a separate explicit confirmation and identify the consequence. No automatic discard.
+6. If sync fails or the network is unavailable, keep the user signed in unless the user explicitly confirms discard. Do not purge unsynced data.
+7. Purge only verified SEERAAI-owned, user-sensitive cache keys and records belonging to the departing user. Preserve non-sensitive preferences such as language/theme. Do not clear all localStorage or delete the entire IndexedDB database unless source inspection proves that doing so cannot remove another user's data or unrelated app state.
+8. Include the relevant IndexedDB stores in the cleanup design where appropriate. Ensure transactions complete successfully and verify deletion. Do not report cleanup success if any deletion failed.
+9. Handle multi-tab sign-out/account switching with the existing browser mechanisms (BroadcastChannel and/or storage events) only if compatible with the current code. Ensure another tab cannot continue displaying the previous user's cached documents after sign-out.
+10. If cleanup fails, fail safely: do not allow a different account to read the previous user's local cache. Keep the app in a restricted cleanup-required state or use another verified safe approach. Do not simply redirect to login and claim that local data has been removed.
+11. Ensure error handling does not expose private document contents in logs.
+12. Do not alter server authorization, Firebase rules, roles, or production storage paths in this phase.
+
+PATCH B — TICKER NEUTRALIZATION
+1. In index.html, replace only the unverified simulated entries “Proclamation No. 1385/2026” and “Cassation File No. 248912/2026”.
+2. Use neutral wording such as: “Official legal gazette and Supreme Court cassation source verification in progress.”
+3. Do not imply that a particular 2026 proclamation or cassation file has been officially published or verified.
+4. Do not add substitute legal citations unless the authoritative primary source and publication details are already present and verifiable in the repository.
+
+TESTS AND EVIDENCE REQUIRED
+Run only local, non-production tests that already exist; do not install dependencies. Separate EXECUTED from PROPOSED and NOT RUN.
+At minimum, verify or add focused tests only within already-approved files (otherwise stop for additional approval) for:
+- sign-out when no pending edits exist;
+- sign-out when pending edits exist and sync succeeds;
+- sync failure/offline case leaves the user signed in and preserves unsynced work;
+- explicit discard requires confirmation and only discards the selected user's identified unsynced data;
+- IndexedDB cleanup success and cleanup failure;
+- sign-out/account switching across two tabs;
+- language/theme preferences remain;
+- a second user cannot see the first user's cached documents after sign-out;
+- ticker contains no unverified 1385/2026 or 248912/2026 assertions.
+Do not call a static code inspection an executed test. Do not label Firestore/Storage rules as tested unless the Firebase Emulator tests actually run and their output is available. Do not run production tests or write to production Firebase.
+
+CHANGE CONTROL AND REPORTING
+1. Before editing, provide a short preflight report with repository version, exact storage keys, IndexedDB stores, verified APIs, git status summary (no secret values), and the exact proposed files.
+2. If preflight passes, make only the approved source changes. Preferred files: src/context/AuthContext.tsx and index.html. Any need to modify backgroundSync.ts, indexedDb.ts, storage.ts, or another file requires stopping for separate approval first.
+3. After editing, show a concise diff for every changed file and explain each change. Do not include secrets or private user data.
+4. Run the available local checks and provide exact command names, actual exit status, and relevant output. A Vite build is not a substitute for TypeScript type-checking; report each separately. Do not claim tests ran if they did not.
+5. Provide a rollback instruction limited to reverting this phase's own diff. Do not reset the whole repository or discard user changes.
+6. Confirm explicitly that no packages were installed, no Firebase/production data was touched, and no deployment occurred.
+7. End by requesting a separate human review before any deployment. Do not deploy, even if all tests pass.
+
+STOP CONDITIONS
+Stop immediately without making edits if:
+- the actual repository/version differs materially from the audit;
+- exact storage keys or IndexedDB stores cannot be traced;
+- the existing sync API cannot prove a write is committed;
+- local-only drafts cannot be safely distinguished from cloud-synced records;
+- safe implementation requires modifying an unapproved additional file;
+- existing user changes in git would be overwritten;
+- tests would require production writes or unavailable infrastructure.
+
+FINAL RESPONSE FORMAT
+A. Preflight verification and discrepancies
+B. Files actually changed (or explicitly “none”)
+C. Sign-out state handling and data-loss safeguards
+D. Ticker changes
+E. Tests: EXECUTED / PROPOSED / NOT RUN
+F. Diff summary and rollback steps
+G. Production/deployment actions: explicitly “NONE”
+H. Remaining blockers and separate approval needed
+
+Begin with the mandatory preflight. Do not edit until it passes. Do not deploy under any circumstance in Phase 7C.

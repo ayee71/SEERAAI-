@@ -1,0 +1,519 @@
+SEERAAI PRO — UNIVERSAL ETHIOPIAN LEGAL INTELLIGENCE, TELEGRAM ARCHIVE RESEARCH, CASSATION PRECEDENT & EVIDENCE-GROUNDED ANSWERING ENGINE
+
+MODE: ADVANCED DEEP LEGAL RESEARCH
+APPLICATION: EXISTING SEERAAI PRO
+CURRENT BASELINE: Version 4.1.0
+TARGET: Next compatible version
+JURISDICTION: Federal Democratic Republic of Ethiopia and Regional States, particularly Oromia
+LANGUAGES: Afaan Oromoo, Amharic, English
+PRIMARY OBJECTIVE: Accurate, relevant, deeply researched, source-grounded legal answers.
+
+1. NON-NEGOTIABLE PROJECT PRESERVATION
+
+Implement this capability inside the EXISTING SEERAAI PRO application.
+
+Do not create a replacement application or Firebase project.
+
+Preserve:
+
+- Existing Firebase project "leafy-rush-xvd6f".
+- Existing Firestore database and Storage bucket.
+- Existing users, documents, authentication and permissions.
+- Existing Legal Research Engine V2.
+- Existing Telegram integration and backend endpoints.
+- Existing legal Q&A repository.
+- Existing multilingual interface.
+- Existing application features.
+
+Inspect the existing source code before modifying anything. Extend existing services rather than creating duplicate engines.
+
+Do not publish, deploy, migrate or delete production resources without explicit approval.
+
+2. TELEGRAM LEGAL ARCHIVE INGESTION ENGINE
+
+Build a comprehensive legal-source ingestion and indexing system for Telegram materials that the application is authorized to access.
+
+The system must support:
+
+- Telegram channel exports.
+- Authorized Telegram documents.
+- PDF files.
+- DOCX files.
+- TXT files.
+- HTML files.
+- Scanned documents and images.
+- Other supported legal-document formats.
+
+Retrieve and process all available historical materials from the earliest accessible record to the latest available record.
+
+Do not assume that the entire Telegram history is available through an export or API. Record the actual earliest and latest dates, missing periods, unavailable records and incomplete retrieval.
+
+For every imported record, preserve:
+
+- Original source/channel.
+- Message ID where available.
+- Original date and time.
+- Document title.
+- Author or issuing institution where verifiable.
+- Original file name.
+- Original file.
+- Source URL or message link where available.
+- Import date.
+- File checksum.
+- Processing status.
+- Verification status.
+
+Prevent duplicate imports using stable identifiers and file hashes.
+
+Never fabricate missing Telegram messages, dates, links or documents.
+
+3. DOCUMENT UPLOAD AND PERMANENT SOURCE LIBRARY
+
+Create a dedicated interface inside SEERAAI PRO called:
+
+LEGAL KNOWLEDGE & PRECEDENT LIBRARY
+
+Provide an authorized upload and management interface.
+
+Required capabilities:
+
+- Upload one file or multiple files.
+- Select document category.
+- Select jurisdiction.
+- Select court or issuing institution.
+- Enter decision date.
+- Enter case number.
+- Enter volume and page where available.
+- Enter legal subject and keywords.
+- Enter source and verification status.
+- View processing progress.
+- View extraction errors.
+- Retry failed processing.
+- Search imported files.
+- Open the original document.
+- Update metadata.
+- Archive or deactivate a source with appropriate authorization.
+
+Suggested categories:
+
+1. Federal Supreme Court Cassation Decisions.
+2. Oromia Supreme Court Decisions.
+3. Oromia High Court Decisions.
+4. Federal Laws and Proclamations.
+5. Oromia Regional Laws and Regulations.
+6. Civil Code and Civil Procedure Materials.
+7. Criminal Code and Criminal Procedure Materials.
+8. Administrative and Constitutional Law.
+9. Land and Property Law.
+10. Family and Inheritance Law.
+11. Evidence and Procedure.
+12. Other verified legal materials.
+
+Store original files in Firebase Storage and their metadata, indexing information and access-controlled processing status in Firestore.
+
+Do not store large base64 documents in Firestore or browser localStorage.
+
+Respect existing institutional permissions and tenant isolation.
+
+4. DOCUMENT EXTRACTION, OCR AND LEGAL STRUCTURING
+
+Build a reliable extraction pipeline.
+
+For PDF:
+
+- Extract text and page numbers.
+- Preserve document structure.
+- Detect scanned pages.
+- Apply OCR where required.
+
+For DOCX:
+
+- Extract paragraphs, headings, tables and page information where available.
+
+For images:
+
+- Apply OCR.
+- Preserve the original image.
+- Record OCR confidence.
+
+For Telegram text:
+
+- Preserve message boundaries, timestamps and source information.
+
+For every extracted document, identify where possible:
+
+- Court name.
+- Case number.
+- Decision date.
+- Parties.
+- Legal issues.
+- Facts.
+- Procedural history.
+- Applicable law.
+- Legal reasoning.
+- Holding and final order.
+- Dissenting opinion if present.
+- Cited precedents.
+- Relevant legal articles.
+
+Do not invent missing information.
+
+If OCR confidence is low, mark the relevant passage for human review.
+
+5. ADVANCED QUESTION UNDERSTANDING ENGINE
+
+Every user question must be interpreted before searching.
+
+Identify:
+
+- The actual legal question.
+- The requested remedy or legal conclusion.
+- Relevant facts supplied by the user.
+- Legal subject.
+- Jurisdiction.
+- Applicable period and law version.
+- Procedural stage.
+- Relevant parties and legal relationships.
+- Important legal terminology.
+- Alternative expressions and synonyms.
+
+Understand questions in Afaan Oromoo, Amharic and English.
+
+Support different question formulations asking about the same legal issue.
+
+For example, recognize that different expressions may refer to:
+
+- Inheritance and succession.
+- Ownership and possession.
+- Limitation periods.
+- Evidence and burden of proof.
+- Contract validity.
+- Jurisdiction.
+- Appeal and cassation.
+- Execution of judgments.
+- Land and boundary disputes.
+- Family and marital property.
+
+Do not depend only on exact keyword matching.
+
+6. HYBRID SEARCH AND DEEP RESEARCH
+
+Implement a hybrid retrieval system combining:
+
+1. Exact keyword search.
+2. Full-text search.
+3. Semantic vector search.
+4. Metadata filtering.
+5. Legal issue classification.
+6. Citation and case-number lookup.
+7. Jurisdiction filtering.
+8. Date and legal-version filtering.
+9. Relevance reranking.
+
+Search across all authorized and indexed sources, including Telegram archives, uploaded documents, legal enactments, cassation decisions and existing legal Q&A repositories.
+
+Use a two-stage search strategy:
+
+STAGE A — FAST RETRIEVAL
+Retrieve potentially relevant sources quickly using keyword, metadata and vector search.
+
+STAGE B — DEEP LEGAL RESEARCH
+Read the actual relevant passages and original documents, compare authorities, verify citations, identify conflicts and assess applicability.
+
+Do not provide a final legal conclusion merely because a search result has a similar title or keyword.
+
+Search for contrary authorities and exceptions, not only authorities supporting the first apparent answer.
+
+7. CASSATION PRECEDENT INTELLIGENCE ENGINE
+
+Create a specialized Ethiopian Federal Supreme Court Cassation Decision Research Engine.
+
+For each cassation decision, preserve:
+
+- Case number.
+- Volume.
+- Page.
+- Decision date.
+- Court.
+- Legal issue.
+- Relevant facts.
+- Legal question.
+- Holding.
+- Reasoning.
+- Applicable legal provision.
+- Related decisions.
+- Whether the decision is verified.
+- Source document and page.
+
+When a user asks a legal question, identify cassation decisions addressing:
+
+- The same legal issue.
+- Similar material facts.
+- The same legal provision.
+- A comparable procedural situation.
+- Relevant exceptions or distinctions.
+
+Compare the precedent with the current facts.
+
+Explain:
+
+- Why the precedent is relevant.
+- Which facts are similar.
+- Which facts are different.
+- Whether the legal rule applies.
+- Whether another decision takes a different approach.
+- Whether the precedent's current legal status has been verified.
+
+Never invent a cassation case number, volume, page, quotation or holding.
+
+Do not treat a decision as binding authority merely because it appears in a Telegram message. Verify the source and its legal status.
+
+8. LEGAL RELEVANCE AND AUTHORITY RANKING
+
+Rank retrieved materials using:
+
+- Legal authority.
+- Jurisdiction.
+- Court level.
+- Similarity of legal issue.
+- Similarity of material facts.
+- Applicability of the relevant law.
+- Decision date.
+- Source reliability.
+- Completeness of the original document.
+- Verification status.
+
+Do not rank a source highly merely because it contains many matching words.
+
+Distinguish:
+
+- Binding legal authority.
+- Persuasive judicial authority.
+- Statutory authority.
+- Commentary.
+- Unverified legal material.
+- User-generated discussion.
+
+Explain uncertainty where the legal authority is unsettled or conflicting.
+
+9. ADVANCED LEGAL ANSWERING ENGINE
+
+Every answer must follow this structure where appropriate:
+
+A. Gaaffii fi dhimma seeraa
+Explain the actual issue raised by the user.
+
+B. Dhugaa dhimmaa
+Separate user-provided facts from assumptions and missing facts.
+
+C. Seera rogummaa qabu
+Identify the applicable legislation, exact article, subsection and version where verified.
+
+D. Murtiiwwan dhaddacha ijibbaataa
+Present relevant cassation decisions with verified case number, volume, page and legal principle.
+
+E. Qorannoo fi hiika seeraa
+Explain how the applicable law and precedents relate to the facts.
+
+F. Yaada faallaa fi addaddummaa
+Identify contrary arguments, exceptions, distinguishing facts and conflicting authorities.
+
+G. Xiinxala dhimma kanaa
+Apply the verified law to the actual facts without introducing unsupported facts.
+
+H. Xumura
+Provide a clear, reasoned and proportionate conclusion.
+
+I. Madda ragaa
+List the exact documents, articles, decisions, pages and source links relied upon.
+
+Do not force every heading into simple questions. Use a concise answer when the question is straightforward and a detailed analysis when the legal issue requires it.
+
+10. SOURCE CITATION AND TRACEABILITY
+
+Every material legal proposition must be traceable to its source.
+
+Citations must include available information such as:
+
+- Law title and article.
+- Proclamation number and year.
+- Court name.
+- Cassation case number.
+- Volume and page.
+- Decision date.
+- Document title.
+- Original source.
+- PDF page or document location.
+
+For uploaded documents, use precise references such as:
+
+"[Maqaa Galmee, Fuula 12, Kutaa 3]"
+
+For Telegram materials, cite the channel, original message date and message link or identifier where available.
+
+Never create fake page numbers or citations.
+
+If the source is incomplete, say so.
+
+If a legal proposition cannot be verified, clearly label it as unverified.
+
+11. ANSWER QUALITY CONTROL
+
+Before sending an answer, run an internal verification checklist:
+
+1. Did the system understand the actual question?
+2. Did it identify the correct jurisdiction?
+3. Did it retrieve the original relevant sources?
+4. Did it verify the legal article?
+5. Did it verify the cassation case reference?
+6. Did it read the relevant passage, not just a search snippet?
+7. Did it compare the material facts?
+8. Did it search for contrary authority?
+9. Did it distinguish verified facts from assumptions?
+10. Does every important conclusion have supporting evidence?
+11. Is the answer in the user's requested language?
+12. Is the answer legally relevant and proportionate?
+
+If critical information is missing, ask a focused clarification question.
+
+If the available sources do not support a reliable answer, say:
+
+"Ragaan seeraa gahaan deebii kana mirkaneessu hin argamne. Maddoota dabalataa ykn odeeffannoo dhimmaa barbaachisa."
+
+Do not invent legal rules to satisfy the user.
+
+12. FAST MODE AND DEEP RESEARCH MODE
+
+Provide two research modes:
+
+FAST MODE
+
+- Quick initial retrieval.
+- Short answer.
+- Essential legal citations.
+- Clear indication that the answer is preliminary if deep verification was not performed.
+
+DEEP RESEARCH MODE
+
+- Search the complete indexed relevant corpus.
+- Inspect original documents.
+- Compare cassation decisions.
+- Search contrary authorities.
+- Verify citations.
+- Provide detailed legal reasoning.
+- Show sources and uncertainty.
+
+The user must be able to choose either mode. For complex legal questions, recommend Deep Research Mode.
+
+Do not sacrifice legal accuracy to meet a speed target.
+
+13. SEARCHABLE KNOWLEDGE LIBRARY
+
+Create an accessible, permission-controlled search interface inside the existing application.
+
+Users with the correct authorization must be able to:
+
+- Search all indexed legal documents.
+- Search Telegram archives.
+- Search by case number.
+- Search by legal article.
+- Search by court.
+- Search by date.
+- Search by legal issue.
+- Search by keyword.
+- Search by document category.
+- Filter verified and unverified sources.
+- Open the original source document.
+- View relevant extracted passages.
+- See indexing and verification status.
+
+Search results must show why each source is relevant.
+
+14. PERFORMANCE AND INDEXING
+
+Use asynchronous document processing.
+
+Implement:
+
+- Background ingestion jobs.
+- Batch processing.
+- Retry mechanisms.
+- Duplicate detection.
+- Processing status.
+- Index versioning.
+- Incremental re-indexing.
+- Query caching where safe.
+- Retrieval logging.
+- Error monitoring.
+
+Do not reprocess the entire archive for every user question.
+
+Index newly uploaded files and newly available Telegram records incrementally.
+
+Keep source files and extracted text synchronized.
+
+15. SECURITY AND CONFIDENTIALITY
+
+Maintain existing Firebase Authentication and institutional access controls.
+
+Do not make private court documents public.
+
+Do not allow an institution to search or retrieve another institution's confidential documents without authorization.
+
+Apply role-based access to upload, edit, delete, verify, approve and archive operations.
+
+Protect API keys and AI provider credentials on the backend.
+
+Do not expose secrets in frontend code or logs.
+
+16. TESTING AND ACCEPTANCE CRITERIA
+
+Create test questions in Afaan Oromoo, Amharic and English.
+
+Test:
+
+- Exact case-number search.
+- Similar legal issue search.
+- Different wording for the same legal question.
+- Telegram archive retrieval.
+- Uploaded PDF retrieval.
+- OCR retrieval.
+- Relevant versus irrelevant precedent ranking.
+- Contrary precedent retrieval.
+- Exact citation generation.
+- Missing-source behavior.
+- Unverified-source warnings.
+- Institution access restrictions.
+- Duplicate document prevention.
+- Incremental indexing.
+- Fast and Deep Research modes.
+
+A test passes only when the expected source is retrieved and the answer is supported by the actual source.
+
+Report retrieval precision, citation accuracy, document coverage, OCR limitations, response latency and failed tests. Do not fabricate performance metrics.
+
+17. FINAL IMPLEMENTATION INSTRUCTIONS
+
+Inspect the existing SEERAAI PRO repository and identify the actual existing services, components, Firestore collections and Telegram endpoints.
+
+Integrate this engine into the existing architecture.
+
+Do not create duplicate Legal Research Engines.
+
+Prepare:
+
+- Architecture and integration report.
+- Exact source-file changes.
+- Document ingestion service.
+- Search and retrieval service.
+- Cassation precedent indexing.
+- Upload and searchable library interface.
+- Citation and answer verification.
+- Automated tests.
+- Release-readiness report.
+
+Do not claim that the entire Telegram archive has been indexed unless the actual available archive has been retrieved, processed and verified.
+
+Do not deploy or publish production changes without explicit approval.
+
+FINAL GOAL: Every legal question asked inside SEERAAI PRO should receive an answer that is relevant to the actual question, grounded in verified Ethiopian legal sources, supported by applicable cassation decisions where available, properly cited, linguistically clear and honest about uncertainty.

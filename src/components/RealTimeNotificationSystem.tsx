@@ -103,17 +103,20 @@ export const RealTimeNotificationSystem: React.FC<RealTimeNotificationSystemProp
 
   // Subscribe to live Telegram legislation & cassation documents
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
+    let unsubscribeTelegram: (() => void) | null = null;
+    let unsubscribeCourt: (() => void) | null = null;
 
-    const initSubscription = async () => {
+    const initSubscriptions = async () => {
       try {
         const { subscribeToStoredTelegramDocs } = await import('../services/telegramLegalService');
-        unsubscribe = subscribeToStoredTelegramDocs((docs: ParsedTelegramLegalContent[]) => {
-          // Process real-time alerts
+        const { subscribeToCourtNotifications } = await import('../services/courtNotificationService');
+
+        // 1. Telegram Notifications (Based on categories/keywords)
+        unsubscribeTelegram = subscribeToStoredTelegramDocs((docs: ParsedTelegramLegalContent[]) => {
           const searches = getRecentSearches();
           const searchKeywords = searches.map(s => s.query.toLowerCase().trim()).filter(q => q.length > 2);
           
-          const newNotifications: InAppNotification[] = [];
+          const newTelegramNotifications: InAppNotification[] = [];
           const dismissedIds = new Set<string>();
           try {
             const stored = localStorage.getItem('seera_dismissed_notifications');
@@ -125,7 +128,6 @@ export const RealTimeNotificationSystem: React.FC<RealTimeNotificationSystemProp
           docs.forEach((doc) => {
             if (dismissedIds.has(doc.id)) return;
 
-            // Check if matching categories OR matching search keywords
             let isMatch = false;
             let reason = '';
 
@@ -135,7 +137,6 @@ export const RealTimeNotificationSystem: React.FC<RealTimeNotificationSystemProp
                 ? `Dhimma Filatame: ${doc.category.toUpperCase().replace('_', ' ')}`
                 : `የተመረጠ ርዕስ፦ ${doc.category.toUpperCase().replace('_', ' ')}`;
             } else {
-              // Check previous searches keywords
               const matchedKeyword = searchKeywords.find(kw => 
                 doc.title.om.toLowerCase().includes(kw) || 
                 doc.title.am.toLowerCase().includes(kw) || 
@@ -152,7 +153,7 @@ export const RealTimeNotificationSystem: React.FC<RealTimeNotificationSystemProp
             }
 
             if (isMatch) {
-              newNotifications.push({
+              newTelegramNotifications.push({
                 id: doc.id,
                 title: doc.title[currentLang] || doc.title.om,
                 summary: doc.summary[currentLang] || doc.summary.om,
@@ -166,39 +167,57 @@ export const RealTimeNotificationSystem: React.FC<RealTimeNotificationSystemProp
             }
           });
 
-          // Filter and sync read status from local storage to keep state stable
-          try {
-            const readIds = JSON.parse(localStorage.getItem('seera_read_notifications') || '[]');
-            newNotifications.forEach(notif => {
-              if (readIds.includes(notif.id)) {
-                notif.read = true;
-              }
+          // 2. Court Notifications (Case assignments, deadlines)
+          unsubscribeCourt = subscribeToCourtNotifications((courtNotifs) => {
+            const convertedNotifs: InAppNotification[] = courtNotifs.map(cn => ({
+              id: cn.id,
+              title: cn.title,
+              summary: cn.body,
+              category: 'court_alert',
+              docId: cn.caseId || '',
+              timestamp: new Date(cn.createdAt).getTime(),
+              read: cn.isRead,
+              matchReason: cn.type.replace(/_/g, ' ').toUpperCase(),
+              postUrl: ''
+            }));
+
+            setNotifications(prev => {
+              // Merge and deduplicate by ID, keeping newest
+              const combined = [...newTelegramNotifications, ...convertedNotifs];
+              const unique = Array.from(new Map(combined.map(n => [n.id, n])).values());
+              return unique.sort((a, b) => b.timestamp - a.timestamp);
             });
-          } catch {}
 
-          setNotifications(newNotifications);
-
-          // Trigger a floating Toast Alert only if new documents actually arrived
-          if (prevDocCountRef.current > 0 && docs.length > prevDocCountRef.current) {
-            const newestDoc = docs[docs.length - 1];
-            const alreadyNotified = newNotifications.find(n => n.id === newestDoc.id);
-            if (newestDoc && alreadyNotified && !alreadyNotified.read) {
-              setActiveToast(alreadyNotified);
-              setTimeout(() => setActiveToast(null), 6000);
+            // Trigger toast for new critical court alerts
+            const newestCourtNotif = courtNotifs[0];
+            if (newestCourtNotif && !newestCourtNotif.isRead && (Date.now() - new Date(newestCourtNotif.createdAt).getTime() < 10000)) {
+              setActiveToast({
+                id: newestCourtNotif.id,
+                title: newestCourtNotif.title,
+                summary: newestCourtNotif.body,
+                category: 'court_alert',
+                docId: newestCourtNotif.caseId || '',
+                timestamp: Date.now(),
+                read: false,
+                matchReason: 'NEW COURT ALERT',
+                postUrl: ''
+              });
+              setTimeout(() => setActiveToast(null), 8000);
             }
-          }
+          });
           
           prevDocCountRef.current = docs.length;
         });
       } catch (err) {
-        console.warn('Telegram service subscription failed to load:', err);
+        console.warn('Notification services subscription failed to load:', err);
       }
     };
 
-    initSubscription();
+    initSubscriptions();
 
     return () => {
-      if (unsubscribe) unsubscribe();
+      if (unsubscribeTelegram) unsubscribeTelegram();
+      if (unsubscribeCourt) unsubscribeCourt();
     };
   }, [subscribedCategories, currentLang]);
 

@@ -1,20 +1,26 @@
-import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { Language, translations } from '../i18n/translations';
 import { CASSATION_PRECEDENTS_DATA, CassationPrecedent, ALL_CASSATION_VOLUMES } from '../data/cassationPrecedents';
 import { PdfExportModal } from '../components/PdfExportModal';
 import { AnnotationTool } from '../components/AnnotationTool';
 import { RecentSearches } from '../components/RecentSearches';
-import { CassationCitationMap } from '../components/CassationCitationMap';
-import { StatutoryInterpretationsView } from '../components/StatutoryInterpretationsView';
-import { PrecedentFinderTool } from '../components/PrecedentFinderTool';
-const TelegramArchiveSearch = lazy(() => import('../components/TelegramArchiveSearch').then(m => ({ default: m.TelegramArchiveSearch })));
+import { safeLazy } from '../utils/lazy';
 import { SmoothHeight } from '../components/SmoothHeight';
-import { CassationBaafata } from '../components/CassationBaafata';
+import { DownloadBookmarksButton } from '../components/DownloadBookmarksButton';
 import { saveRecentSearch, getRecentSearches, deleteRecentSearch, RecentSearch, SavedSearchBookmark, getSavedSearchBookmarks, saveSearchBookmark, deleteSearchBookmark } from '../services/storage';
+import { buildShareableFindingUrl } from '../services/shareUrl';
+
+const TelegramArchiveSearch = safeLazy(() => import('../components/TelegramArchiveSearch'), 'TelegramArchiveSearch');
+const CassationCitationMap = safeLazy(() => import('../components/CassationCitationMap'), 'CassationCitationMap');
+const StatutoryInterpretationsView = safeLazy(() => import('../components/StatutoryInterpretationsView'), 'StatutoryInterpretationsView');
+const PrecedentFinderTool = safeLazy(() => import('../components/PrecedentFinderTool'), 'PrecedentFinderTool');
+const CassationBaafata = safeLazy(() => import('../components/CassationBaafata'), 'CassationBaafata');
+const CassationMasterPortal = safeLazy(() => import('../components/CassationMasterPortal'), 'CassationMasterPortal');
+const CassationIndexImporter = safeLazy(() => import('../components/CassationIndexImporter'), 'CassationIndexImporter');
 import { MASTER_FILES, MasterLegalFile } from '../data/telegramMasterArchive';
 import { retrieveStoredTelegramLegalDocs, ParsedTelegramLegalContent } from '../services/telegramLegalService';
 import { analyticsService } from '../services/analytics';
-import { History, Search, RotateCcw, X, Clock, Bookmark, Star, Trash2 } from 'lucide-react';
+import { History, Search, RotateCcw, X, Clock, Bookmark, Star, Trash2, Share2 } from 'lucide-react';
 import {
   cachePrecedentsForOffline,
   getOfflineCachedPrecedents,
@@ -24,6 +30,9 @@ import {
   triggerPrecedentNotification,
   setupBackgroundSyncListeners,
 } from '../services/precedentOfflineSync';
+import { ShareToClassroomModal } from '../components/ShareToClassroomModal';
+import { PrecedentCompressionBadge } from '../components/PrecedentCompressionBadge';
+import { GraduationCap, ClipboardList } from 'lucide-react';
 
 export function mapTelegramCategory(cat: string): CassationPrecedent['category'] {
   const mapping: Record<string, CassationPrecedent['category']> = {
@@ -75,9 +84,10 @@ export const CassationLibraryView: React.FC<CassationLibraryViewProps> = ({
   const [recentKey, setRecentKey] = useState(0);
   const [recentPrecedentQueries, setRecentPrecedentQueries] = useState<RecentSearch[]>([]);
   const [savedSearchBookmarks, setSavedSearchBookmarks] = useState<SavedSearchBookmark[]>([]);
-  const [activeMainTab, setActiveMainTab] = useState<'hub' | 'precedents' | 'statutoryInterpretations' | 'precedentFinder' | 'telegramArchive'>('hub');
+  const [activeMainTab, setActiveMainTab] = useState<'hub' | 'precedents' | 'statutoryInterpretations' | 'precedentFinder' | 'telegramArchive' | 'masterIndex' | 'importer'>('masterIndex');
   const [harvestedTelegramDocs, setHarvestedTelegramDocs] = useState<CassationPrecedent[]>([]);
   const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
+  const [classroomShareItem, setClassroomShareItem] = useState<CassationPrecedent | null>(null);
 
   useEffect(() => {
     setSavedSearchBookmarks(getSavedSearchBookmarks());
@@ -502,6 +512,23 @@ export const CassationLibraryView: React.FC<CassationLibraryViewProps> = ({
     }
   };
 
+  const handleShareToKeep = (c: CassationPrecedent) => {
+    const title = encodeURIComponent(`SeeraAI Precedent: File ${c.fileNumber}`);
+    const text = encodeURIComponent(`Parties: ${c.parties.om}\n\nBinding Principle: ${c.bindingPrinciple.om}\n\nLink: ${window.location.origin}`);
+    window.open(`https://keep.google.com/#create?title=${title}&text=${text}`, '_blank');
+  };
+
+  const handleSharePrecedent = async (c: CassationPrecedent) => {
+    try {
+      const publicUrl = buildShareableFindingUrl('cassation', c.fileNumber, currentLang);
+      await navigator.clipboard.writeText(publicUrl);
+      setCopiedId(`share_${c.id}`);
+      setTimeout(() => setCopiedId(null), 2500);
+    } catch (e) {
+      console.warn('Share precedent link failed:', e);
+    }
+  };
+
   const renderPrecedentCard = (c: CassationPrecedent) => {
     const isOromia = c.courtJurisdiction === 'oromia' || c.id.startsWith('oromia_');
     const isSelectedInMap = selectedRulingForMap?.fileNumber === c.fileNumber;
@@ -571,9 +598,50 @@ export const CassationLibraryView: React.FC<CassationLibraryViewProps> = ({
               type="button"
               onClick={() => handleCopyCitation(c)}
               className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-slate-800 transition-all cursor-pointer flex items-center gap-1.5"
-              title="Waraabi"
+              title="Waraabi Citation"
             >
-              <span>{copiedId === c.id ? '✓ Waraabame!' : '📋 Waraabi'}</span>
+              <span>{copiedId === c.id ? '✓ Waraabame!' : '📋 Waraabi Citation'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSharePrecedent(c)}
+              className="px-3 py-1.5 rounded-xl bg-sky-950 hover:bg-sky-900 text-sky-300 text-xs font-bold border border-sky-500/40 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+              title="Generate unique public link to share precedent with colleagues"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>{copiedId === `share_${c.id}` ? '✓ Link Copied!' : 'Share Precedent'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                await navigator.clipboard.writeText(getCaseFormattedContent(c));
+                setCopiedId(`full_${c.id}`);
+                setTimeout(() => setCopiedId(null), 2000);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-amber-300 text-xs font-semibold border border-slate-800 transition-all cursor-pointer flex items-center gap-1.5"
+              title="Waraabi Content"
+            >
+              <span>{copiedId === `full_${c.id}` ? '✓ Waraabame!' : '📋 Waraabi Content'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setClassroomShareItem(c)}
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-blue-400 text-xs font-semibold border border-blue-500/30 transition-all cursor-pointer flex items-center gap-1.5"
+              title="Qoodi (Share to Classroom)"
+            >
+              <GraduationCap className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleShareToKeep(c)}
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-amber-500 text-xs font-semibold border border-amber-500/30 transition-all cursor-pointer flex items-center gap-1.5"
+              title="Keep irratti kuusi (Save to Keep)"
+            >
+              <ClipboardList className="w-4 h-4" />
             </button>
 
             <button
@@ -740,6 +808,8 @@ ${c.statutoryProvisions.join(', ')}`;
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
+            <PrecedentCompressionBadge currentLang={currentLang} />
+
             <button
               type="button"
               onClick={() => {
@@ -762,6 +832,8 @@ ${c.statutoryProvisions.join(', ')}`;
             >
               <span>{isCaching ? '⏳ Kuusaa jira...' : '💾 Offline Kuusi'}</span>
             </button>
+
+            <DownloadBookmarksButton currentLang={currentLang} variant="secondary" />
           </div>
         </div>
 
@@ -785,6 +857,50 @@ ${c.statutoryProvisions.join(', ')}`;
           >
             <span>🗂️</span>
             <span>Baafata (Index Hub)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveMainTab('masterIndex')}
+            className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              activeMainTab === 'masterIndex'
+                ? 'bg-amber-500 text-slate-950 shadow-md'
+                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+            }`}
+          >
+            <span>⚖️</span>
+            <span>
+              {currentLang === 'om' 
+                ? 'Baafata Murtii (Vol 1-25)' 
+                : currentLang === 'am' 
+                ? 'የሰበር ማስተር ማውጫ (ቅጽ 1-25)' 
+                : 'Master Index (Vol 1-25)'}
+            </span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${activeMainTab === 'masterIndex' ? 'bg-slate-950 text-amber-300' : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'}`}>
+              ELITE X20
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveMainTab('importer')}
+            className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              activeMainTab === 'importer'
+                ? 'bg-amber-500 text-slate-950 shadow-md'
+                : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+            }`}
+          >
+            <span>📥</span>
+            <span>
+              {currentLang === 'om' 
+                ? 'Faayila Galchi (File Importer)' 
+                : currentLang === 'am' 
+                ? 'ፋይል ጫኝ (File Importer)' 
+                : 'Index File Importer'}
+            </span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${activeMainTab === 'importer' ? 'bg-slate-950 text-amber-300' : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'}`}>
+              MULTI-FILE
+            </span>
           </button>
 
           <button
@@ -853,67 +969,81 @@ ${c.statutoryProvisions.join(', ')}`;
         </div>
       </div>
 
-      {activeMainTab === 'telegramArchive' ? (
-        <Suspense fallback={<div className="p-4 text-center">Loading Telegram Archive...</div>}>
+      {activeMainTab === 'importer' ? (
+        <Suspense fallback={<div className="p-8 text-center text-xs text-amber-300 font-mono animate-pulse">Loading Cassation Index Importer...</div>}>
+          <CassationIndexImporter currentLang={currentLang} />
+        </Suspense>
+      ) : activeMainTab === 'masterIndex' ? (
+        <Suspense fallback={<div className="p-8 text-center text-xs text-amber-300 font-mono animate-pulse">Loading Cassation Master Index (Vol 1-25)...</div>}>
+          <CassationMasterPortal currentLang={currentLang} />
+        </Suspense>
+      ) : activeMainTab === 'telegramArchive' ? (
+        <Suspense fallback={<div className="p-8 text-center text-xs text-amber-300 font-mono animate-pulse">Loading Telegram Archive...</div>}>
           <TelegramArchiveSearch language={currentLang} />
         </Suspense>
       ) : activeMainTab === 'precedentFinder' ? (
-        <PrecedentFinderTool
-          currentLang={currentLang}
-          precedents={allPrecedents}
-          onNavigateToRuling={(fn) => {
-            setActiveMainTab('precedents');
-            const cleanFn = fn.replace(/[^\d]/g, '') || fn;
-            setFileNumberFilter(cleanFn);
-            setSearchQuery('');
-            setTimeout(() => {
-              handleScrollToRulingCard(cleanFn);
-            }, 120);
-          }}
-          onSendToExplain={onSendToExplain}
-        />
-      ) : activeMainTab === 'statutoryInterpretations' ? (
-        <StatutoryInterpretationsView
-          currentLang={currentLang}
-          precedents={allPrecedents}
-          onNavigateToCassation={(fn) => {
-            setActiveMainTab('precedents');
-            const cleanFn = fn.replace(/[^\d]/g, '') || fn;
-            setFileNumberFilter(cleanFn);
-            setSearchQuery('');
-            setTimeout(() => {
-              handleScrollToRulingCard(cleanFn);
-            }, 120);
-          }}
-          onSendToExplain={onSendToExplain}
-        />
-      ) : activeMainTab === 'hub' ? (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <CassationBaafata
-            categories={categories}
-            precedents={allPrecedents}
-            selectedCategory={selectedCategory}
+        <Suspense fallback={<div className="p-8 text-center text-xs text-amber-300 font-mono animate-pulse">Loading Precedent Finder...</div>}>
+          <PrecedentFinderTool
             currentLang={currentLang}
-            onSelectCategory={setSelectedCategory}
-            onSelectArticle={(art) => {
+            precedents={allPrecedents}
+            onNavigateToRuling={(fn: string) => {
               setActiveMainTab('precedents');
-              setSearchQuery(`K. ${art}`);
-              if (onQueryChange) onQueryChange(`K. ${art}`);
-              // Scroll to search results anchor
-              setTimeout(() => {
-                const el = document.getElementById('search-results-anchor');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }, 100);
-            }}
-            onSelectRuling={(fileNo) => {
-              setActiveMainTab('precedents');
-              setFileNumberFilter(fileNo);
+              const cleanFn = fn.replace(/[^\d]/g, '') || fn;
+              setFileNumberFilter(cleanFn);
               setSearchQuery('');
               setTimeout(() => {
-                handleScrollToRulingCard(fileNo);
+                handleScrollToRulingCard(cleanFn);
               }, 120);
             }}
+            onSendToExplain={onSendToExplain}
           />
+        </Suspense>
+      ) : activeMainTab === 'statutoryInterpretations' ? (
+        <Suspense fallback={<div className="p-8 text-center text-xs text-amber-300 font-mono animate-pulse">Loading Statutory Interpretations...</div>}>
+          <StatutoryInterpretationsView
+            currentLang={currentLang}
+            precedents={allPrecedents}
+            onNavigateToCassation={(fn: string) => {
+              setActiveMainTab('precedents');
+              const cleanFn = fn.replace(/[^\d]/g, '') || fn;
+              setFileNumberFilter(cleanFn);
+              setSearchQuery('');
+              setTimeout(() => {
+                handleScrollToRulingCard(cleanFn);
+              }, 120);
+            }}
+            onSendToExplain={onSendToExplain}
+          />
+        </Suspense>
+      ) : activeMainTab === 'hub' ? (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <Suspense fallback={<div className="p-8 text-center text-xs text-amber-300 font-mono animate-pulse">Loading Cassation Baafata...</div>}>
+            <CassationBaafata
+              categories={categories}
+              precedents={allPrecedents}
+              selectedCategory={selectedCategory}
+              currentLang={currentLang}
+              onSelectCategory={setSelectedCategory}
+              onSelectArticle={(art: string) => {
+                setActiveMainTab('precedents');
+                setSearchQuery(`K. ${art}`);
+                if (onQueryChange) onQueryChange(`K. ${art}`);
+                // Scroll to search results anchor
+                setTimeout(() => {
+                  const el = document.getElementById('search-results-anchor');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
+              }}
+              onSelectRuling={(fileNo: string) => {
+                setActiveMainTab('precedents');
+                setFileNumberFilter(fileNo);
+                setSearchQuery('');
+                setTimeout(() => {
+                  handleScrollToRulingCard(fileNo);
+                }, 120);
+              }}
+            />
+          </Suspense>
         </div>
       ) : (
         <>
@@ -965,14 +1095,17 @@ ${c.statutoryProvisions.join(', ')}`;
         {/* Saved Complex Search Queries Section */}
         {savedSearchBookmarks.length > 0 && (
           <div className="bg-slate-950/80 border border-amber-500/30 rounded-2xl p-4 space-y-2.5 shadow-inner">
-            <div className="flex items-center justify-between text-xs text-slate-300">
+            <div className="flex items-center justify-between gap-2 flex-wrap text-xs text-slate-300">
               <div className="flex items-center gap-2 font-bold text-amber-300">
                 <Bookmark className="w-3.5 h-3.5 text-amber-400" />
                 <span>Maallaqaalee Barbaacha Kuufaman (Saved Search Bookmarks):</span>
               </div>
-              <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">
-                {savedSearchBookmarks.length} Saved
-              </span>
+              <div className="flex items-center gap-2">
+                <DownloadBookmarksButton currentLang={currentLang} variant="compact" />
+                <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">
+                  {savedSearchBookmarks.length} Saved
+                </span>
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
               {savedSearchBookmarks.map((bm) => (
@@ -1335,16 +1468,18 @@ ${c.statutoryProvisions.join(', ')}`;
         </div>
 
         {showCitationMap && selectedRulingForMap && (
-          <CassationCitationMap
-            currentLang={currentLang}
-            selectedRuling={selectedRulingForMap}
-            onSelectRuling={(precedent) => {
-              setSelectedRulingForMap(precedent);
-            }}
-            onSendToExplain={onSendToExplain}
-            onOpenPdf={(precedent) => setPdfCase(precedent)}
-            onScrollToRulingCard={handleScrollToRulingCard}
-          />
+          <Suspense fallback={<div className="p-8 text-center text-xs text-amber-300 font-mono animate-pulse">Loading Citation Map (D3.js)...</div>}>
+            <CassationCitationMap
+              currentLang={currentLang}
+              selectedRuling={selectedRulingForMap}
+              onSelectRuling={(precedent: CassationPrecedent) => {
+                setSelectedRulingForMap(precedent);
+              }}
+              onSendToExplain={onSendToExplain}
+              onOpenPdf={(precedent: CassationPrecedent) => setPdfCase(precedent)}
+              onScrollToRulingCard={handleScrollToRulingCard}
+            />
+          </Suspense>
         )}
       </div>
 
@@ -1417,6 +1552,16 @@ ${c.statutoryProvisions.join(', ')}`;
       )}
         </>
       )}
+
+      {classroomShareItem && (
+        <ShareToClassroomModal
+          title={`Cassation File ${classroomShareItem.fileNumber}`}
+          description={classroomShareItem.bindingPrinciple[currentLang] || classroomShareItem.bindingPrinciple.om}
+          onClose={() => setClassroomShareItem(null)}
+        />
+      )}
     </div>
   );
 };
+
+export default CassationLibraryView;

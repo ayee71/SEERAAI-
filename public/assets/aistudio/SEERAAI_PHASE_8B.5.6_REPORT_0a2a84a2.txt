@@ -1,0 +1,147 @@
+SEERAAI PRO - PHASE 8B.5.6
+CI TEST EXECUTION, EVIDENCE COLLECTION & CANDIDATE RULES REVIEW
+Report date: 2026-11-15
+Isolated project ID used for all planned tests: demo-seeraai-test
+
+======================================================================
+FINAL STATUS:  BLOCKED
+======================================================================
+No test was executed. No evidence was fabricated. Nothing was deployed,
+published, or modified in production.
+
+----------------------------------------------------------------------
+1. INSPECTION OF PREPARED ARTIFACTS
+----------------------------------------------------------------------
+Checked in this environment (uploads folder + full filesystem search):
+
+  .github/workflows/rules-test.yml                      NOT FOUND
+  firebase.emulator.test.json                           NOT FOUND
+  firestore.rules.phase8b5.3.integrated.candidate       NOT FOUND
+  storage.rules.phase8b5.4.integrated.candidate         NOT FOUND
+  Firestore Rules test files                            NOT FOUND
+  Storage Rules test files                              NOT FOUND
+  package.json / lockfile                               NOT FOUND
+
+Contents, sizes, hashes: NOT AVAILABLE.
+Emulator config loads candidate files (not production)?  UNVERIFIED.
+(The files in section K of the Phase 8B.5.5 report were templates I
+wrote; they are not the project's real artifacts.)
+
+Environment facts:
+  Java 21 present; Node v22 present; firebase-tools absent;
+  network disabled -> firebase-tools / emulator jars cannot be installed.
+
+----------------------------------------------------------------------
+2. CI WORKFLOW VERIFICATION CHECKLIST (not yet checkable)
+----------------------------------------------------------------------
+Owner/reviewer must confirm each item in the real rules-test.yml:
+  [ ] Supported Node version (20 or 22)
+  [ ] "npm ci" used with a committed package-lock.json
+  [ ] firebase-tools pinned (devDependency or npx with exact version)
+  [ ] Command is: firebase emulators:exec --config firebase.emulator.test.json
+      --project demo-seeraai-test --only firestore,storage "<test command>"
+  [ ] Tests actually run (a real test runner, not just emulator start)
+  [ ] Step fails the job on non-zero exit (no "|| true", no
+      continue-on-error)
+  [ ] actions/upload-artifact with "if: always()" for test output and
+      firebase-debug.log / firestore-debug.log / storage-debug.log
+  [ ] No secrets, no GOOGLE_APPLICATION_CREDENTIALS, no production
+      project ID anywhere
+  [ ] sha256sum of both candidate files printed BEFORE and AFTER tests
+
+----------------------------------------------------------------------
+3. EXACT STEPS FOR THE PROJECT OWNER (local or CI)
+----------------------------------------------------------------------
+Requirements: Java 17+, Node 20+, repo checked out, no prod credentials.
+
+  sha256sum firestore.rules.phase8b5.3.integrated.candidate \
+            storage.rules.phase8b5.4.integrated.candidate \
+            | tee hashes_before.txt
+  wc -lc firestore.rules.phase8b5.3.integrated.candidate \
+         storage.rules.phase8b5.4.integrated.candidate
+  npm ci
+  npx firebase-tools emulators:exec \
+      --config firebase.emulator.test.json \
+      --project demo-seeraai-test \
+      --only firestore,storage \
+      "npm test" 2>&1 | tee test_output.txt
+  echo "EXIT CODE: ${PIPESTATUS[0]}" | tee exit_code.txt
+  sha256sum firestore.rules.phase8b5.3.integrated.candidate \
+            storage.rules.phase8b5.4.integrated.candidate \
+            | tee hashes_after.txt
+  diff hashes_before.txt hashes_after.txt && echo "HASHES UNCHANGED"
+
+Send back: test_output.txt, exit_code.txt, both hash files,
+firebase-debug.log, firestore-debug.log, storage-debug.log, and the CI run
+URL if run on GitHub Actions. Then the report can be completed.
+
+----------------------------------------------------------------------
+4. REQUIRED TEST COVERAGE (to confirm exists in the suites)
+----------------------------------------------------------------------
+Each needs a PERMITTED and a DENIED case:
+  - Unauthenticated denial
+  - Owner vs other user
+  - Cross-institution / cross-tenant denial
+  - Missing, invalid, conflicting claims (must fail closed)
+  - judge, registrar, court_admin, other roles
+  - admin, legal-content-manager
+  - Telegram: public read of published feeds only; client writes denied
+  - Subscribers, poll results, statistics, briefing logs: client denied
+  - Court document, logo, audio access
+  - Storage MIME type and size limits (just under / just over limit)
+  - Update/delete denied for unauthorized; institutionId change denied
+  - Catch-all / overlapping match tests (see section 5)
+Coverage status: UNVERIFIED (test files not available).
+
+----------------------------------------------------------------------
+5. SECURITY REVIEW GUIDE (rules not available, so no findings)
+----------------------------------------------------------------------
+a) Allow rules are ADDITIVE. If any matching block allows an operation,
+   it is allowed. A restrictive block does not override a permissive one.
+b) Review every "match /{document=**}" and any wildcard such as
+   "match /{path=**}" in Storage. Any "allow ...: if true" or
+   "if request.auth != null" there can silently re-open data that
+   specific blocks try to protect. For every protected collection,
+   write a test that proves a DENIED operation stays denied.
+c) Check nested wildcard overlap, e.g. /institutions/{id}/{document=**}
+   vs. specific subcollection rules.
+d) Check that update rules compare request.resource.data.institutionId
+   with resource.data.institutionId (immutability).
+e) Claims must be read as boolean true (e.g.
+   request.auth.token.admin == true), and UID equality alone must not
+   grant institutional access.
+f) Firebase Admin SDK routes (Express/Cloud Run backend, e.g. server code
+   handling Telegram, RAG, audit logs, court links) BYPASS Firestore and
+   Storage Rules. Each route needs separate tests: missing/invalid ID
+   token -> 401; wrong role -> 403; wrong institution -> 403; input
+   validation; no trust of client-sent institutionId/role.
+   Admin-route inventory: NOT DONE (source code not provided).
+
+Vulnerabilities found: none confirmed, none ruled out.
+
+----------------------------------------------------------------------
+6. EVIDENCE TABLE
+----------------------------------------------------------------------
+  1. Exact command executed ............ NONE (blocked)
+  2. CI run URL / evidence ............. NONE
+  3. Test count (pass/fail/skip) ....... 0 / 0 / 0 (not executed)
+  4. Firestore Rules result ............ NOT EXECUTED
+  5. Storage Rules result .............. NOT EXECUTED
+  6. Emulator start/stop logs .......... NONE
+  7. Exit code ......................... NONE
+  8. Candidate paths actually loaded ... UNKNOWN
+  9. SHA-256 before/after .............. NOT AVAILABLE
+ 10. Uncovered cases / vulnerabilities . All items in sections 4 and 5
+
+----------------------------------------------------------------------
+7. FINAL DECISION
+----------------------------------------------------------------------
+BLOCKED - tests not executed; evidence incomplete.
+
+Exact next safe action: run the section 3 steps on a connected trusted
+runner (or upload the prepared artifacts plus a runner with network) and
+return the outputs. Even a PASS does not authorize deployment: production
+release still requires live Rules inspection, backup, full diff review,
+claims migration dry-run, rollback plan, and explicit owner approval.
+
+Stopped after reporting. No production resource was touched.

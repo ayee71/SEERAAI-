@@ -1,0 +1,377 @@
+SEERAAI – AUTHENTICATION FI SECURITY STARTER
+============================================
+
+Kaayyoo
+-------
+Faayilli kun app SEERAAI keessatti namni link app argate email, username fi password fayyadamuun akka galmaa'uu fi seenuuf, iccitiiwwan abbaa app/backend immoo akka hin saaxilamneef starter implementation dha.
+
+BARREESSA BARBAACHISAA
+----------------------
+1. Koodiin kun starter dha; production irratti kallattiin copy-paste gochuun dura server.ts, server-app.ts, firebase.ts, AuthContext, firestore.rules fi Firebase project amma jiru waliin walitti fiduun qorachuun dirqama.
+2. Existing Firebase project/database hin jijjiirin. FIRESTORE_DATABASE_ID keessatti database ID sirrii project kee keessaa mirkaneessi. Database ID dogoggoraa fayyadamuun app kee database biraa irratti hojjechiisa.
+3. Password Firebase Authentication keessatti qofa kuufama. Password plaintext, hash ofii keetii, localStorage ykn Firestore keessatti hin kuusin.
+4. OPENAI_API_KEY fi GEMINI_API_KEY frontend/VITE_ variable keessatti hin kaa'in. Backend/Secret Manager qofa.
+5. User haaraan role=user qofa argata. Admin/owner role user ofii isaatiin filachuu hin danda'u.
+6. App Check authentication ykn authorization bakka hin bu'u; abuse hir'isuuf gargaara.
+7. Firestore rules duraan jiran guutummaatti bakka buusuun dura qoradhu. Firestore allow rules OR ta'anii hojjetu; allow bal'aan duraan jiru rule haaraa dadhabsiisuu danda'a.
+
+A. BACKEND – DEPENDENCIES
+-------------------------
+Backend Node.js/TypeScript + Express fakkeenya:
+
+npm install express firebase-admin
+npm install -D typescript @types/express @types/node
+
+Environment variables (server-side qofa):
+
+GOOGLE_CLOUD_PROJECT=leafy-rush-xvd6f
+FIRESTORE_DATABASE_ID=DATABASE_ID_KEE_MIRKANAAYE
+FIREBASE_WEB_API_KEY=FIREBASE_WEB_API_KEY_PUBLIC_CONFIG
+FIREBASE_APP_CHECK_PROJECT_NUMBER=YOUR_PROJECT_NUMBER
+
+FIREBASE_WEB_API_KEY public Firebase client configuration keessaa tokko; OpenAI/Gemini secret miti. OpenAI/Gemini keys garuu backend Secret Manager keessatti kaa'i.
+
+Cloud Run irratti service account/Application Default Credentials fayyadami. Service-account JSON private key GitHub, frontend, ZIP ykn source code keessatti hin kaa'in.
+
+B. backend/src/firebaseAdmin.ts
+-------------------------------
+
+import { applicationDefault, getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+
+const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+const databaseId = process.env.FIRESTORE_DATABASE_ID;
+
+if (!projectId) throw new Error('GOOGLE_CLOUD_PROJECT is missing');
+if (!databaseId) throw new Error('FIRESTORE_DATABASE_ID is missing');
+
+const app = getApps()[0] ?? initializeApp({
+  credential: applicationDefault(),
+  projectId,
+});
+
+export const adminAuth = getAuth(app);
+export const adminDb = getFirestore(app, databaseId);
+
+NAMED DATABASE HUBADHU:
+Firebase Admin SDK/API version kee keessatti named Firestore database deeggaramuu isaa mirkaneessi. Yoo hin deeggaramne, database ID default qofaatti hin jijjiirin; SDK/API version fi deployment configuration irratti sirreessi. Database ID existing kee osoo hin mirkaneessin hin jijjiirin.
+
+C. backend/src/authRoutes.ts
+----------------------------
+
+Koodiin armaan gadii Express router dha. Rate limiting production-grade shared store (Redis/Memorystore ykn Cloud Armor/API Gateway) waliin dabaluu qaba. In-memory limiter Cloud Run instances hedduu keessatti gahaa miti.
+
+import { Router } from 'express';
+import { adminAuth, adminDb } from './firebaseAdmin.js';
+
+export const authRouter = Router();
+
+const WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY;
+if (!WEB_API_KEY) throw new Error('FIREBASE_WEB_API_KEY is missing');
+
+function normalizeEmail(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+function normalizeUsername(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+function validUsername(value: string): boolean {
+  return /^[a-z0-9_]{4,24}$/.test(value);
+}
+function validPassword(value: string): boolean {
+  return value.length >= 12 && value.length <= 128;
+}
+
+// Register: public registration; new account always receives role "user".
+authRouter.post('/register', async (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  const username = normalizeUsername(req.body?.username);
+  const password = String(req.body?.password ?? '');
+
+  if (!email || !email.includes('@') || !validUsername(username) || !validPassword(password)) {
+    return res.status(400).json({ error: 'Galtee galchite sirrii miti.' });
+  }
+
+  const usernameRef = adminDb.collection('usernameIndex').doc(username);
+  let createdUid: string | undefined;
+
+  try {
+    // Firebase Auth stores and verifies the password; never store it in Firestore.
+    const user = await adminAuth.createUser({
+      email,
+      password,
+      displayName: username,
+      emailVerified: false,
+      disabled: false,
+    });
+    createdUid = user.uid;
+
+    await adminDb.runTransaction(async (tx) => {
+      const existing = await tx.get(usernameRef);
+      if (existing.exists) throw new Error('USERNAME_TAKEN');
+
+      tx.create(usernameRef, {
+        uid: user.uid,
+        createdAt: new Date(),
+      });
+      tx.create(adminDb.collection('users').doc(user.uid), {
+        uid: user.uid,
+        email,
+        username,
+        role: 'user',
+        status: 'pending_email_verification',
+        createdAt: new Date(),
+      });
+    });
+
+    // Client signs in with Firebase Auth then sends email verification.
+    // Do not issue owner/admin claims here.
+    return res.status(201).json({ ok: true, message: 'Galmeen milkaaʼeera. Email kee mirkaneessi.' });
+  } catch (error: any) {
+    if (createdUid) {
+      try { await adminAuth.deleteUser(createdUid); } catch { /* log internally */ }
+    }
+    // Same generic response reduces account/username enumeration.
+    // Log detailed cause only in secure server logs; never return it to client.
+    console.error('Registration failed', error?.code ?? error?.message ?? 'unknown');
+    return res.status(400).json({ error: 'Galmeen hin milkoofne. Email ykn username biraa yaali.' });
+  }
+});
+
+// Login supports email OR username. Username index is server-only.
+authRouter.post('/login', async (req, res) => {
+  const identifier = String(req.body?.identifier ?? '').trim();
+  const password = String(req.body?.password ?? '');
+  if (!identifier || !password || password.length > 128) {
+    return res.status(400).json({ error: 'Username/email fi password galchi.' });
+  }
+
+  try {
+    let email = normalizeEmail(identifier);
+    if (!identifier.includes('@')) {
+      const usernameDoc = await adminDb.collection('usernameIndex').doc(normalizeUsername(identifier)).get();
+      if (!usernameDoc.exists) return res.status(401).json({ error: 'Username/email ykn password sirrii miti.' });
+      const uid = String(usernameDoc.get('uid'));
+      const user = await adminAuth.getUser(uid);
+      email = normalizeEmail(user.email);
+    }
+
+    const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${WEB_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, returnSecureToken: true }),
+    });
+    if (!response.ok) return res.status(401).json({ error: 'Username/email ykn password sirrii miti.' });
+
+    const authData: any = await response.json();
+    const decoded = await adminAuth.verifyIdToken(authData.idToken);
+    const userDoc = await adminDb.collection('users').doc(decoded.uid).get();
+    if (!userDoc.exists) return res.status(403).json({ error: 'Account kun hin hayyamamne.' });
+
+    const profile = userDoc.data()!;
+    if (profile.status === 'disabled' || profile.status === 'suspended') {
+      return res.status(403).json({ error: 'Account kee yeroo ammaa cufameera.' });
+    }
+
+    // Require verified email before granting app session.
+    if (decoded.email_verified !== true) {
+      return res.status(403).json({ error: 'Email kee mirkaneessi; sana booda irra deebiʼi.' });
+    }
+
+    const customToken = await adminAuth.createCustomToken(decoded.uid);
+    return res.json({ token: customToken });
+  } catch (error: any) {
+    console.error('Login failed', error?.code ?? error?.message ?? 'unknown');
+    return res.status(401).json({ error: 'Username/email ykn password sirrii miti.' });
+  }
+});
+
+D. backend/src/server.ts – ROUTER FI SECURITY MIDDLEWARE
+-------------------------------------------------------
+
+import express from 'express';
+import { authRouter } from './authRoutes.js';
+
+const app = express();
+app.disable('x-powered-by');
+app.use(express.json({ limit: '20kb' }));
+
+// Add your verified Firebase App Check middleware before public API routes.
+// Add shared rate limiting (Redis/Memorystore or Cloud Armor) for /api/auth/*.
+// Configure trusted proxy settings only for the actual Cloud Run ingress path.
+app.use('/api/auth', authRouter);
+
+app.get('/health', (_req, res) => res.status(200).send('ok'));
+
+const port = Number(process.env.PORT || 8080);
+app.listen(port, '0.0.0.0', () => console.log(`Server listening on ${port}`));
+
+E. FRONTEND – src/services/authService.ts
+-----------------------------------------
+
+Firebase client config kee duraan jiru fayyadami. Firebase Auth SDK package install taʼuu qaba:
+
+npm install firebase
+
+import {
+  getAuth,
+  signInWithCustomToken,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signOut,
+  onAuthStateChanged,
+} from 'firebase/auth';
+import { app } from '../firebase';
+
+const auth = getAuth(app);
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
+if (!API_BASE) throw new Error('VITE_API_BASE_URL is missing');
+
+async function postJson(path: string, body: unknown) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Request hin milkoofne.');
+  return data;
+}
+
+export async function register(email: string, username: string, password: string) {
+  await postJson('/api/auth/register', { email, username, password });
+  // To send verification email, sign in with the user's credentials through the
+  // Firebase client SDK after successful account creation.
+  const { signInWithEmailAndPassword } = await import('firebase/auth');
+  const credential = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+  await sendEmailVerification(credential.user);
+  await signOut(auth);
+}
+
+export async function login(identifier: string, password: string) {
+  const data = await postJson('/api/auth/login', { identifier, password });
+  const credential = await signInWithCustomToken(auth, data.token);
+  await credential.user.reload();
+  if (!credential.user.emailVerified) {
+    await signOut(auth);
+    throw new Error('Email kee mirkaneessi; booda seeni.');
+  }
+  return credential.user;
+}
+
+export async function resetPassword(email: string) {
+  await sendPasswordResetEmail(auth, email.trim().toLowerCase());
+}
+
+export async function logout() {
+  await signOut(auth);
+}
+
+export function observeAuth(callback: (user: any) => void) {
+  return onAuthStateChanged(auth, callback);
+}
+
+NOTE: Firebase client Auth state yeroo verification booda refresh gochuu qaba. Backend route tokkoon tokkoon request irratti ID token verify godhi; client profile role qofa amananii hin murteessin.
+
+F. FIRESTORE SECURITY RULES – TEMPLATE QORANNOO
+------------------------------------------------
+
+Rules armaan gadii fakkeenya restrictive dha. Existing rules kee waliin walitti fiduun dura collection hunda irratti access matrix qopheessi. `usernameIndex` client irraa dubbisuu/barreessuun dhorkaadha.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isOwner() {
+      return signedIn() && request.auth.token.owner == true;
+    }
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+    function isVerified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    match /usernameIndex/{username} {
+      allow read, write: if false;
+    }
+
+    match /users/{uid} {
+      allow create: if false; // backend Admin SDK only
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin() || isOwner());
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName', 'photoURL', 'updatedAt']);
+      allow delete: if isOwner();
+    }
+
+    // Example: private user documents. Adjust collection names to your app.
+    match /privateDocuments/{docId} {
+      allow read, write: if signedIn() && isVerified()
+        && resource.data.ownerUid == request.auth.uid;
+    }
+
+    // Default deny for anything not explicitly granted above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+WARNING: Firestore rules `allow` statements are OR-combined. If any existing broader match grants access, this default-deny block does NOT cancel it. Audit every existing match block. Also, `resource.data` does not exist on create; write separate create/update rules where needed. Do not paste the sample `privateDocuments` rule unchanged if your schema differs.
+
+G. OWNER / ADMIN ROLE – SECURE ADMIN-ONLY SCRIPT
+------------------------------------------------
+
+Owner/admin claim yeroo registration keessatti hin kennin. Admin SDK script addaa, operator trusted taʼe qofa irraa raawwatamuun:
+
+import { adminAuth } from './firebaseAdmin.js';
+
+const uid = process.argv[2];
+if (!uid) throw new Error('Usage: set-owner <UID>');
+await adminAuth.setCustomUserClaims(uid, { owner: true, admin: true });
+console.log('Owner claims assigned to UID:', uid);
+
+Script kana public HTTP endpoint hin godhin. UID sirrii mirkaneessi; MFA/strong operator access fayyadami; audit log qabsiisi. Custom claims jijjiiraman booda user sign-out/sign-in ykn ID token refresh gochuu qaba.
+
+H. OPENAI / GEMINI API SECRETS
+------------------------------
+
+- OPENAI_API_KEY fi GEMINI_API_KEY Google Secret Manager keessatti kaa'i.
+- Cloud Run service account'if secret versions barbaachisan qofa irratti `Secret Manager Secret Accessor` kenni.
+- Koodii backend keessatti `process.env.OPENAI_API_KEY` fi `process.env.GEMINI_API_KEY` irraa dubbisi; frontend keessatti hin dabarsin.
+- `VITE_OPENAI_API_KEY`, `VITE_GEMINI_API_KEY` ykn `NEXT_PUBLIC_*` keessatti secret hin kaa'in.
+- GitHub Actions logs, build artifacts, source maps, error messages keessatti secret akka hin mul'anne mirkaneessi.
+- Yoo key duraan frontend/GitHub keessatti saaxilame, key sana revoke/rotate godhi; env variable qofa haqachuun gahaa miti.
+
+I. DEPLOYMENT CHECKLIST
+-----------------------
+
+[ ] Existing Firebase project ID sirrii: leafy-rush-xvd6f.
+[ ] Existing Firestore database ID Firebase Console irraa mirkanaaʼe; hin jijjiiramne.
+[ ] Firebase Authentication keessatti Email/Password provider enabled.
+[ ] Email verification template fi authorized domains qindaaʼan.
+[ ] Cloud Run service account least-privilege IAM qaba.
+[ ] Backend secrets Google Secret Manager keessatti qindaaʼan.
+[ ] Frontend bundle keessatti OpenAI/Gemini secret hin jiru.
+[ ] App Check web app irratti qindaaʼe; backend token validation jira.
+[ ] Shared rate limiting / abuse protection jira.
+[ ] Registration keessatti role=user qofa kennama.
+[ ] Username index client irraa inaccessible dha.
+[ ] Owner claim admin-only process irraa qofa kennama.
+[ ] Firestore rules emulator tests keessatti allow/deny cases qoraman.
+[ ] Storage rules keessatti ownerUid/institution membership server-verified dha.
+[ ] Auth, register, reset-password, disabled-account, unverified-email tests xumuraman.
+[ ] GitHub repo history keessatti duraan leaked keys yoo jiraatan rotate/revoke godhaman.
+
+J. WANTA KANAAN HIN RAWWATAMNE
+------------------------------
+
+Faayilli kun authentication starter qofa. SEERAAI kee keessatti existing AuthContext, ownerAuth, institution RBAC, court document storage, server.ts/server-app.ts fi Firestore rules guutuu hin argine. Kanaaf, koodii kana existing files kee osoo hin ilaalin production-ready jedhanii labsuun sirrii miti. Integration dura files sana irratti code review fi tests barbaachisu.
+
+XUMURA
+------
+Namni link app argate galmaa'uu ni danda'a; garuu account haaraan role=user qofa qabaata. Email mirkaneessuun barbaachisa. Abbaa app/admin qofa server-side custom claim argata. Iccitii OpenAI/Gemini backend/Secret Manager keessa qofa turu.

@@ -9,7 +9,10 @@ import {
   storeTelegramLegalContentInFirestore,
   retrieveStoredTelegramLegalDocs,
   batchIngestTelegramChannel,
-  subscribeToStoredTelegramDocs
+  subscribeToStoredTelegramDocs,
+  pollTelegramLegalNews,
+  fetchTelegramChannelFeed,
+  fetchTelegram1500Archive
 } from './telegramLegalService';
 
 export type TelegramLegalPost = ParsedTelegramLegalContent & {
@@ -34,9 +37,9 @@ export type TelegramChannelConfig = TelegramChannelMetadata & {
   totalPostsFound?: number;
 };
 
-export const MONITORED_TELEGRAM_CHANNELS: TelegramChannelConfig[] = MONITORED_CHANNELS.map(ch => ({
+export const MONITORED_TELEGRAM_CHANNELS: TelegramChannelConfig[] = MONITORED_CHANNELS.map((ch, idx) => ({
   ...ch,
-  id: ch.handle,
+  id: ch.handle ? `${ch.handle}-${idx}` : `chan-${idx}`,
   name: ch.title,
   verifiedPublic: ch.isPublic,
   lastScrapedTime: ch.lastSyncDate,
@@ -111,10 +114,10 @@ export async function ingestTelegramPostToDatabase(
 }
 
 /**
- * Scrape/Harvest and parse from public Telegram channel (e.g. https://t.me/wakoyeb)
+ * Scrape/Harvest and parse from public Telegram channel (e.g. https://t.me/seeraai_ethio)
  */
 export async function harvestFromTelegramChannel(
-  channelInput: string,
+  channelInput: string = 'https://t.me/seeraai_ethio',
   searchKeyword?: string
 ): Promise<{ success: boolean; postsFound: TelegramLegalPost[]; message: string }> {
   const rawMsgs = await fetchPublicTelegramChannelMessages(channelInput, searchKeyword);
@@ -141,5 +144,9 @@ export {
   storeTelegramLegalContentInFirestore,
   retrieveStoredTelegramLegalDocs,
   batchIngestTelegramChannel,
-  subscribeToStoredTelegramDocs
+  subscribeToStoredTelegramDocs,
+  pollTelegramLegalNews,
+  fetchTelegramChannelFeed,
+  fetchTelegram1500Archive
 };
+

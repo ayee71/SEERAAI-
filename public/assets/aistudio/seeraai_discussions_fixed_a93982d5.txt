@@ -1,0 +1,239 @@
+import { db } from './firebase';
+import {
+  addDoc,
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  where,
+  type FirestoreError,
+  type Timestamp,
+  type Unsubscribe,
+} from 'firebase/firestore';
+
+/**
+ * SEERAAI discussion and video-meeting utilities.
+ *
+ * IMPORTANT SECURITY NOTES:
+ * - Firestore Security Rules must verify request.auth.uid == authorId.
+ * - Firestore rules must also enforce institution/role access for legal records.
+ * - A client-side expiry value does NOT revoke or block an external meeting link.
+ * - The configured Jitsi server below is a third-party server. For confidential
+ *   court discussions, use an institution-managed Jitsi server with suitable
+ *   authentication, retention and privacy controls.
+ */
+
+export interface MeetingData {
+  /** The generated, shareable meeting-room URL. */
+  meetingUrl: string;
+  topic: string;
+  serviceName: string;
+  createdAt: string;
+  expiresAt: string;
+  /** False until a trusted meeting provider/backend confirms that it is live. */
+  isLive: boolean;
+  /** Informational only unless a provider/server actually enforces this password. */
+  passcode?: string;
+  /** Kept for compatibility with existing UI code. */
+  openMeetingUrl?: string;
+  /** Opens Google's new-meeting flow; it is NOT the generated room above. */
+  googleMeetUrl?: string;
+}
+
+export interface DiscussionComment {
+  id?: string;
+  targetId: string;
+  authorId: string;
+  authorName: string;
+  authorHandle?: string;
+  text: string;
+  taggedHandles?: string[];
+  meetingData?: MeetingData;
+  /** Firestore Timestamp after synchronization; string supports older cached records. */
+  createdAt?: Timestamp | string | null;
+}
+
+const DISCUSSIONS_COLLECTION = 'discussions';
+const MAX_COMMENT_LENGTH = 5_000;
+const MAX_TARGET_ID_LENGTH = 200;
+const MAX_AUTHOR_NAME_LENGTH = 100;
+const MAX_HANDLE_LENGTH = 40;
+const MAX_TAGGED_HANDLES = 20;
+
+/**
+ * Configure this to an institution-managed Jitsi host for confidential work.
+ * The default is a third-party host and its availability/policies are not
+ * controlled by SEERAAI.
+ */
+const VIDEO_MEETING_BASE_URL = 'https://meet.ffrn.de';
+const GOOGLE_MEET_NEW_URL = 'https://meet.google.com/new';
+
+/** Create a cryptographically strong random suffix for the room name. */
+const createSecureRandomHex = (byteLength = 16): string => {
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error('Secure random number generation is unavailable in this browser.');
+  }
+
+  const bytes = new Uint8Array(byteLength);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+};
+
+const requireText = (
+  value: string,
+  fieldName: string,
+  maxLength: number,
+): string => {
+  const cleaned = value.trim();
+
+  if (!cleaned) {
+    throw new Error(`${fieldName} is required.`);
+  }
+
+  if (cleaned.length > maxLength) {
+    throw new Error(`${fieldName} must not exceed ${maxLength} characters.`);
+  }
+
+  return cleaned;
+};
+
+/**
+ * Generate a unique Jitsi room URL and expiry metadata.
+ *
+ * This function does not create a Google Meet room and does not enforce expiry
+ * on the Jitsi server. The room is normally created by the meeting provider
+ * when the first participant joins.
+ */
+export const generateSecureMeetingRoom = (
+  targetId: string,
+  topic = 'Marii Sanada Seeraa (Legal Draft Session)',
+  durationHours = 2,
+): MeetingData => {
+  const safeTargetId = requireText(targetId || 'legal-session', 'targetId', MAX_TARGET_ID_LENGTH);
+
+  if (!Number.isFinite(durationHours) || durationHours <= 0 || durationHours > 24) {
+    throw new Error('durationHours must be greater than 0 and no more than 24 hours.');
+  }
+
+  const safeTopic = (topic || 'Marii Sanada Seeraa / Legal Draft Video Conference')
+    .trim()
+    .slice(0, 200);
+
+  const targetSlug = safeTargetId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24) || 'legal-session';
+
+  const roomName = `seeraai-${targetSlug}-${Date.now().toString(36)}-${createSecureRandomHex(16)}`;
+  const roomBaseUrl = `${VIDEO_MEETING_BASE_URL}/${roomName}`;
+
+  // Keep the pre-join screen enabled and start with microphone/camera muted.
+  const openMeetingUrl =
+    `${roomBaseUrl}#config.prejoinPageEnabled=true` +
+    '&config.startWithAudioMuted=true' +
+    '&config.startWithVideoMuted=true';
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + durationHours * 60 * 60 * 1000);
+
+  return {
+    meetingUrl: openMeetingUrl,
+    openMeetingUrl,
+    googleMeetUrl: GOOGLE_MEET_NEW_URL,
+    topic: safeTopic,
+    serviceName: 'Jitsi Meet (third-party host)',
+    createdAt: now.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+    // This module cannot detect whether anyone has actually joined the room.
+    isLive: false,
+  };
+};
+
+/** UI helper only. It does not disable or invalidate an external meeting URL. */
+export const isMeetingExpired = (
+  meeting: Pick<MeetingData, 'expiresAt'>,
+  now: Date = new Date(),
+): boolean => {
+  const expiryTime = Date.parse(meeting.expiresAt);
+  return !Number.isFinite(expiryTime) || expiryTime <= now.getTime();
+};
+
+/**
+ * Save a comment to Firestore.
+ *
+ * The old localStorage duplicate cache has intentionally been removed. It
+ * could create different local/remote IDs, become inconsistent with snapshots,
+ * and consume the browser's limited storage. Configure Firestore offline cache
+ * in firebase.ts separately if offline persistence is required.
+ *
+ * Returns the Firestore document reference, or null if the write fails.
+ * Invalid input throws an Error before the Firestore request is made.
+ */
+export const addComment = async (comment: DiscussionComment) => {
+  const targetId = requireText(comment.targetId, 'targetId', MAX_TARGET_ID_LENGTH);
+  const authorId = requireText(comment.authorId, 'authorId', 128);
+  const authorName = requireText(comment.authorName, 'authorName', MAX_AUTHOR_NAME_LENGTH);
+  const text = requireText(comment.text, 'text', MAX_COMMENT_LENGTH);
+
+  const authorHandle = comment.authorHandle?.trim().slice(0, MAX_HANDLE_LENGTH);
+  const taggedHandles = comment.taggedHandles
+    ?.map((handle) => handle.trim().replace(/^@/, '').slice(0, MAX_HANDLE_LENGTH))
+    .filter(Boolean)
+    .slice(0, MAX_TAGGED_HANDLES);
+
+  const payload = {
+    targetId,
+    authorId,
+    authorName,
+    ...(authorHandle ? { authorHandle } : {}),
+    text,
+    ...(taggedHandles?.length ? { taggedHandles } : {}),
+    ...(comment.meetingData ? { meetingData: comment.meetingData } : {}),
+    // Use Firestore's server clock rather than a client-controlled timestamp.
+    createdAt: serverTimestamp(),
+  };
+
+  try {
+    return await addDoc(collection(db, DISCUSSIONS_COLLECTION), payload);
+  } catch (error) {
+    console.error('Firestore addComment failed:', error);
+    return null;
+  }
+};
+
+/**
+ * Subscribe to comments for one target, ordered from oldest to newest.
+ * Pass onError to display permission, network or missing-index errors in the UI.
+ */
+export const subscribeToComments = (
+  targetId: string,
+  callback: (comments: DiscussionComment[]) => void,
+  onError?: (error: FirestoreError) => void,
+): Unsubscribe => {
+  const safeTargetId = requireText(targetId, 'targetId', MAX_TARGET_ID_LENGTH);
+
+  const commentsQuery = query(
+    collection(db, DISCUSSIONS_COLLECTION),
+    where('targetId', '==', safeTargetId),
+    orderBy('createdAt', 'asc'),
+  );
+
+  return onSnapshot(
+    commentsQuery,
+    { includeMetadataChanges: false },
+    (snapshot) => {
+      const comments = snapshot.docs.map((commentDoc) => {
+        const data = commentDoc.data({ serverTimestamps: 'estimate' });
+        return { ...data, id: commentDoc.id } as DiscussionComment;
+      });
+
+      callback(comments);
+    },
+    (error) => {
+      console.error('Firestore subscribeToComments failed:', error);
+      onError?.(error);
+    },
+  );
+};

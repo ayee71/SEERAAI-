@@ -1,0 +1,128 @@
+SEERAAI PRO — NEXT ACTION AFTER PHASE 8B.6.1
+SECURE GITHUB AUTHENTICATION, PUSH, AND CI HANDOFF
+
+PURPOSE
+The Phase 8B.6.1 report says a local commit was created on branch
+ci/rules-emulator-tests with short SHA f8ad160, but git push was blocked by
+missing GitHub authentication. Complete only the safe remote-push step and
+handoff to GitHub Actions.
+
+TARGET
+Repository: https://github.com/ayee71/SEERAAI-.git
+Branch: ci/rules-emulator-tests
+Expected local commit prefix: f8ad160
+Firebase emulator project: demo-seeraai-test
+
+STRICT SAFETY RULES
+1. Work only in the existing repository and existing branch. Do not run git init.
+2. Do not create a replacement app, repository, Firebase project, or branch.
+3. Do not run git reset --hard, git clean, force-push, rebase, or overwrite remote work.
+4. Do not commit directly to main/master and do not merge any pull request.
+5. Never request, print, paste into chat, log, or store a personal access token,
+   password, SSH private key, service-account key, or any other secret.
+6. Never put a token in a command, URL, source file, .env file, or report.
+7. Do not change production Firestore Rules, Storage Rules, Firebase Auth,
+   custom claims, IAM, Cloud Run, production data, or secrets.
+8. All emulator testing must target demo-seeraai-test only.
+9. If any identity, branch, commit, or remote check differs from the expected
+   values, STOP and report. Do not guess or repair destructively.
+
+STEP A — READ-ONLY LOCAL PREFLIGHT
+Run and report the results of:
+- git rev-parse --show-toplevel
+- git status --short
+- git branch --show-current
+- git log -1 --format="%H %s"
+- git remote get-url origin
+- git ls-remote --heads origin refs/heads/ci/rules-emulator-tests
+
+Verify all of the following before proceeding:
+- This is the existing SEERAAI PRO repository.
+- origin is exactly https://github.com/ayee71/SEERAAI-.git (or the same SSH
+  repository URL, with no embedded credentials).
+- The current branch is ci/rules-emulator-tests.
+- HEAD starts with f8ad160, unless the user has explicitly supplied a newer
+  verified commit in this conversation.
+- The expected six categories of changes are present: workflow, emulator
+  config, Firestore candidate Rules, Storage candidate Rules, Firestore test,
+  Storage test, plus package.json and package-lock.json as listed in the report.
+- No secrets or confidential court records are staged or committed.
+
+If the branch is not present locally, the repository is not found, the commit
+SHA does not match, there are unexplained working-tree changes, or origin is
+not the expected repository, STOP. Do not reclone, reinitialize, or recreate
+commits. Explain the mismatch.
+
+STEP B — AUTHENTICATION
+Check whether GitHub CLI is available and authenticated:
+- gh --version
+- gh auth status
+
+If gh is available but not authenticated, ask the user to complete the
+interactive browser-based login by running `gh auth login` in the terminal:
+choose GitHub.com, HTTPS, and approve Git credential setup when prompted.
+Then check `gh auth status` again. Do not ask the user to paste a token into
+this chat or into the AI prompt.
+
+If GitHub CLI is unavailable, do not invent an authentication method and do
+not ask for credentials in chat. Explain that the user must authenticate using
+an approved secure Git credential manager or GitHub's authorized integration.
+Stop until secure authentication is available.
+
+STEP C — REMOTE BRANCH PRECHECK
+Before pushing, inspect the remote branch using git ls-remote.
+- If the remote branch already points to the same commit, do not push again;
+  proceed to verification.
+- If the remote branch exists but points to a different commit, STOP and
+  report the divergence. Never force-push or overwrite it.
+- If it does not exist and all preflight checks passed, continue.
+
+STEP D — PUSH WITHOUT FORCE
+Only after the user has completed secure authentication and all checks pass,
+run exactly:
+  git push --set-upstream origin ci/rules-emulator-tests
+
+Never add --force or --force-with-lease. If push fails, capture the safe error
+message, redact any accidental secrets, and stop. Do not claim the push worked.
+
+STEP E — VERIFY THE REMOTE
+Run:
+- git ls-remote --heads origin refs/heads/ci/rules-emulator-tests
+- git log -1 --format="%H %s"
+
+Confirm that the remote branch SHA exactly matches the intended local commit.
+Also verify that the workflow and test files are present on that remote branch.
+Do not claim verification based only on local git status.
+
+STEP F — GITHUB ACTIONS HANDOFF
+After successful remote verification:
+1. Tell the user to open the repository's Pull Requests page and create a draft
+   pull request from ci/rules-emulator-tests into main.
+2. Do not merge the pull request.
+3. The expected workflow is .github/workflows/rules-test.yml. Verify the actual
+   workflow name and triggers from the committed file before telling the user
+   which workflow to run.
+4. Because workflow_dispatch is only available when the workflow file is on
+   the repository's default branch, do not promise that the Run workflow button
+   will be available while the workflow exists only on the feature branch.
+   Use the pull_request trigger if it is configured and applicable. If no CI run
+   starts, explain the precise reason; do not alter main or merge automatically.
+5. Tell the user to download rules-test-evidence only after an actual completed
+   GitHub Actions run. Record the run URL, conclusion, test output, emulator
+   logs, exit code, and candidate SHA-256 hashes.
+
+FINAL REPORT
+Provide factual results only:
+- Local repository path and confirmed repository identity
+- Branch and full commit SHA
+- GitHub authentication method used (never disclose credentials)
+- Push result and remote branch SHA
+- Workflow name, trigger and actual Actions run URL, if any
+- Firestore and Storage test results, logs and evidence artifact status
+- Remaining blockers
+
+RELEASE GATE
+Keep RELEASE STATUS = BLOCKED until an actual GitHub Actions emulator test run
+has completed successfully, evidence has been reviewed, and the project's
+separate release approval process is satisfied. A local commit, successful
+build, workflow file, or successful push alone is not a security test result.

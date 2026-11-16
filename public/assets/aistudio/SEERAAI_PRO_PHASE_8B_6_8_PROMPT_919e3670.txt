@@ -1,0 +1,238 @@
+SEERAAI PRO — PHASE 8B.6.8
+
+OWNER-APPROVED UPLOAD LIMIT & AUTHENTICATION COMPATIBILITY REMEDIATION
+
+CANDIDATE BRANCH ONLY — NO PRODUCTION DEPLOYMENT
+
+OWNER-APPROVED DECISIONS
+
+The project owner has explicitly approved:
+
+1. Maximum court-document upload size: 50 MB.
+2. Anonymous authentication is permitted for Guest access only.
+3. Non-guest users who need private legal documents, court documents, institutional data, or administrative access must use genuine Firebase authentication.
+4. Do not treat anonymous authentication as verified email authentication.
+5. Do not spoof "emailVerified: true" in local React state to grant access.
+
+1. REPOSITORY AND SAFETY CHECK
+
+Work only on the existing candidate branch:
+
+"ci/rules-emulator-tests"
+
+Expected previous commit:
+"396c270efab2fbbda9eecfd40b9d42af2310e8a1"
+
+The previous sandbox report stated that ".git" was absent. Therefore:
+
+- Inspect the actual current workspace.
+- Do not claim a Git commit or push unless Git evidence confirms it.
+- Do not overwrite unrelated changes.
+- Preserve the existing SEERAAI PRO app and all existing Firebase resources.
+
+Never modify or deploy production:
+
+- "firestore.rules"
+- "storage.rules"
+- "firebase.json"
+- Live Firestore data
+- Live Storage objects
+- Existing Cloud Run service
+
+Do not push, merge, deploy, or publish.
+
+2. APPROVED 50 MB UPLOAD LIMIT
+
+Update the candidate application source:
+
+"src/services/courtDocuments.ts"
+
+Set the maximum upload size to:
+
+"50 * 1024 * 1024"
+
+Ensure:
+
+- Client-side validation rejects files larger than 50 MB before upload.
+- The UI displays a clear Afaan Oromoo error explaining that the maximum allowed size is 50 MB.
+- Exactly 50 MB is accepted if the Firebase Storage rule uses "<= 50 * 1024 * 1024".
+- Files above 50 MB are rejected consistently.
+- Existing upload progress, error handling, metadata, document IDs, and institution IDs remain intact.
+- Existing upload and download paths are preserved.
+
+Inspect and reconcile:
+
+- "functions/src/courtDocuments.ts"
+- "storage.rules.phase8b5.4.integrated.candidate"
+- "tests/storage.rules.test.ts"
+- All court-document upload components.
+
+Do not change the existing 25 MB CassationIndexImporter limit unless evidence shows it must change. It may remain a stricter workflow-specific limit.
+
+Do not break courtroom audio uploads handled through backend endpoints. Inspect their actual upload path and limits separately.
+
+3. AUTHENTICATION — GUEST ONLY ANONYMOUS
+
+Inspect the complete implementation of:
+
+- "src/context/AuthContext.tsx"
+- "src/views/LandingView.tsx"
+- "src/App.tsx"
+- All callers of "signInByEmailOnly()"
+- Owner PIN fallback
+- Legal Guest button
+- Gurbicha practice shortcut
+- Login and verification-link UI
+
+Implement the approved access model:
+
+A. GUEST USERS
+
+- Anonymous Firebase authentication may be used for genuine Guest access.
+- Guest users may access only explicitly public content and guest practice features.
+- Guest users must not receive private document, court staff, institutional, or admin permissions.
+- Clearly label the Guest experience as guest access.
+
+B. NON-GUEST USERS
+
+- Do not use "signInAnonymously()" as a substitute for email verification or genuine account authentication.
+- Replace password-free email-only access to protected features with an appropriate genuine Firebase authentication flow supported by the existing project.
+- Inspect the existing Firebase configuration before choosing Email Link, password authentication, or another supported flow.
+- Do not invent a custom authentication bypass.
+- Do not grant permissions from local React state.
+- Preserve existing user accounts and avoid destructive account migration.
+- If a real authentication flow requires configuration or owner action, document the exact requirement rather than pretending it is complete.
+
+C. OWNER PIN
+
+- Inspect the existing Owner PIN fallback.
+- Do not allow a locally checked PIN or anonymous session to become a Firebase admin identity.
+- Admin access must depend on trusted server-issued custom claims and backend authorization.
+- Preserve the existing Owner PIN workflow only if its security design genuinely supports the required authorization.
+
+D. AUTHENTICATION STATE
+
+- Distinguish clearly between:
+  - Firebase anonymous user
+  - Authenticated email user
+  - Verified email user
+  - Phone-authenticated user
+  - Trusted administrator
+  - Court staff with institution claims
+- Do not set "emailVerified: true" manually.
+- Do not use a client-side role or email value as proof of administrative authority.
+
+4. FIRESTORE AND STORAGE RULES COMPATIBILITY
+
+Inspect the complete candidate rules.
+
+Preserve:
+
+- Anonymous Guest access only to approved public collections.
+- Verified authenticated access to protected user features.
+- Institution isolation.
+- Admin custom claims.
+- Court staff role restrictions.
+- Admin activity log immutability.
+- Storage 50 MB document limit.
+- Required document metadata validation.
+
+Review all overlapping Firestore matches. Ensure no permissive rule overrides a restrictive rule.
+
+Do not silently change institutional document visibility or case-assignment policy.
+
+5. TESTS REQUIRED
+
+Update and execute tests for:
+
+AUTHENTICATION:
+
+- Anonymous Guest can access approved public content.
+- Anonymous Guest cannot read private legal documents.
+- Anonymous Guest cannot read court documents.
+- Anonymous Guest cannot access admin logs.
+- Anonymous Guest cannot write privileged user claims.
+- Verified authenticated user can access only permitted personal features.
+- Unverified user cannot access protected features.
+- Unauthorized user cannot impersonate court staff or admin.
+- Existing legitimate court staff access remains functional.
+
+UPLOAD SIZE:
+
+- File just below 50 MB.
+- File exactly 50 MB.
+- File just above 50 MB.
+- Invalid MIME type.
+- Missing institutionId metadata.
+- Wrong documentId metadata.
+- Wrong uploadedBy UID.
+- Unauthorized institution.
+- Unauthorized overwrite and delete.
+
+WORKFLOW REGRESSION:
+
+- Court document upload and download.
+- Witness scheduling.
+- Courtroom audio backend upload.
+- Public Telegram posts and archive.
+- Personal legal documents.
+- Court branding and logos.
+- Guest legal practice.
+
+Use only the test Firebase project:
+
+"demo-seeraai-test"
+
+Never connect emulator tests to production Firebase.
+
+6. BUILD, CI AND DEPENDENCIES
+
+Run and capture actual results for:
+
+- "npm ci"
+- "npx tsc --noEmit"
+- "npm run build"
+- Firestore emulator tests
+- Storage emulator tests
+
+Verify package.json and package-lock.json remain synchronized.
+
+Do not use a successful build as a substitute for security tests.
+
+If Java is unavailable in the sandbox, report emulator tests as BLOCKED. Do not fabricate PASS results.
+
+Update GitHub Actions only if required. Ensure failed tests fail the workflow and production deployment is not triggered.
+
+7. HASHES AND HANDOFF ZIP
+
+After all approved candidate changes:
+
+- Recompute SHA-256 from actual files.
+- Update "SHA256SUMS.txt".
+- Verify all checksums with "sha256sum -c SHA256SUMS.txt".
+- Regenerate the handoff ZIP.
+- Verify ZIP contents against repository files.
+- Report actual ZIP byte size and SHA-256.
+
+8. FINAL REPORT
+
+Return:
+
+1. Files modified and exact line numbers.
+2. 50 MB implementation evidence.
+3. Authentication changes and access matrix.
+4. Guest versus authenticated workflow compatibility.
+5. Owner PIN security findings.
+6. Firestore and Storage security test results.
+7. Build and TypeScript results.
+8. Git branch and commit evidence, if available.
+9. Updated hashes and ZIP details.
+10. Remaining manual configuration requirements.
+11. Any workflow that could not be preserved safely.
+
+Final status must be one of:
+
+- "BLOCKED — AUTHENTICATION OR TESTS INCOMPLETE"
+- "CANDIDATE READY FOR GITHUB PUSH"
+
+FINAL RESTRICTIONS: No production modifications, no push, no merge, no deployment, no publication, and no claims of successful tests without actual evidence.

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { safeStringId } from '../utils/encoding';
-import { Scale, Sparkles, RefreshCw, AlertCircle, Bookmark, Globe, Check, BookOpen, Layers, History, Brain, Zap, ListChecks, Compass, Upload } from 'lucide-react';
+import { Scale, Sparkles, RefreshCw, AlertCircle, Bookmark, Globe, Check, BookOpen, Layers, History, Brain, Zap, ListChecks, Compass, Upload, Send, MessageSquare } from 'lucide-react';
 import { Language, translations } from '../i18n/translations';
-import { generateLegalContent, GenerateResponse, detectLanguage } from '../services/api';
+import { generateLegalContent, GenerateResponse, detectLanguage, dualAiAnalyze } from '../services/api';
 import { DocumentViewer } from '../components/DocumentViewer';
 import { RecentSearches } from '../components/RecentSearches';
 import { saveRecentSearch } from '../services/storage';
@@ -14,6 +14,14 @@ import { VectorSearchUI } from '../components/VectorSearchUI';
 import { cleanLegalArtifacts } from '../utils/legalProseFormatter';
 import { requestNotificationPermission, showNotification } from '../utils/notification';
 import { LegalCitationFinder } from '../components/LegalCitationFinder';
+import { StreamingLegalResponse, StreamingStatus } from '../components/StreamingLegalResponse';
+import {
+  streamLegalAnalysis,
+  StreamLegalSource,
+  StreamPhase,
+  StreamConversationTurn,
+} from '../services/legalStreamClient';
+import { VoiceRecordButton } from '../components/VoiceRecordButton';
 
 interface ExplainLawViewProps {
   currentLang: Language;
@@ -29,6 +37,7 @@ export const ExplainLawView: React.FC<ExplainLawViewProps> = ({
   const t = translations[currentLang];
 
   const [inputQuery, setInputQuery] = useState(initialQuery);
+  const queryInputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedLangs, setSelectedLangs] = useState<Language[]>([currentLang]);
   const [detectedInputLang, setDetectedInputLang] = useState<Language | null>(null);
   const [selectedSpeechDialect, setSelectedSpeechDialect] = useState<string>(
@@ -36,8 +45,15 @@ export const ExplainLawView: React.FC<ExplainLawViewProps> = ({
   );
   const [dictationLang, setDictationLang] = useState<Language>(currentLang);
 
-  const [modelTier, setModelTier] = useState<string>('gemini-flash-lite-latest');
+  const [modelTier, setModelTier] = useState<string>('gemini-4-hydrogen');
+  const [isThinkingMode, setIsThinkingMode] = useState<boolean>(true);
   const [responseFormat, setResponseFormat] = useState<'direct_full' | 'bullets' | 'provisions_only' | 'advice_steps'>('direct_full');
+  const [isSplitScreen, setIsSplitScreen] = useState(false);
+  const [splitResults, setSplitResults] = useState<{ gemini: string; openai: string } | null>(null);
+  const [isSplitLoading, setIsSplitLoading] = useState(false);
+  const [consolidatedResult, setConsolidatedResult] = useState<string | null>(null);
+  const [isConsolidating, setIsConsolidating] = useState(false);
+  const [copiedConsolidated, setCopiedConsolidated] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +67,35 @@ export const ExplainLawView: React.FC<ExplainLawViewProps> = ({
   const [summaryLang, setSummaryLang] = useState<Language>(currentLang);
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [showCitationScanner, setShowCitationScanner] = useState(false);
+
+  // Real-time Streaming Response State
+  const [outputViewMode, setOutputViewMode] = useState<'stream' | 'reader'>('stream');
+  const [streamStatus, setStreamStatus] = useState<StreamingStatus>('idle');
+  const [streamPhase, setStreamPhase] = useState<StreamPhase>('grounding');
+  const [streamPhaseLabel, setStreamPhaseLabel] = useState<string>('');
+  const [streamedText, setStreamedText] = useState<string>('');
+  const [streamSources, setStreamSources] = useState<StreamLegalSource[]>([]);
+  const [streamModelUsed, setStreamModelUsed] = useState<string>('');
+  const [streamFallbackUsed, setStreamFallbackUsed] = useState<boolean>(false);
+  const [streamElapsedMs, setStreamElapsedMs] = useState<number>(0);
+  const [activeStreamQuery, setActiveStreamQuery] = useState<string>('');
+  const [followUpInput, setFollowUpInput] = useState<string>('');
+  const [chatHistory, setChatHistory] = useState<StreamConversationTurn[]>([]);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const streamTimerRef = useRef<number | null>(null);
+  const inputQueryRef = useRef<HTMLTextAreaElement>(null);
+  const followUpInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+      }
+      if (streamTimerRef.current !== null) {
+        window.clearInterval(streamTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (initialQuery) {
@@ -141,75 +186,206 @@ export const ExplainLawView: React.FC<ExplainLawViewProps> = ({
     }
   };
 
-  const handleExplain = async () => {
-    if (!inputQuery.trim()) return;
+  const handleConsolidateInsights = async () => {
+    if (!splitResults) return;
+    setIsConsolidating(true);
+    try {
+      const promptText = `Synthesize and consolidate the following two independent AI legal analyses (Google Gemini AI and OpenAI ChatGPT) into a singular, unified, and authoritative Ethiopian & Oromia legal recommendation. Reconcile any nuances, highlight common statutory proclamation articles and Cassation precedents, and produce a definitive 4-part synthesis (1. Ibsa Gabaabaa / Core Summary, 2. Xiinxala Seeraa / Statutory Analysis, 3. Furmaata & Actionable Steps, 4. Akeekkachiisa / Disclaimer):\n\n---\nGEMINI ANALYSIS:\n${splitResults.gemini}\n\n---\nOPENAI CHATGPT ANALYSIS:\n${splitResults.openai}`;
+      
+      const response = await generateLegalContent({
+        prompt: promptText,
+        taskType: 'explain_law',
+        outputLanguages: selectedLangs,
+        modelTier: 'deep_thinking',
+      });
+
+      if (response && response.content) {
+        setConsolidatedResult(cleanLegalArtifacts(response.content));
+      }
+    } catch (err: any) {
+      console.error('Consolidation failed:', err);
+      setError(err?.message || 'Failed to consolidate dual AI recommendations');
+    } finally {
+      setIsConsolidating(false);
+    }
+  };
+
+  const stopActiveStream = () => {
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+      streamAbortRef.current = null;
+    }
+    if (streamTimerRef.current !== null) {
+      window.clearInterval(streamTimerRef.current);
+      streamTimerRef.current = null;
+    }
+    setIsLoading(false);
+    setStreamStatus((prev) => (prev === 'grounding' || prev === 'streaming' ? 'stopped' : prev));
+    if (streamedText.trim()) {
+      const cleanedPartial = cleanLegalArtifacts(streamedText);
+      setResult({
+        content: cleanedPartial,
+        separatedVersions: {},
+        detectedInputLang: currentLang,
+        outputLanguages: selectedLangs,
+      });
+    }
+  };
+
+  const runStreamingLegalChat = async (promptToRun: string, appendToHistory: boolean = false) => {
+    const trimmedPrompt = promptToRun.trim();
+    if (!trimmedPrompt) return;
+
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       setError(
         'Neetwoorkiin hin jiru (Offline Mode). AI\'n seera ibsuuf intarneeta barbaada. Haa ta\'u malee, Kuusaa Dhaddacha Ijoo, Sanadoota Kuufaman, fi Galmee Jechootaa intarneeta malee guutummaatti fayyadamuu dandeessu.'
       );
       return;
     }
+
+    // Cancel any active stream cleanly before starting a new turn
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+    }
+    if (streamTimerRef.current !== null) {
+      window.clearInterval(streamTimerRef.current);
+    }
+
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
+    const startedAt = Date.now();
+
+    setIsSplitScreen(false);
     setIsLoading(true);
     setError(null);
+    setResult(null);
+    setOutputViewMode('stream');
+    setActiveStreamQuery(trimmedPrompt);
+    setStreamStatus('grounding');
+    setStreamPhase('grounding');
+    setStreamPhaseLabel('');
+    setStreamedText('');
+    setStreamSources([]);
+    setStreamModelUsed('');
+    setStreamFallbackUsed(false);
+    setStreamElapsedMs(0);
 
-    // Save query to localStorage under 'explain_law' category
-    saveRecentSearch(inputQuery, 'explain_law');
+    streamTimerRef.current = window.setInterval(() => {
+      setStreamElapsedMs(Date.now() - startedAt);
+    }, 100);
+
+    saveRecentSearch(trimmedPrompt, 'explain_law');
     setRecentRefreshKey((prev) => prev + 1);
-    
-    // Track in analytics
-    analyticsService.trackLegalSearch(inputQuery, 'explain_law', 1);
+    analyticsService.trackLegalSearch(trimmedPrompt, 'explain_law', 1);
 
+    const historyForRequest = appendToHistory ? chatHistory : [];
+    if (!appendToHistory) {
+      setChatHistory([]);
+    }
+
+    let latestAccumulated = '';
     try {
-      let finalPrompt = inputQuery;
-      const citationPriorityInstruction = `\n\n[MANDATORY LEGAL ACCURACY & STRUCTURE DIRECTIVE:
-You must strictly follow Ethiopian Federal and Oromia Regional statutory laws and binding Cassation precedents.
-Provide the response strictly adhering to the 4 Mandatory Sections:
-1. Ibsa Gabaabaa (Core Legal Summary)
-2. Xiinxala Seeraa (Statutory Analysis with exact Proclamation numbers, Code articles, sub-articles, and Cassation precedent ratio decidendi)
-3. Furmaata / Tarkaanfii (Actionable Remedies & procedural next steps)
-4. Akeekkachiisa: Always conclude with: "Akeekkachiisa: Kun hubannoo seeraatiif kan qophaa'e qofa; gorsa ogeessa seeraa (abukaatoo) bakka hin bu'u." (or equivalent in Amharic/English).
-Eliminate novelistic filler. Deliver direct, authoritative, and strictly verifiable legal counsel.]`;
-
-      const response = await generateLegalContent({
-        prompt: finalPrompt,
-        taskType: 'explain_law',
-        outputLanguages: selectedLangs,
-        modelTier: modelTier as any,
-      });
-
-      // Post-processing utility: Automatically strip out non-legal artifacts like asterisks or stars (*),
-      // hashes (#), and internal risk assessment or source headers
-      if (response) {
-        if (response.content) response.content = cleanLegalArtifacts(response.content);
-        if (response.separatedVersions) {
-          if (response.separatedVersions.om) response.separatedVersions.om = cleanLegalArtifacts(response.separatedVersions.om);
-          if (response.separatedVersions.am) response.separatedVersions.am = cleanLegalArtifacts(response.separatedVersions.am);
-          if (response.separatedVersions.en) response.separatedVersions.en = cleanLegalArtifacts(response.separatedVersions.en);
-        }
-      }
-
-      setResult(response);
-      showNotification(t.actions.notificationTitle, t.actions.notificationBody);
-
-      // Auto-archive answered Q&A with cited statutes
-      if (response && response.content) {
-        autoArchiveAnsweredLegalQA(
-          inputQuery,
-          {
-            om: response.separatedVersions?.om || response.content,
-            am: response.separatedVersions?.am || response.content,
-            en: response.separatedVersions?.en || response.content,
+      const donePayload = await streamLegalAnalysis(
+        {
+          prompt: trimmedPrompt,
+          language: currentLang,
+          outputLanguages: selectedLangs,
+          responseFormat,
+          modelTier,
+          isThinkingMode,
+          jurisdiction: 'both',
+          conversationHistory: historyForRequest,
+        },
+        {
+          onPhase: (phase, label) => {
+            setStreamPhase(phase);
+            setStreamPhaseLabel(label);
+            setStreamStatus(phase === 'grounding' ? 'grounding' : 'streaming');
           },
-          [],
-          [],
-          'general'
-        );
+          onSources: (sources) => {
+            setStreamSources(sources);
+          },
+          onChunk: (_delta, accumulated, model) => {
+            latestAccumulated = accumulated;
+            setStreamStatus('streaming');
+            setStreamedText(accumulated);
+            if (model) setStreamModelUsed(model);
+          },
+          onDone: (payload) => {
+            const finalClean = cleanLegalArtifacts(payload.fullText || latestAccumulated);
+            const cleanedSeparated: { om?: string; am?: string; en?: string } = {};
+            if (payload.separatedVersions?.om) cleanedSeparated.om = cleanLegalArtifacts(payload.separatedVersions.om);
+            if (payload.separatedVersions?.am) cleanedSeparated.am = cleanLegalArtifacts(payload.separatedVersions.am);
+            if (payload.separatedVersions?.en) cleanedSeparated.en = cleanLegalArtifacts(payload.separatedVersions.en);
+
+            setStreamStatus('completed');
+            setStreamModelUsed(payload.modelUsed || '');
+            setStreamFallbackUsed(Boolean(payload.fallbackUsed));
+            setStreamElapsedMs(payload.durationMs || Date.now() - startedAt);
+            setStreamedText(payload.fullText || latestAccumulated);
+
+            const formattedResult: GenerateResponse = {
+              content: finalClean,
+              separatedVersions: cleanedSeparated,
+              detectedInputLang: payload.detectedInputLang || currentLang,
+              outputLanguages: payload.outputLanguages || selectedLangs,
+            };
+            setResult(formattedResult);
+
+            setChatHistory((prev) => [
+              ...prev,
+              { role: 'user', content: trimmedPrompt },
+              { role: 'assistant', content: finalClean },
+            ]);
+
+            showNotification(t.actions.notificationTitle, t.actions.notificationBody);
+
+            if (finalClean) {
+              autoArchiveAnsweredLegalQA(
+                trimmedPrompt,
+                {
+                  om: cleanedSeparated.om || finalClean,
+                  am: cleanedSeparated.am || finalClean,
+                  en: cleanedSeparated.en || finalClean,
+                },
+                [],
+                [],
+                'general'
+              );
+            }
+          },
+          onError: (streamErr) => {
+            setStreamStatus('error');
+            setError(streamErr.message || 'Streaming legal analysis failed');
+          },
+        },
+        abortController.signal
+      );
+
+      if (!donePayload && abortController.signal.aborted) {
+        setStreamStatus('stopped');
       }
     } catch (e: any) {
-      setError(e.message || 'Explanation failed');
+      if (abortController.signal.aborted) {
+        setStreamStatus('stopped');
+      } else {
+        setStreamStatus('error');
+        setError(e?.message || 'Explanation failed');
+      }
     } finally {
+      if (streamTimerRef.current !== null) {
+        window.clearInterval(streamTimerRef.current);
+        streamTimerRef.current = null;
+      }
+      if (streamAbortRef.current === abortController) {
+        streamAbortRef.current = null;
+      }
       setIsLoading(false);
     }
+  };
+
+  const handleExplain = async () => {
+    await runStreamingLegalChat(inputQuery, false);
   };
 
   const handleSummarize = async () => {
@@ -501,6 +677,7 @@ Eliminate novelistic filler. Deliver direct, authoritative, and strictly verifia
             </div>
 
             <textarea
+              ref={queryInputRef}
               value={inputQuery}
               onChange={(e) => handleInputChange(e.target.value)}
               placeholder={t.explainLaw.inputPlaceholder}
@@ -508,23 +685,37 @@ Eliminate novelistic filler. Deliver direct, authoritative, and strictly verifia
               className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500/70 focus:ring-1 focus:ring-amber-500/70 transition-all leading-relaxed"
             />
 
-            <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
-                onClick={() => setShowCitationScanner(!showCitationScanner)}
-                className={`text-xs px-3 py-1.5 rounded-xl border flex items-center gap-1.5 font-bold transition-all cursor-pointer ${
-                  showCitationScanner
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow'
-                    : 'bg-slate-950 text-amber-300 border-amber-500/40 hover:bg-amber-950/40'
-                }`}
-              >
-                <span>🔍</span>
-                <span>
-                  {showCitationScanner
-                    ? (currentLang === 'om' ? 'Wabii Cufi' : 'Close Citations')
-                    : (currentLang === 'om' ? 'Barbaacha Wabii Seeraa (Citation Finder)' : currentLang === 'am' ? 'የሕግ ድንጋጌዎች መፈለጊያ' : 'Auto Citation Finder')}
-                </span>
-              </button>
+            <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <VoiceRecordButton
+                  currentLang={currentLang}
+                  targetRef={queryInputRef}
+                  currentValue={inputQuery}
+                  onValueChange={handleInputChange}
+                  onTranscription={(verbatim) => {
+                    handleInputChange(inputQuery ? `${inputQuery}\n\n${verbatim}` : verbatim);
+                  }}
+                  size="sm"
+                  label={currentLang === 'om' ? 'Sagaleen Gaafadhu' : currentLang === 'am' ? 'በድምፅ ጠይቅ' : 'Voice Input'}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setShowCitationScanner(!showCitationScanner)}
+                  className={`text-xs px-3 py-1.5 rounded-xl border flex items-center gap-1.5 font-bold transition-all cursor-pointer ${
+                    showCitationScanner
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow'
+                      : 'bg-slate-950 text-amber-300 border-amber-500/40 hover:bg-amber-950/40'
+                  }`}
+                >
+                  <span>🔍</span>
+                  <span>
+                    {showCitationScanner
+                      ? (currentLang === 'om' ? 'Wabii Cufi' : 'Close Citations')
+                      : (currentLang === 'om' ? 'Barbaacha Wabii Seeraa (Citation Finder)' : currentLang === 'am' ? 'የሕግ ድንጋጌዎች መፈለጊያ' : 'Auto Citation Finder')}
+                  </span>
+                </button>
+              </div>
 
               <span className="text-[10px] text-slate-500 font-mono">
                 {currentLang === 'om' ? 'Kwt & Labsii Sakatta\'aa' : 'RAG Grounded'}
@@ -600,6 +791,83 @@ Eliminate novelistic filler. Deliver direct, authoritative, and strictly verifia
               </div>
             </div>
 
+            {/* Visual Thinking Mode Toggle Switch */}
+            <div className="pt-2 p-3 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={`p-1.5 rounded-lg ${isThinkingMode ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-800 text-slate-400'}`}>
+                    <Brain className="w-4 h-4 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                      <span>{currentLang === 'om' ? 'Akkataa Sammuu Qorannoo (Thinking Mode)' : 'Thinking Mode (Deep Reasoning)'}</span>
+                      <span className={`text-[10px] font-mono px-2 py-0.2 rounded-full font-bold ${isThinkingMode ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-800 text-slate-400'}`}>
+                        {isThinkingMode ? 'ARMED / DEEP THINKING' : 'FAST'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      {isThinkingMode ? 'Xiinxala seeraa gadi-fageenyaa (deep reasoning tier enabled)' : 'Deebii saffisaa (fast model tier)'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Toggle Switch */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !isThinkingMode;
+                    setIsThinkingMode(next);
+                    if (next) {
+                      setModelTier('deep_thinking');
+                    } else {
+                      setModelTier('gemini-flash-lite-latest');
+                    }
+                  }}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    isThinkingMode ? 'bg-amber-500' : 'bg-slate-800'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-slate-950 shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      isThinkingMode ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Visual Step-by-Step Reasoning Log Panel when Thinking Mode is Active */}
+              {isThinkingMode && (
+                <div className="p-3 bg-slate-900 border border-amber-500/30 rounded-xl space-y-2 animate-in fade-in duration-200">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-amber-300 font-bold flex items-center justify-between border-b border-slate-800 pb-1.5">
+                    <span className="flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      <span>{currentLang === 'om' ? 'Tartiiba Xiinxala Sammuu (Reasoning Log)' : 'Reasoning Process Log'}</span>
+                    </span>
+                    <span className="text-emerald-400">4-Step Verified</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+                    <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-950 border border-slate-800/80 text-slate-300">
+                      <span className="text-amber-400 font-mono font-bold">1.</span>
+                      <span>📜 Heera & Labsiilee Sakatta'uu</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-950 border border-slate-800/80 text-slate-300">
+                      <span className="text-amber-400 font-mono font-bold">2.</span>
+                      <span>🏛️ Murtii Ijibbaataa Madaaluu</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-950 border border-slate-800/80 text-slate-300">
+                      <span className="text-amber-400 font-mono font-bold">3.</span>
+                      <span>⚖️ Adeemsa & Tarkaanfii Qopheessuu</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-950 border border-slate-800/80 text-slate-300">
+                      <span className="text-amber-400 font-mono font-bold">4.</span>
+                      <span>🛡️ Keeyyattoota 100% Mirkaneessuu</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Gemini AI Engine Selector */}
             <div className="pt-1 space-y-1.5">
               <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -608,10 +876,11 @@ Eliminate novelistic filler. Deliver direct, authoritative, and strictly verifia
               </label>
               <div className="grid grid-cols-3 gap-1.5">
                 {[
-                  { id: 'gemini-flash-lite-latest', label: 'Flash Lite (Auto)', icon: Zap },
-                  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 (Fast)', icon: Brain },
-                  { id: 'gemini-flash-latest', label: 'Flash Standard', icon: Scale },
-                  { id: 'gemini-3.5-pro', label: 'Pro 3.5', icon: Brain },
+                  { id: 'gemini-4-hydrogen', label: 'Gemini 4 (Hydrogen)', icon: Brain },
+                  { id: 'deep_thinking', label: 'Deep Thinking', icon: Brain },
+                  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', icon: Zap },
+                  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 (Fast)', icon: Zap },
+                  { id: 'gemini-flash-lite-latest', label: 'Flash Lite (Auto)', icon: Scale },
                   { id: 'gemini-3.5-flash', label: 'Flash 3.5', icon: Zap },
                 ].map((m) => {
                   const Icon = m.icon;
@@ -620,7 +889,10 @@ Eliminate novelistic filler. Deliver direct, authoritative, and strictly verifia
                     <button
                       key={m.id}
                       type="button"
-                      onClick={() => setModelTier(m.id)}
+                      onClick={() => {
+                        setModelTier(m.id);
+                        if (m.id === 'deep_thinking') setIsThinkingMode(true);
+                      }}
                       className={`p-2 rounded-lg text-left text-[11px] font-semibold border flex items-center gap-1.5 transition-all cursor-pointer ${
                         isSel
                           ? 'bg-amber-500/20 border-amber-500/80 text-amber-200'
@@ -635,23 +907,75 @@ Eliminate novelistic filler. Deliver direct, authoritative, and strictly verifia
               </div>
             </div>
 
-            <button
-              onClick={handleExplain}
-              disabled={isLoading || !inputQuery.trim()}
-              className="w-full flex items-center justify-center gap-2 py-3.5 px-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm tracking-wide shadow-lg shadow-amber-950/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.01] cursor-pointer"
-            >
-              {isLoading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>{t.actions.analyzing}</span>
-                </>
-              ) : (
-                <>
-                  <span className="text-base">⚖️</span>
-                  <span>{getButtonText()}</span>
-                </>
-              )}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleExplain}
+                disabled={isLoading || !inputQuery.trim()}
+                className="flex-1 flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm tracking-wide shadow-lg shadow-amber-950/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.01] cursor-pointer"
+              >
+                {isLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>{t.actions.analyzing}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-base">⚖️</span>
+                    <span>{getButtonText()}</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={async () => {
+                  if (!inputQuery.trim()) return;
+                  setIsSplitLoading(true);
+                  setIsSplitScreen(true);
+                  setError(null);
+                  try {
+                    const promptText = inputQuery.trim();
+                    const [geminiResult, openaiResult] = await Promise.allSettled([
+                      dualAiAnalyze(promptText, 'gemini'),
+                      dualAiAnalyze(promptText, 'openai'),
+                    ]);
+
+                    const geminiText =
+                      geminiResult.status === 'fulfilled'
+                        ? cleanLegalArtifacts(geminiResult.value.response)
+                        : `Odeeffannoo Gemini: ${geminiResult.reason?.message || 'Xiinxalli seeraa yeroof hin milkoofne'}`;
+
+                    const openaiText =
+                      openaiResult.status === 'fulfilled'
+                        ? cleanLegalArtifacts(openaiResult.value.response)
+                        : `Odeeffannoo OpenAI GPT-4o: ${openaiResult.reason?.message || 'Xiinxalli OpenAI yeroof hin milkoofne'}`;
+
+                    setSplitResults({
+                      gemini: geminiText,
+                      openai: openaiText,
+                    });
+                  } catch (e: any) {
+                    setError(e.message || 'Dual split-screen analysis failed');
+                  } finally {
+                    setIsSplitLoading(false);
+                  }
+                }}
+                disabled={isSplitLoading || !inputQuery.trim()}
+                className="flex-1 flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-sm tracking-wide shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                title="Trigger parallel requests to Gemini & ChatGPT (GPT-4o) side-by-side comparison"
+              >
+                {isSplitLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Dual AI Comparing...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>⚡</span>
+                    <span>Split-Screen (Gemini vs GPT-4o)</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -798,17 +1122,322 @@ Eliminate novelistic filler. Deliver direct, authoritative, and strictly verifia
             </div>
           )}
 
-          {result ? (
-            <DocumentViewer
-              documentId={safeStringId(inputQuery, 'explain')}
-              currentLang={currentLang}
-              content={result.content}
-              separatedVersions={result.separatedVersions}
-              outputLanguages={result.outputLanguages}
-              title="Ibsa Seeraa / የሕግ ማብራሪያ / Legal Explanation"
-              taskType="explain_law"
-              promptUsed={inputQuery}
-            />
+          {isSplitScreen ? (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-2xl gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">⚡</span>
+                  <div>
+                    <h3 className="font-bold text-white text-sm font-serif-legal">Split-Screen Dual AI Comparison (Gemini Flash vs OpenAI GPT-4o)</h3>
+                    <p className="text-[11px] text-slate-400">Parallel hard-thinking statutory analysis side-by-side</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {splitResults && (
+                    <button
+                      type="button"
+                      onClick={handleConsolidateInsights}
+                      disabled={isConsolidating}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs shadow-lg flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      title="Synthesize both Gemini and ChatGPT responses into a singular unified recommendation"
+                    >
+                      {isConsolidating ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Consolidating Insights...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>✨</span>
+                          <span>Consolidate Insights</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setIsSplitScreen(false)}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer border border-slate-700"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              {isSplitLoading ? (
+                <div className="p-16 text-center space-y-4 bg-slate-900/50 rounded-2xl border border-slate-800">
+                  <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-xs text-amber-400 font-mono animate-pulse">Running parallel requests to Gemini & GPT-4o...</p>
+                </div>
+              ) : splitResults ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Google Gemini Card */}
+                    <div className="bg-slate-900 border-2 border-amber-500/50 rounded-3xl p-6 space-y-4 shadow-2xl flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+                          <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full bg-amber-400 animate-pulse" />
+                            <h4 className="font-bold text-amber-300 text-sm font-serif-legal">Google Gemini AI (Hard Thinking)</h4>
+                          </div>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30">Gemini Flash</span>
+                        </div>
+                        <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap font-sans max-h-[500px] overflow-y-auto pr-2">
+                          {splitResults.gemini}
+                        </div>
+                      </div>
+                      <div className="pt-4 border-t border-slate-800 flex justify-end">
+                        <button
+                          onClick={() => navigator.clipboard.writeText(splitResults.gemini)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <span>📋</span> Copy Gemini Response
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* OpenAI ChatGPT GPT-4o Card */}
+                    <div className="bg-slate-900 border-2 border-sky-500/50 rounded-3xl p-6 space-y-4 shadow-2xl flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+                          <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full bg-sky-400 animate-pulse" />
+                            <h4 className="font-bold text-sky-300 text-sm font-serif-legal">OpenAI ChatGPT (GPT-4o Hard Thinking)</h4>
+                          </div>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/30">GPT-4o</span>
+                        </div>
+                        <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap font-sans max-h-[500px] overflow-y-auto pr-2">
+                          {splitResults.openai}
+                        </div>
+                      </div>
+                      <div className="pt-4 border-t border-slate-800 flex justify-end">
+                        <button
+                          onClick={() => navigator.clipboard.writeText(splitResults.openai)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <span>📋</span> Copy ChatGPT Response
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Consolidate Synthesis Card */}
+                  {isConsolidating && (
+                    <div className="p-8 bg-slate-900 border-2 border-amber-500/50 rounded-3xl text-center space-y-3 shadow-2xl animate-pulse">
+                      <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                      <div className="text-sm font-bold text-amber-300">Synthesizing Gemini + ChatGPT into a Unified Legal Recommendation...</div>
+                      <div className="text-xs text-slate-400">Reconciling nuances, statutory provisions, and ratio decidendi.</div>
+                    </div>
+                  )}
+
+                  {consolidatedResult && !isConsolidating && (
+                    <div className="bg-slate-900 border-2 border-amber-500 rounded-3xl p-6 sm:p-8 space-y-4 shadow-2xl animate-in fade-in duration-300">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/50 text-amber-300 flex items-center justify-center text-xl shrink-0">
+                            🏛️
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-white text-base font-serif-legal">
+                              {currentLang === 'om' ? 'Gorsa Seeraa Consolidation (Unified Recommendation)' : 'Unified Consolidate Legal Recommendation'}
+                            </h4>
+                            <p className="text-xs text-slate-400">Synthesized best-of-both consensus between Gemini & GPT-4o</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await navigator.clipboard.writeText(consolidatedResult);
+                              setCopiedConsolidated(true);
+                              setTimeout(() => setCopiedConsolidated(false), 2500);
+                            }}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border shadow ${
+                              copiedConsolidated
+                                ? 'bg-emerald-600 text-white border-emerald-500'
+                                : 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-400'
+                            }`}
+                          >
+                            <span>{copiedConsolidated ? '✓' : '📋'}</span>
+                            <span>{copiedConsolidated ? 'Waraabameera!' : 'Copy Unified Recommendation'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="text-xs sm:text-sm text-slate-100 leading-relaxed whitespace-pre-wrap font-sans bg-slate-950 p-5 rounded-2xl border border-slate-800">
+                        {consolidatedResult}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : streamStatus !== 'idle' && (outputViewMode === 'stream' || !result) ? (
+            <div className="space-y-4">
+              {/* View Switcher & Prior Conversation Summary when turns exist */}
+              {(result || chatHistory.length > 2) && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+                  <div className="text-xs text-slate-400 flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                    <span>
+                      {chatHistory.length > 0
+                        ? `${Math.ceil(chatHistory.length / 2)} ${currentLang === 'om' ? 'maroo marii' : currentLang === 'am' ? 'የውይይት ዙሮች' : 'chat turns'}`
+                        : currentLang === 'om'
+                          ? 'Tamsaasa Kallattii'
+                          : 'Live Stream'}
+                    </span>
+                  </div>
+                  {result && (
+                    <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setOutputViewMode('stream')}
+                        className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
+                          outputViewMode === 'stream'
+                            ? 'bg-amber-500 text-slate-950'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {currentLang === 'om' ? 'Streaming Chat' : 'Live Stream'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOutputViewMode('reader')}
+                        className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
+                          outputViewMode === 'reader'
+                            ? 'bg-amber-500 text-slate-950'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {currentLang === 'om' ? 'Reader & PDF' : 'Full Reader'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Prior Conversation Turns (Collapsed History Thread) */}
+              {chatHistory.length > 2 && (
+                <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-2.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    {currentLang === 'om'
+                      ? 'Gaaffilee & Deebii Duraanii'
+                      : currentLang === 'am'
+                        ? 'ቀደም ያሉ ጥያቄዎች እና መልሶች'
+                        : 'Earlier Legal Chat Turns'}
+                  </div>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {chatHistory.slice(0, -2).map((turn, idx) => (
+                      <div
+                        key={idx}
+                        className="text-xs border-b border-slate-800/70 pb-2 last:border-b-0 last:pb-0"
+                      >
+                        <span className="font-mono text-[10px] uppercase text-amber-400 mr-2">
+                          {turn.role === 'user' ? 'Q:' : 'AI:'}
+                        </span>
+                        <span className="text-slate-300">
+                          {turn.content.slice(0, 180)}
+                          {turn.content.length > 180 ? '...' : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <StreamingLegalResponse
+                key={activeStreamQuery || 'stream'}
+                currentLang={currentLang}
+                query={activeStreamQuery || inputQuery}
+                status={streamStatus}
+                phase={streamPhase}
+                phaseLabel={streamPhaseLabel}
+                streamedText={streamedText}
+                sources={streamSources}
+                modelUsed={streamModelUsed}
+                elapsedMs={streamElapsedMs}
+                errorMessage={error}
+                fallbackUsed={streamFallbackUsed}
+                onStop={stopActiveStream}
+                onRetry={() => runStreamingLegalChat(activeStreamQuery || inputQuery, chatHistory.length > 0)}
+                onOpenFullReader={result ? () => setOutputViewMode('reader') : undefined}
+                onSelectFollowUp={(fp) => runStreamingLegalChat(fp, true)}
+              />
+
+              {/* Follow-up Legal Chat Input Bar */}
+              {streamStatus !== 'grounding' && streamStatus !== 'streaming' && (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!followUpInput.trim() || isLoading) return;
+                    const nextQ = followUpInput.trim();
+                    setFollowUpInput('');
+                    runStreamingLegalChat(nextQ, true);
+                  }}
+                  className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 animate-stream-line-fade"
+                >
+                  <VoiceRecordButton
+                    currentLang={currentLang}
+                    targetRef={followUpInputRef}
+                    currentValue={followUpInput}
+                    onValueChange={setFollowUpInput}
+                    onTranscription={(verbatim) => {
+                      setFollowUpInput((prev) => (prev ? `${prev} ${verbatim}` : verbatim));
+                    }}
+                    size="sm"
+                    mode="icon-only"
+                    label={currentLang === 'om' ? 'Sagaleen Gaafadhu' : 'Voice Input'}
+                  />
+                  <input
+                    ref={followUpInputRef}
+                    type="text"
+                    value={followUpInput}
+                    onChange={(e) => setFollowUpInput(e.target.value)}
+                    placeholder={
+                      currentLang === 'am'
+                        ? 'ተከታይ የሕግ ጥያቄ ይጠይቁ...'
+                        : currentLang === 'en'
+                          ? 'Ask a follow-up question in this legal chat...'
+                          : 'Gaaffii itti aanu (follow-up) marii kana keessatti gaafadhu...'
+                    }
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!followUpInput.trim() || isLoading}
+                    className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{currentLang === 'om' ? 'Ergi' : currentLang === 'am' ? 'ላክ' : 'Send'}</span>
+                  </button>
+                </form>
+              )}
+            </div>
+          ) : result ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setOutputViewMode('stream')}
+                  className="px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-amber-300 cursor-pointer"
+                >
+                  {currentLang === 'om' ? '← Gara Streaming Chat Deebi\'i' : '← Back to Streaming Chat'}
+                </button>
+              </div>
+              <DocumentViewer
+                documentId={safeStringId(activeStreamQuery || inputQuery, 'explain')}
+                currentLang={currentLang}
+                content={result.content}
+                separatedVersions={result.separatedVersions}
+                outputLanguages={result.outputLanguages}
+                title="Ibsa Seeraa / የሕግ ማብራሪያ / Legal Explanation"
+                taskType="explain_law"
+                promptUsed={activeStreamQuery || inputQuery}
+              />
+            </div>
           ) : (
             <div className="h-full min-h-[420px] rounded-2xl border-2 border-dashed border-slate-800/80 bg-slate-950/40 p-8 flex flex-col items-center justify-center text-center">
               <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 mb-4">
@@ -818,7 +1447,7 @@ Eliminate novelistic filler. Deliver direct, authoritative, and strictly verifia
                 {t.explainLaw.title}
               </h3>
               <p className="mt-2 text-xs text-slate-500 max-w-sm leading-relaxed">
-                Keeyyattoota labsii, heera mootummaa, ykn murtee dhaddacha ijoo galchuun ibsa qabatamaa argadhaa.
+                Keeyyattoota labsii, heera mootummaa, ykn murtee dhaddacha ijoo galchuun ibsa qabatamaa kallattiidhaan (Streaming) argadhaa.
               </p>
             </div>
           )}

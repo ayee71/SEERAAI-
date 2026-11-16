@@ -11,7 +11,12 @@ service cloud.firestore {
     }
 
     function isEmailVerified() {
-      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.token.firebase.sign_in_provider == 'phone' || request.auth.token.firebase.sign_in_provider == 'anonymous');
+      return isSignedIn() && (
+        request.auth.token.email_verified == true || 
+        request.auth.token.firebase.sign_in_provider == 'phone' || 
+        request.auth.token.firebase.sign_in_provider == 'anonymous' ||
+        request.auth.token.email == 'ayeledha@gmail.com'
+      );
     }
 
     function isOwner(userId) {
@@ -20,9 +25,33 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == 'ayeledha@saiethio.com' ||
+        request.auth.token.admin == true ||
         request.auth.token.email == 'ayeledha@gmail.com' ||
+        request.auth.token.email == 'ayeledha@saiethio.com' ||
         request.auth.token.email == 'ayele@saiethio.com'
+      );
+    }
+
+    function isLegalRepositoryManager() {
+      return signedIn() && (
+        isAdmin() ||
+        request.auth.token.legalContentManager == true
+      );
+    }
+
+    function hasCourtRole() {
+      return signedIn() && (
+        isAdmin() ||
+        request.auth.token.role in ['judge', 'assistant_judge', 'registrar', 'legal_expert', 'auditor'] ||
+        request.auth.token.courtRole in ['judge', 'assistant_judge', 'registrar', 'legal_expert', 'auditor']
+      );
+    }
+
+    function canEditCases() {
+      return signedIn() && (
+        isAdmin() ||
+        request.auth.token.role in ['judge', 'assistant_judge', 'registrar'] ||
+        request.auth.token.courtRole in ['judge', 'assistant_judge', 'registrar']
       );
     }
 
@@ -38,9 +67,10 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Default deny
-    match /{document=**} {
-      allow read, write: if false;
+    // Security Starter: Username Registry Protection
+    match /usernameIndex/{username} {
+      allow read: if isSignedIn();
+      allow write: if false; // Only via backend Admin SDK
     }
 
     // ==========================================
@@ -72,13 +102,11 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin();
       allow list: if isAdmin();
-      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().uid == userId;
-      allow update: if isOwner(userId) && isValidUser(incoming()) && 
-                    incoming().uid == existing().uid && 
-                    incoming().email == existing().email; // Immutable fields
+      allow create: if isOwner(userId) && incoming().uid == userId;
+      allow update: if isOwner(userId) || isAdmin();
       
       match /webauthn_credentials/{credId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isAdmin();
       }
     }
 
@@ -88,9 +116,112 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    match /telegram_legal_documents/{id} {
+    // Unified Legal Database (Module Alignment)
+    match /legalEnactments/{id} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    match /cassationDecisions/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /legalAuditLogs/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // Telegram & Analytics (Explicit collection matches for feed list/get)
+    // Telegram legal repository: sanada maxxanfamee fi qulqullaa'e qofa public dha.
+    match /telegram_legal_documents/{docId} {
+      allow get, list: if true; // Public read for legal awareness
+      allow create, update, delete: if isAdmin() || (request.auth != null && request.auth.token.legalContentManager == true);
+    }
+    match /telegram_logs/{id} {
+      allow read, write: if isAdmin();
+    }
+    match /telegram_polls/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /telegram_channels/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /telegram_posts/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /telegram_archive/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /telegram_messages/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /telegram_channel_feed/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /telegram_subscribers/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /telegram_user_stats/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /telegram_poll_results/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /telegram_briefing_logs/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /site_analytics/{docId} {
+      allow create: if true;
+      allow read: if isAdmin();
+    }
+    match /legal_ai_audit/{docId} {
+      allow create: if true;
+      allow read: if isAdmin();
+    }
+
+    match /quality_audits/{auditId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (isAdmin() || request.auth.token.role in ['chief_judge', 'it_auditor', 'legal_expert']);
+      allow update: if isSignedIn() && (isAdmin() || request.auth.token.role in ['chief_judge', 'it_auditor', 'legal_expert']);
+      allow delete: if isAdmin();
+      
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn() && (isAdmin() || request.auth.token.role in ['chief_judge', 'it_auditor', 'legal_expert']);
+      }
+    }
+
+    match /legal_sources/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /legalDocuments/{id} {
+      allow read: if true;
+      allow write: if isAdmin() || isCourtReporterOrStaff();
+      
+      match /textChunks/{chunkId} {
+        allow read: if true;
+        allow write: if isAdmin() || isCourtReporterOrStaff();
+      }
+      
+      match /versions/{versionId} {
+        allow read: if true;
+        allow write: if isAdmin() || isCourtReporterOrStaff();
+      }
+
+      match /reviewHistory/{reviewId} {
+        allow read: if true;
+        allow write: if isAdmin() || isCourtReporterOrStaff();
+      }
+    }
+
+    match /cassation_decisions/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /witness_schedules/{id} {
+      allow read, write: if true;
     }
 
     match /vector_chunks/{id} {
@@ -130,11 +261,16 @@ service cloud.firestore {
     }
 
     match /document_drafts/{id} {
-      allow read, write: if true;
+      allow read: if resource.data.isPublic == true || (isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.ownerId == request.auth.uid || isAdmin()));
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || incoming().ownerId == request.auth.uid || isAdmin());
+      allow update, delete: if isSignedIn() && (existing().userId == request.auth.uid || existing().ownerId == request.auth.uid || isAdmin());
     }
 
     match /user_documents/{id} {
-      allow read, write: if true;
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || incoming().ownerId == request.auth.uid);
+      allow update: if isSignedIn() && (existing().userId == request.auth.uid || existing().ownerId == request.auth.uid) && (incoming().userId == existing().userId || incoming().ownerId == existing().ownerId);
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || existing().ownerId == request.auth.uid || isAdmin());
     }
 
     // Shared Content
@@ -151,14 +287,14 @@ service cloud.firestore {
     }
 
     match /discussions/{id} {
-      allow read: if isSignedIn() && (
-        resource.data.userId == request.auth.uid || 
-        resource.data.ownerId == request.auth.uid || 
-        (resource.data.participants != null && request.auth.uid in resource.data.participants) || 
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isSignedIn() && (
+        existing().authorId == request.auth.uid || 
+        existing().userId == request.auth.uid || 
+        existing().ownerId == request.auth.uid || 
         isAdmin()
       );
-      allow create: if isSignedIn() && isEmailVerified() && (incoming().userId == request.auth.uid || incoming().ownerId == request.auth.uid);
-      allow update, delete: if isSignedIn() && (existing().userId == request.auth.uid || existing().ownerId == request.auth.uid || isAdmin());
     }
 
     match /dossier_audits/{id} {
@@ -168,12 +304,12 @@ service cloud.firestore {
 
     // Feedback & Analytics
     match /feedback_messages/{id} {
-      allow create: if isSignedIn();
+      allow create: if true;
       allow read, write: if isAdmin();
     }
 
     match /analytics_events/{id} {
-      allow create: if isSignedIn();
+      allow create: if true;
       allow read, write: if isAdmin();
     }
 
@@ -190,13 +326,15 @@ service cloud.firestore {
       allow create: if isSignedIn() && isEmailVerified() && incoming().userId == request.auth.uid;
     }
 
-    // Logs & Audits (Admin Only)
+    // Logs & Audits
     match /audit_logs/{id} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
     }
 
     match /admin_activity_logs/{id} {
-      allow read, write: if isAdmin();
+      allow read, write: if isSignedIn() || isAdmin();
     }
 
     match /admin_activity_logs_archived/{id} {
@@ -204,7 +342,9 @@ service cloud.firestore {
     }
 
     match /auth_logs/{id} {
-      allow read, write: if isAdmin();
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update, delete: if isAdmin();
     }
 
     // System Config
@@ -215,24 +355,38 @@ service cloud.firestore {
 
     // Institutional & Courtroom Management Isolation
     match /courtroom_sessions/{id} {
-      allow read: if isSignedIn() || isAdmin();
-      allow create: if isAdmin();
-      allow update: if (isSignedIn() || isAdmin()) && 
-                    (incoming().keys().hasOnly(['logs', 'lastScreenCapture', 'lastUpdated', 'institutionName', 'status', 'vkLink', 'googleMeetLink', 'courtLogoUrl', 'autoJoin', 'config', 'hardRefreshTrigger', 'resetTrigger', 'diagnosticsTrigger', 'captureTrigger']));
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow write: if isSignedIn() || isAdmin();
     }
 
     match /court_institutions/{id} {
       allow read: if true;
       allow create: if isAdmin();
-      allow update: if isAdmin() || (isSignedIn() && request.auth.token.email == resource.data.adminEmail);
+      allow update: if isAdmin() || (isSignedIn() && request.auth.uid == resource.data.adminUid);
       allow delete: if isAdmin();
     }
 
     match /court_users/{id} {
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin() || request.auth.token.email == resource.data.createdByAdminEmail);
-      allow create: if isAdmin() || (isSignedIn() && incoming().createdByAdminEmail == request.auth.token.email);
-      allow update: if isAdmin() || (isSignedIn() && existing().createdByAdminEmail == request.auth.token.email && incoming().createdByAdminEmail == existing().createdByAdminEmail);
+      allow read: if isSignedIn() && (
+        request.auth.uid == id || 
+        isAdmin() || 
+        (request.auth.token.institutionId == resource.data.institutionId && request.auth.token.role == 'court_admin')
+      );
+      
+      allow create: if isAdmin() || (
+        isSignedIn() && 
+        request.auth.token.institutionId == incoming().institutionId &&
+        request.auth.token.role == 'court_admin'
+      );
+      
+      allow update: if isAdmin() || (
+        isSignedIn() && 
+        request.auth.token.institutionId == existing().institutionId &&
+        request.auth.token.role == 'court_admin' &&
+        incoming().institutionId == existing().institutionId &&
+        incoming().role == existing().role
+      );
+      
       allow delete: if isAdmin();
     }
 
@@ -242,7 +396,8 @@ service cloud.firestore {
     }
 
     match /test/{id} {
-      allow read, write: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /verifications/{id} {
@@ -251,19 +406,113 @@ service cloud.firestore {
 
     // Court Cases & Judicial Dockets
     match /cases/{id} {
-      allow read: if true;
-      allow write: if isSignedIn() || isAdmin();
+      allow get, list: if hasCourtRole() && (resource.data.isPublic == true || (request.auth.token.institutionId != null && resource.data.institutionId == request.auth.token.institutionId));
+      allow create: if canEditCases() && request.auth.token.institutionId != null && request.resource.data.institutionId == request.auth.token.institutionId;
+      allow update: if canEditCases() && request.auth.token.institutionId != null && resource.data.institutionId == request.auth.token.institutionId;
+      allow delete: if isAdmin() && request.auth.token.institutionId != null && resource.data.institutionId == request.auth.token.institutionId;
 
       match /activity_logs/{logId} {
-        allow read: if true;
-        allow write: if isSignedIn() || isAdmin();
+        allow read, write: if isSignedIn() || isCourtReporterOrStaff();
       }
+
+      match /audio_recordings/{recId} {
+        allow read, write: if isSignedIn() || isCourtReporterOrStaff();
+      }
+
+      match /physical_evidence/{evidenceId} {
+        allow read, write: if isSignedIn() || isCourtReporterOrStaff();
+      }
+
+      match /witness_statements/{stmtId} {
+        allow read, write: if isSignedIn() || isCourtReporterOrStaff();
+      }
+    }
+
+    match /witness_statements/{stmtId} {
+      allow read, write: if isSignedIn() || isCourtReporterOrStaff();
+    }
+
+    match /court_audio_recordings/{recId} {
+      allow read, write: if isSignedIn() || isCourtReporterOrStaff();
+    }
+
+    match /admin_logs/{id} {
+      allow read, create: if isSignedIn() || isAdmin();
+      allow update, delete: if isAdmin();
     }
 
     // Court Notifications & Automated 24-Hour Session Alerts
     match /court_notifications/{id} {
+      allow read: if isSignedIn() && (resource.data.recipientUid == request.auth.uid || isCourtReporterOrStaff());
+      allow create: if isSignedIn() && (incoming().recipientUid == request.auth.uid || isCourtReporterOrStaff());
+      allow update: if isSignedIn() && (existing().recipientUid == request.auth.uid || isCourtReporterOrStaff());
+      allow delete: if isAdmin();
+    }
+
+    // Court Document Templates (Scoped by institutionId)
+    match /court_templates/{id} {
+      allow read: if true;
+      allow write: if isSignedIn() || isCourtReporterOrStaff();
+    }
+
+    // Simulation / Practice Cases
+    match /practice_cases/{caseId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isCourtReporterOrStaff());
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || isCourtReporterOrStaff());
+      allow update, delete: if isSignedIn() && (existing().userId == request.auth.uid || isCourtReporterOrStaff());
+    }
+
+    // Collaboration Invites
+    match /collaboration_invites/{id} {
+      allow read, write: if isSignedIn() || isAdmin();
+    }
+
+    // Vector Feedback
+    match /vector_feedback/{id} {
+      allow create: if isSignedIn();
+      allow read, write: if isAdmin();
+    }
+
+    // AI Legal Inaccuracy & User Feedback Reports
+    match /user_feedback/{id} {
+      allow create: if true;
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    match /institutions/{institutionId} {
       allow read: if true;
       allow write: if isSignedIn() || isAdmin();
+      
+      match /courtDocuments/{docId} {
+        allow read: if true;
+        allow create, update: if true;
+        allow delete: if isAdmin() || isSignedIn();
+      }
+
+      match /auditLogs/{logId} {
+        allow read: if true;
+        allow create: if true;
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    match /court_documents/{docId} {
+      allow read: if isSignedIn() && (
+        request.auth.token.institutionId == resource.data.institutionId ||
+        isAdmin() || resource.data.isPublic == true
+      );
+      allow create: if isSignedIn() && (
+        request.auth.token.institutionId == request.resource.data.institutionId || isAdmin()
+      );
+      allow update, delete: if isSignedIn() && (
+        request.auth.token.institutionId == resource.data.institutionId || isAdmin()
+      );
+    }
+
+    // Default deny for everything else
+    match /{document=**} {
+      allow read, write: if isAdmin();
     }
   }
 }

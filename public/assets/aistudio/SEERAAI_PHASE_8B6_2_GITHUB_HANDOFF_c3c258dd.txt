@@ -1,0 +1,110 @@
+SEERAAI PRO — PHASE 8B.6.2
+GITHUB HANDOFF PACKAGE & CI TEST-READINESS RECOVERY
+
+PROJECT IDENTITY
+Application: SEERAAI PRO
+Target GitHub repository: https://github.com/ayee71/SEERAAI-
+Current publicly visible default branch observed: main
+Firebase production project ID: leafy-rush-xvd6f
+Isolated emulator project ID: demo-seeraai-test
+
+IMPORTANT FINDINGS TO ADDRESS
+The current AI Studio workspace report says it is not a Git repository. Do not run git commands that assume .git exists. Do not invent a remote, branch, commit, push, or GitHub Actions result.
+The public GitHub repository currently exposes a .github/workflows directory, but the exact path .github/workflows/rules-test.yml was not found on main when checked. The following exact paths were also not found on main at the time of inspection:
+- firebase.emulator.test.json
+- firestore.rules.phase8b5.3.integrated.candidate
+- storage.rules.phase8b5.4.integrated.candidate
+- storage.rules
+This means these files may exist only in the AI Studio workspace or another unverified branch. Do not claim they are already present in GitHub.
+
+GOAL
+Prepare a verified, downloadable handoff package for manual upload to a new isolated GitHub branch. This phase must not deploy, publish, or modify production resources.
+
+PHASE A — VERIFY WORKSPACE FILES
+1. Inspect the actual workspace root and report whether each of these files exists:
+   - firestore.rules.phase8b5.3.integrated.candidate
+   - storage.rules.phase8b5.4.integrated.candidate
+   - firebase.emulator.test.json
+   - .github/workflows/rules-test.yml
+2. Record each existing file's exact size, line count (text files), and SHA-256 hash.
+3. Compare the candidate hashes with these previously reported values; treat them as expected reference values, not proof:
+   - Firestore candidate: cd50c7ee5b82ff2f9881b6562d88aa4f428dc1562278ddb5f977fbce3eab908b
+   - Storage candidate: eb1c614a5be091902f793112dc7f4fcc33511f3e42d7daffd4c9463003dc68b
+4. Do not silently rewrite or normalize candidate Rules. If a hash differs, explain the difference and preserve the original candidate before proposing a change.
+
+PHASE B — TEST SUITE COMPLETENESS AUDIT
+1. Inspect package.json, package-lock.json or bun.lock, firebase emulator configuration, and all existing test files.
+2. Identify the exact Firestore and Storage Rules test paths and test commands. Do not claim tests exist unless the actual files exist.
+3. Verify that the tests use @firebase/rules-unit-testing (or another technically valid, documented emulator test setup) and that Firebase CLI/emulator commands are actually wired into the workflow.
+4. Ensure the isolated emulator configuration targets ONLY project ID demo-seeraai-test and the candidate Rules files. Never use leafy-rush-xvd6f as the emulator test project.
+5. If test files or dependencies are missing, create the minimum complete test suite needed to test both Firestore and Storage candidate Rules. Base tests on the actual candidate Rules and the real application data paths; do not guess collection names or claim paths.
+6. Include allow and deny cases, at minimum:
+   - unauthenticated access;
+   - authenticated non-member access;
+   - valid institutional staff access;
+   - cross-institution/tenant access denial;
+   - institutionId mismatch or attempted tenant switching;
+   - owner versus non-owner access;
+   - administrator access as defined by actual Rules;
+   - Telegram public-read versus restricted-write collections;
+   - private subscribers, internal logs and statistics;
+   - court document read/write scope;
+   - Storage path, file size and MIME-type constraints where enforced by the Rules.
+7. Check overlapping Firestore match blocks and additive allow semantics. A restrictive catch-all does not cancel a permissive overlapping match.
+8. Do not use Admin SDK in a way that bypasses Rules for authorization assertions. Use the Rules Unit Testing authenticated/unauthenticated contexts for Rules tests.
+9. Treat backend Admin SDK route authorization as a separate test category; do not imply Firestore Rules tests validate backend routes.
+
+PHASE C — CI WORKFLOW AUDIT
+Verify or create .github/workflows/rules-test.yml with:
+- workflow_dispatch and pull_request triggers;
+- least-privilege permissions;
+- Java 17 and Node 20 if compatible with project dependencies;
+- reproducible dependency install using the actual lockfile;
+- explicit Firebase CLI installation/version;
+- firebase emulators:exec or equivalent command that runs both Firestore and Storage tests;
+- non-zero exit on test failure;
+- pre-test and post-test SHA-256 guards for candidate Rules;
+- logs, exit codes, test output, and a hash manifest saved as an artifact named rules-test-evidence;
+- no production deploy step, no firebase deploy command, and no production secrets.
+If the current workflow already exists but is incomplete, preserve a copy and explain the proposed changes.
+
+PHASE D — PACKAGE EXPORT
+Create a downloadable ZIP with the correct directory structure. Include:
+- the two candidate Rules files;
+- firebase.emulator.test.json;
+- .github/workflows/rules-test.yml;
+- actual Firestore and Storage test files;
+- only the minimum required test scripts/dependencies and lockfile changes;
+- README_PHASE_8B6_2.md explaining file destinations, exact tests, test commands and safety boundaries;
+- SHA256SUMS.txt listing exact hashes.
+Exclude:
+- .env files and all secrets;
+- service-account keys, API keys and tokens;
+- user data, court documents, case evidence, private logs;
+- node_modules, build outputs, caches, unrelated app source files.
+
+PHASE E — PACKAGE VERIFICATION
+1. Re-open/list the created ZIP and confirm every required file is inside it at the correct path.
+2. Recompute the SHA-256 hashes from the packaged files and compare them with SHA256SUMS.txt.
+3. Confirm the production files firestore.rules, storage.rules and firebase.json were not modified by this task.
+4. Run only safe local tests that are possible. Report actual output and distinguish local test results from GitHub CI evidence.
+5. If the environment lacks Java, network, Firebase CLI or required packages, report the exact blocker. Do not label unavailable tests as passed.
+
+STOP CONDITIONS
+- Do not run git init, clone, add, commit, push, force-push, merge or create a fake remote in this AI Studio workspace.
+- Do not modify the public GitHub repository from this workspace.
+- Do not deploy, publish or change production Firestore Rules, Storage Rules, Auth, custom claims, IAM, Cloud Run or production data.
+- Do not mark Phase 8B.6 complete. Release remains BLOCKED until GitHub Actions has actually run against the isolated demo project and its evidence artifact has been reviewed.
+
+FINAL OUTPUT
+Provide:
+1. A precise file-presence report.
+2. Candidate hashes and comparison with expected hashes.
+3. Exact test file paths and commands.
+4. Workflow trigger and execution audit.
+5. Local tests actually run and their raw outcomes.
+6. ZIP download link and its SHA-256 hash.
+7. Explicit remaining manual GitHub steps.
+8. A clear statement that no GitHub commit/push or production action was performed.
+
+Start now. Complete all safe workspace inspection, test-readiness work and ZIP packaging in this run. Do not stop after a plan. If a missing file blocks the task, create the smallest accurate replacement based on the real rules/configuration and document that change. Never invent a successful CI run.

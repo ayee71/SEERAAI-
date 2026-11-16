@@ -1,0 +1,174 @@
+SEERAAI PRO — PHASE 7D.2: CONTROLLED SIGN-OUT, OFFLINE-DATA & SHARED-DEVICE REMEDIATION
+MODE: AUTHORIZED SOURCE-CODE REMEDIATION ONLY — LOCAL DEVELOPMENT — NO PRODUCTION OPERATIONS
+
+ROLE
+You are modifying the EXISTING SEERAAI PRO v5.0.0 repository in the current Google AI Studio workspace. This is not a new application. Preserve the existing Firebase project, users, documents, court workflows, legal modules, Telegram integrations, UI, and existing features.
+
+AUTHORITATIVE INPUT
+Use the latest Phase 7D.1 forensic audit findings supplied with this prompt as the issues to resolve. Independently inspect the CURRENT repository before changing anything. Do not rely only on previous AI-generated reports. The actual source code is authoritative.
+
+STRICT SCOPE
+You are authorized to make minimal, necessary LOCAL SOURCE-CODE changes to remediate the sign-out, offline-data-loss, and shared-device privacy defects identified in Phase 7D.1.
+You are NOT authorized to:
+- Deploy or publish anything.
+- Access, write, delete, migrate, or change production Firebase / Firestore / Storage / Authentication data.
+- Deploy or alter Firestore rules, Storage rules, Hosting, Cloud Run, DNS, or domains.
+- Print, request, expose, or change API keys, tokens, credentials, or secrets.
+- Install, upgrade, or remove packages or dependencies.
+- Replace or rebuild the application as a new project.
+- Delete user data, court records, local databases, or existing records as a migration/cleanup operation.
+- Change legal content, legal citations, or the legal retrieval engine except where a sign-out privacy issue directly requires it.
+
+MANDATORY PRE-FLIGHT — STOP IF ANY CONDITION FAILS
+1. Confirm repository identity and version from package.json and inspect the actual current files.
+2. Inspect the current Git/workspace diff if available. Preserve all pre-existing user changes. Do not run checkout, reset, clean, or rollback commands.
+3. Locate every caller of AuthContext logout/requestLogout and every persistent store / IndexedDB opener / service-worker sync path identified in the audit.
+4. Confirm the exact IndexedDB database and object-store names. The audit identifies SeeraAIOfflineDB and 13 stores: documents, translations, edits, rag_cache, legislation, active_case, deadlines, case_files, templates, sync_queue, sync_logs, institutions, users. Verify against source.
+5. Do not delete guessed database names. The audit says seera_offline_db and seera_ai_db have no openers. Only act on a database proven to belong to this app.
+6. If the current source differs materially from the Phase 7D.1 audit, report the discrepancy and STOP before editing.
+7. If a local schema, owner, or synchronization destination is unclear, do not invent it. Preserve data and report the blocker.
+
+CRITICAL FINDINGS THAT MUST BE FIXED
+A. logout() ignores safeDeleteOfflineDB() results and has no effective isolation lockdown.
+B. BroadcastChannel('seera_ai_auth_sync') has senders but no listeners/receivers or ACK protocol.
+C. No global write lock, sync pause, in-flight write drain, authoritative queue inventory, or cloud acknowledgement before purge.
+D. clearCache=true can delete unsynced/local-only data and preferences; clearCache=false leaves plaintext drafts and institutional replicas accessible on shared devices.
+E. Firebase signOut(auth) can fail after local state/cache has already been cleared, leaving inconsistent Auth and React states.
+F. Modal has no live pending/local-only counts, no unable-to-verify safe hold, and no second destructive-discard confirmation.
+G. Some logout callers bypass the modal/state machine.
+H. IndexedDB connections in application modules and public/sw.js do not consistently close on versionchange; deletion can remain blocked. The delete request is not cancellable, and a timeout does not mean it has stopped.
+I. backgroundSyncManager.syncQueuedEdits() currently reconciles local stores and must not be represented as a Firestore/cloud sync unless a real server write and acknowledgement are implemented. precedentOfflineSync.syncOfflineCaseDraftsToServer() must not mark records synced merely through local status changes or simulated behavior.
+J. Broad prefix deletion removes seera_ai_user_settings even though preferences should be retained. Firebase SDK-owned persistence keys must not be manually deleted as a substitute for Firebase signOut().
+
+REQUIRED DESIGN AND IMPLEMENTATION
+1. CENTRALIZE ALL SIGN-OUT PATHS
+- Every UI/admin/security/dashboard caller must route through one guarded sign-out coordinator in AuthContext (or a narrowly scoped service called by it).
+- Eliminate direct callers that bypass inventory, consent, or failure handling.
+- Preserve existing role, court, owner, and authentication behavior except where required to prevent session leakage.
+
+2. GLOBAL SESSION WRITE LOCK AND SYNC CONTROL
+- Introduce a per-user sign-out state/lock that prevents new local writes and queue additions while sign-out is being resolved.
+- Pause backgroundSyncManager timers, event listeners, online/focus handlers, and relevant service-worker sync triggers; provide a reliable resume path when the user chooses Stay Signed In / Retry.
+- Track and await in-flight persistence/sync operations. A timeout must enter a safe-hold state; it must not be treated as successful drain.
+- Do not allow a second account to sign in while a previous account's sensitive plaintext local data remains accessible or its cleanup status is unresolved.
+
+3. AUTHORITATIVE LOCAL-DATA INVENTORY
+- Inspect all relevant localStorage keys, user-scoped keys, IndexedDB stores, service-worker stores, court offline stores, annotations, bookmarks, drafts, credentials, role/session state, and local replicas discovered in the repository.
+- Classify each record as: server-confirmed with a verifiable server acknowledgement and matching owner/revision; pending upload; local-only; derived disposable cache; non-sensitive preference; institutional local replica; unknown/corrupt/unreadable.
+- If inventory cannot complete, JSON parsing fails, schema/version is unknown, or ownership cannot be established, fail safe: do not purge; do not switch account; show a clear recovery state.
+- Do not infer cloud confirmation from a local timestamp, local status field, local queue removal, or a function name containing “sync”.
+
+4. REAL CLOUD SYNC ONLY
+- Trace the actual existing Firestore/Storage upload APIs and data schemas before implementing any remote sync path.
+- A record is cloud-confirmed only after the actual Firestore/Storage operation resolves successfully and the server record can be matched to the same user, record ID, and revision/version (use a server acknowledgement/confirmed server timestamp where supported).
+- Specifically inspect backgroundSyncManager.syncQueuedEdits() and precedentOfflineSync.syncOfflineCaseDraftsToServer(). Do not claim these are remote sync if they only write to localStorage/IndexedDB or set a local “synced” flag.
+- If the correct remote destination/schema cannot be established from existing source, do NOT invent it and do NOT delete the item. Leave it pending and offer Stay Signed In / secure export / later retry.
+
+5. SAFE USER CHOICES AND SHARED-DEVICE POLICY
+- Default destructive discard to FALSE.
+- When the user starts sign-out, display live counts for queued edits, local-only drafts, unverified records, and institutional local replicas; identify when the count could not be verified.
+- Offer: (a) Retry actual sync; (b) Stay Signed In and resume sync; (c) export a user-protected/encrypted backup if a secure existing mechanism can be implemented safely; (d) explicitly discard identified local-only/pending user data with a second confirmation that names the item count and consequences.
+- Do not offer a “preserve plaintext on this shared device and sign out” path. If sensitive plaintext local data cannot be synced, securely exported, or explicitly discarded, block account switch and keep the current user in a clearly locked recovery state.
+- Do not implement cryptography casually. Do not use a hard-coded/shared key, user ID, email, or public device salt as an encryption secret. If there is no safe key lifecycle in the existing app, do not claim data is encrypted; use the safe-hold/export/discard policy and report encryption as a future separate feature.
+- Preserve non-sensitive preferences only by exact allowlist (e.g. language/theme) and confirm which keys are truly non-sensitive. Never delete keys merely because they share a broad prefix if they contain settings that must remain.
+
+6. INDEXEDDB CONNECTION AND DELETE LIFECYCLE
+- Add/centralize a connection registry or equivalent reliable mechanism for the app-owned SeeraAIOfflineDB connections.
+- Every opener, including service-worker openers in public/sw.js, must attach db.onversionchange = () => db.close() and close connections when no longer needed.
+- A delete request must attach onsuccess, onerror, and onblocked handlers. onblocked is a blocked/in-progress condition, NOT success.
+- A timeout must NOT be treated as deletion completion and must NOT allow a new account to enter. Since IDB delete requests cannot be cancelled, prevent duplicate concurrent delete requests and handle a late onsuccess/onerror safely.
+- On blocked, notify active tabs to close their connections and await acknowledgements; retry only after the first request has reached a terminal state. Do not launch overlapping delete requests.
+- Only report purge success after onsuccess. On error, blocked-unresolved, or timeout, enter isolation lockdown and prohibit account switching until cleanup is actually verified or the user takes an explicit safe recovery path.
+- Do not delete Firebase SDK-owned IndexedDB databases or Auth persistence manually.
+
+7. REAL CROSS-TAB COORDINATION
+- Implement persistent receivers/listeners for BroadcastChannel('seera_ai_auth_sync') in every active app tab, not send-only channel instances that are immediately closed.
+- Implement correlation IDs, matching UID, tab IDs, PREPARE/ACK, CLOSE_IDB/ACK, and SESSION_TERMINATED handling.
+- Receiving tabs must pause writes/sync, close their app-owned IDB connections, clear in-memory sensitive state, and acknowledge only after these steps complete.
+- Add a storage-event fallback only if it is safe and tested; do not assume same-window CustomEvent crosses tabs.
+- A timeout or missing ACK is a failure state, not proof of isolation. Do not permit a new account while an unresponsive tab could retain private plaintext state.
+
+8. FIREBASE AUTH ORDERING AND ERROR RECOVERY
+- Never manually remove firebase:authUser:* as the primary logout mechanism; use Firebase Auth APIs.
+- Do not leave a state where private local data is wiped but Firebase/React still represents the old user as authenticated without a clear recovery state.
+- Define and implement recoverable states for sync failure, Firebase signOut failure, IndexedDB purge failure, and cross-tab non-acknowledgement.
+- Verify auth.currentUser / onAuthStateChanged outcome after signOut where appropriate.
+- A failed Firebase signOut must not be swallowed while UI falsely reports a complete logout. A failed local purge must not permit account switching.
+
+9. INSTITUTIONAL RECORDS
+- Never delete canonical Firestore court records, audit logs, judgments, or orders.
+- Treat local court replicas, case files, templates, and institution stores as sensitive. Do not leave them in plaintext for a subsequent user on shared devices.
+- Do not purge unique local-only official court records without an established server acknowledgement and applicable retention policy. If retention policy is unknown, preserve data and block account switch or require an approved secure export/recovery process.
+- Clearly separate user-owned drafts from institution-owned records and enforce institution/user scope.
+
+10. TICKER
+- Preserve the neutralized ticker. Remove or qualify any statement such as “database active” or “records synchronizing” if runtime/source verification does not support it. Do not invent legal sources or citations.
+
+FILES TO INSPECT / CHANGE AS NECESSARY
+At minimum, inspect and update only those genuinely required among:
+- src/services/indexedDb.ts
+- src/context/AuthContext.tsx
+- src/components/LogoutConfirmationModal.tsx
+- src/services/backgroundSync.ts
+- src/services/storage.ts
+- src/services/courtOfflineStore.ts
+- src/services/precedentOfflineSync.ts
+- src/services/offlineModeService.ts
+- src/services/syncUtils.ts
+- src/services/courtInstitutionService.ts
+- src/services/ownerAuth.ts
+- src/services/annotationService.ts
+- src/context/BookmarkContext.tsx
+- src/components/AanaaGurbichaECourtDashboard.tsx
+- src/views/AdminDashboardView.tsx
+- src/components/SessionManagementPanel.tsx
+- src/components/SecurityDashboard.tsx
+- public/sw.js
+- relevant existing test files, if present
+Do not change every listed file automatically. First trace call sites and make the smallest safe set of changes. Add no dependency.
+
+TESTING REQUIREMENTS
+- Run the existing read-only type check (e.g. npx tsc --noEmit) if available.
+- Run lint/tests already configured without installing dependencies.
+- Build only if it does not trigger external deployment or production changes; inspect prepare-build scripts first because they may write local dist/build artifacts. Report those local writes honestly.
+- Add or run focused tests using existing test infrastructure only. Do not claim runtime behavior based on static code inspection.
+- Required cases: clean sign-out; pending queue; local-only draft; offline network; genuine server acknowledgement; sync function that only updates local stores; malformed/unknown schema; IndexedDB onsuccess; onerror; onblocked; late success after timeout; active IDB connections in another tab and service worker; two tabs with same UID; different UID; missing ACK; direct admin logout caller; Firebase signOut rejection; purge failure; shared-device second-user isolation; preservation of exact preference allowlist; court local replica/retention case.
+- Clearly label each test EXECUTED, PROPOSED, NOT RUN, or NOT VERIFIED. Provide exact command, output, and evidence. Do not fabricate test results.
+
+ACCEPTANCE CRITERIA — ALL MUST PASS BEFORE LOCAL STAGING
+1. No pending or local-only data can be silently deleted.
+2. No local record is called cloud-synced without an actual server acknowledgement.
+3. No account switch is possible while sensitive plaintext cache or unresolved cleanup exists.
+4. Every active tab and service worker has a real receiver/close protocol; no send-only BroadcastChannel claims.
+5. IndexedDB deletion is confirmed only by onsuccess; blocked/error/timeout enters a real lockdown and cannot be bypassed.
+6. Firebase signOut errors do not create a falsely successful logout state.
+7. All direct logout callers use the central safe flow.
+8. Non-sensitive preference allowlist is preserved; Firebase SDK persistence is not manually deleted.
+9. Canonical court records are never deleted; institutional local-only data follows an explicitly safe recovery/retention path.
+10. Existing users, Firebase project/data, features, and court workflows remain intact.
+
+FINAL REPORT REQUIRED
+Return:
+A. Exact files changed and rationale.
+B. Exact diffs / line ranges for each change.
+C. State machine and success/failure paths.
+D. Inventory and sync proof model.
+E. Cross-tab sender/receiver protocol and service-worker behavior.
+F. IndexedDB deletion lifecycle including late events.
+G. Firebase Auth ordering and recovery behavior.
+H. Shared-device and institutional data safety.
+I. Tests actually executed with commands and outputs; separate proposed/not-run tests.
+J. Remaining risks and exact blockers.
+K. Explicit statement confirming no production operations, no package installs, no secrets exposure, and no deployments.
+
+STOP CONDITIONS
+Stop immediately and report instead of guessing if:
+- a required cloud sync schema/destination is unknown;
+- the existing app has unique local-only court records with no safe retention/export path;
+- secure shared-device isolation cannot be achieved without destructive loss;
+- a build/test command would alter production resources;
+- actual code differs materially from this audit;
+- a change would require Firebase rule/schema migration, new dependencies, or broad architectural replacement.
+
+FINAL EXECUTION RULE
+Implement only the safe, minimal source-code corrections that can be completed within the existing architecture. If any acceptance criterion cannot be met safely, do not claim completion: leave the affected path fail-closed, preserve data, and report the blocker. No staging or production deployment is authorized by this prompt.

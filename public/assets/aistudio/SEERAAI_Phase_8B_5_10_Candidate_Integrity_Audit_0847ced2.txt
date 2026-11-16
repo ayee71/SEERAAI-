@@ -1,0 +1,77 @@
+SEERAAI PRO — PHASE 8B.5.10
+CANDIDATE RULES INTEGRITY, BASELINE COMPARISON & EMULATOR INPUT VALIDATION
+
+MISSION
+Continue the EXISTING SEERAAI PRO application in the existing repository. The Phase 8B.5.9 report says these files were recovered in the local workspace:
+- firestore.rules.phase8b5.3.integrated.candidate (reported as 71 lines / 2,007 bytes)
+- storage.rules.phase8b5.4.integrated.candidate (reported as 35 lines / 1,201 bytes)
+- package.json (reported as 71 lines)
+- package-lock.json
+
+CRITICAL DISCREPANCY TO RESOLVE FIRST
+Earlier Phase 8B.5.3 reporting described the integrated Firestore candidate as preserving the existing 519-line baseline and adding focused security changes. The Phase 8B.5.9 manifest now reports the file named "integrated.candidate" as only 71 lines. This may mean the wrong focused patch was recovered, the file was truncated, or the earlier report was inaccurate. Do not assume either version is correct. Resolve this discrepancy using actual repository contents and Git history.
+
+STRICT SAFETY RULES
+1. Do not deploy, publish, release, or run any production migration.
+2. Do not modify production firestore.rules, storage.rules, firebase.json, Firebase Auth, Firestore data, Storage objects, IAM, claims, Cloud Run, or Functions.
+3. Do not connect to the production Firebase project or use production credentials.
+4. Do not overwrite, replace, truncate, or rename any existing source or candidate file.
+5. Do not invent or reconstruct missing Rules content from summaries or filenames.
+6. Work on a separate audit branch or use read-only inspection. Any created audit artifacts must be clearly named Phase 8B.5.10 and must not replace active production files.
+7. Stop and report if the original baseline or candidate history cannot be established.
+
+TASK A — VERIFY FILE IDENTITY AND FULL HASHES
+For each recovered file, report exact repository path, Git branch, commit hash, byte size, line count, file type, and FULL SHA-256 hash (all 64 hexadecimal characters). Do not abbreviate hashes. Record hashes before and after inspection. Verify files did not change during the audit.
+
+TASK B — TRACE GIT HISTORY
+Use Git status, log, show, and diff to identify:
+- The original active Firestore Rules baseline and its commit.
+- The original active Storage Rules baseline and its commit.
+- The commit that introduced each candidate file.
+- Whether the candidate files were modified, replaced, or truncated after creation.
+- Whether a prior full integrated candidate exists in any branch or commit.
+Do not switch or reset branches destructively. Do not force-push.
+
+TASK C — FIRESTORE CANDIDATE COMPLETENESS
+Compare the 71-line Firestore candidate against the actual production baseline file as source text only; do not access live Firebase. Determine whether it is:
+1. a standalone complete Ruleset,
+2. a focused patch intended to be merged into the baseline, or
+3. a full integrated candidate preserving all baseline functionality.
+
+Explicitly inspect all match blocks, helper functions, existing app data paths, and the catch-all `match /{document=**}`. Check for additive `allow` permissions in overlapping matches. Identify whether the candidate preserves required existing paths and access patterns. A restrictive rule in one match does not override a permissive rule in another match.
+
+Do not call a 71-line file a complete integrated Ruleset merely because its filename contains "integrated". If it is a focused patch, label it accurately and do not use it as a complete Emulator Ruleset.
+
+TASK D — STORAGE CANDIDATE COMPLETENESS
+Compare the 35-line Storage candidate against the actual Storage Rules baseline. Verify whether all existing paths needed by SEERAAI PRO are preserved, including where applicable:
+- legal_docs/{institutionId}/{userId}/...
+- institutions/{institutionId}/courtDocuments/...
+- court logos
+- court audio / witness recordings
+- any other actual upload/download paths discovered in source code.
+Check owner and institutional staff authorization, tenant isolation, content type, size limits, and delete/update rules. Do not assume the paths from this list exist; verify against source code.
+
+TASK E — PACKAGE AND TEST INPUT AUDIT
+Inspect package.json and package-lock.json. Report exact versions and whether Firebase CLI, @firebase/rules-unit-testing, test runner, and required TypeScript/runtime packages are already present. Do not install packages or modify the lockfile in this phase. Identify existing Rules test files and their imports. Confirm whether tests load the intended candidate paths or accidentally load production Rules.
+
+TASK F — EMULATOR CONFIGURATION READINESS
+Do not create or execute Emulator configuration until Tasks A–E establish that both candidates are complete and correct for testing. If either file is only a patch or is incomplete, stop and explain what baseline merge/recovery is needed. Do not guess missing content.
+
+REQUIRED REPORT
+Return a Phase 8B.5.10 report with:
+1. Full paths, branch and commit provenance.
+2. Exact byte counts, line counts and full SHA-256 hashes.
+3. Firestore baseline-versus-candidate diff summary.
+4. Storage baseline-versus-candidate diff summary.
+5. Whether each candidate is standalone, focused patch, or full integrated Ruleset.
+6. Any missing or removed application paths and possible functional regressions.
+7. Package dependency versions and test file status.
+8. Exact blockers and the safest next action.
+9. Production safety confirmation.
+
+FINAL STATUS MUST BE ONE OF:
+- PASS: both candidates are complete, traceable, and suitable as isolated Emulator inputs.
+- FAIL: a candidate is proven incorrect, truncated, or functionally/security defective.
+- BLOCKED: baseline provenance, files, or evidence cannot be verified.
+
+Do not report a security test PASS. No Emulator tests are requested in this phase. Stop after the integrity audit. No production changes are authorized.

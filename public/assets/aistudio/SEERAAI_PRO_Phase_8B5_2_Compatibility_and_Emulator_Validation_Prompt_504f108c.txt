@@ -1,0 +1,168 @@
+SEERAAI PRO — PHASE 8B.5.2
+CANDIDATE RULES COMPLETENESS, APPLICATION COMPATIBILITY & EMULATOR VALIDATION
+
+PROJECT: Existing SEERAAI PRO
+REPOSITORY: sai-ethio-legal-ai
+CURRENT REPORTED PACKAGE VERSION: 5.0.0
+FIREBASE PROJECT ID: leafy-rush-xvd6f
+FIRESTORE DATABASE: ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478
+
+MISSION
+Continue ONLY in the existing SEERAAI PRO project. Perform a source-level completeness and compatibility audit of the Phase 8B.5 candidate rules, then execute local Emulator tests when the environment permits. This is NOT a production release phase.
+
+ABSOLUTE SAFETY RULES
+1. Do not create a new app, Firebase project, repository, database, bucket, or Cloud Run service.
+2. Do not delete, migrate, overwrite, or alter existing users, court documents, evidence, witness records, audio, Telegram data, or other production data.
+3. Do not edit these active deployment files: firestore.rules, storage.rules, firebase.json.
+4. Do not publish or deploy any Rules, Functions, Cloud Run service, or other production resource.
+5. Do not modify production IAM, Auth settings, custom claims, secrets, or user roles.
+6. Do not copy candidate content into active files.
+7. Work only with these candidate files and test files unless a separate, explicit source-code change is required and is safe for local development:
+   - firestore.rules.phase8b5.candidate
+   - storage.rules.phase8b5.candidate
+8. Keep the existing app, Firebase project, users, documents, features, integrations, and workflows intact.
+9. Never print credentials, secret values, access tokens, private user information, or sensitive court content.
+10. If any source file is unavailable, state that clearly. Do not invent contents, line numbers, test results, or security findings.
+
+PHASE A — VERIFY THE ACTUAL FILES AND CONFIGURATION
+Inspect the repository directly and report:
+- Exact paths, byte sizes, line counts, and SHA-256 hashes for both active Rules files and both Phase 8B.5 candidate files.
+- The exact Rules paths configured in firebase.json.
+- Whether the candidate files are complete standalone Rulesets or partial fragments/patches.
+- Whether each candidate contains the complete required rules_version, service block, database/storage match root, helper functions, and final braces.
+- The full diff between active and candidate files, not just a summary.
+- Any missing paths, helper functions, collections, subcollections, or access rules.
+
+CRITICAL COMPLETENESS CHECK:
+The reported Firestore active file has 519 lines while the candidate has 71 lines. Do not assume the 71-line file is safe to replace the 519-line active Ruleset. Identify every active match path and determine whether it is preserved, intentionally removed, or accidentally omitted. Do the same comparison for the Storage files (reported 37 active lines and 35 candidate lines).
+If the Firestore candidate is only a focused patch, label it as a patch and do not describe it as a complete deployable Ruleset. Produce a merge plan without applying it to active files.
+
+PHASE B — FIRESTORE SECURITY AND FUNCTIONAL COMPATIBILITY
+Review the entire candidate and active Firestore Rules and all overlapping match blocks.
+
+1. Confirm Rules syntax and rules_version. Identify every path matched by more than one match block. Remember that overlapping allow expressions are additive (logical OR); a restrictive false rule does not cancel another matching true rule.
+2. Inspect the global recursive catch-all and all explicit collection matches. Show which request paths can still be accessed through each overlapping rule.
+3. Review each Telegram collection separately:
+   - telegram_posts
+   - telegram_archive
+   - telegram_channel_feed
+   - telegram_polls
+   - telegram_channels
+   - telegram_messages
+   - telegram_subscribers
+   - telegram_user_stats
+   - telegram_poll_results
+   - telegram_briefing_logs
+   - telegram_logs (if present)
+   Report exact permissions for get, list, create, update, delete, including unauthenticated users, authenticated ordinary users, legalContentManager, institutional staff, and global admin.
+4. Verify that public-readable feeds contain only intentionally published public material. Firestore Security Rules are not query filters: a public list permission can expose every document returned by an allowed query in that collection. Determine whether unpublished/internal/private records share the same collection. If so, propose a safe published-only data separation or server-mediated read design; do not assume a status field alone filters results.
+5. Trace actual application read/write call sites for every Telegram collection. Identify whether operations use Firebase client SDK or Admin SDK. Confirm the required role for each workflow and note that Admin SDK operations bypass Firestore Security Rules and therefore require backend authorization of their own.
+6. Check whether current Telegram bot, Mini App, public feed, dashboard, polls, posting, archive, subscriber, and statistics workflows will continue to work. Identify any feature that would be blocked by the candidate and the exact source call site.
+7. Verify legalContentManager permissions and ensure it cannot gain global admin access or access unrelated tenant data.
+8. Audit non-Telegram active match paths as well. Do not drop permissions for court documents, witness schedules/statements, courtroom sessions, audio, notifications, institution records, audit logs, user profiles, or any existing feature without documenting the impact and an approved replacement.
+
+PHASE C — STORAGE SECURITY AND ACCESS MATRIX
+Inspect the complete active and candidate Storage Rules and all app upload/download/delete paths.
+
+Candidate owner check reported as:
+request.auth.uid == userId && request.auth.token.institutionId == institutionId
+
+Verify this directly in source. Confirm:
+1. Owner read, create, update, delete are checked independently and both UID and institutionId are enforced where intended.
+2. Institution staff (court_admin, judge, registrar and other existing authorized roles) retain only the intended same-institution read access, if required by existing court workflows.
+3. Global administrators have only explicitly approved access; ordinary owners cannot access another user's files.
+4. Missing, null, stale, conflicting, or malformed institutionId/role claims fail closed without granting access.
+5. All actual storage paths are covered, including legal_docs, institutions/{institutionId}/courtDocuments, court_logos, witness/court audio, and any other discovered path. Do not assume the old path and actual upload paths match.
+6. Upload MIME type, maximum size, metadata updates, overwrites, and deletes are properly restricted.
+7. There is no overlapping Storage match that unintentionally grants public or cross-tenant access. An allow false fallback does not override another matching allow true rule.
+8. Existing legitimate judge/registrar document access and app workflows are not silently broken.
+
+Produce a matrix with rows for unauthenticated user, same-user/same-institution owner, same-user/wrong-institution path, different user/same institution, staff/same institution, staff/other institution, global admin, and user with missing claims. Columns must include read, create, update, delete, and expected result.
+
+PHASE D — CUSTOM CLAIMS AND BACKEND COMPATIBILITY
+Inspect all client and server references to these claims:
+- admin
+- role
+- courtRole (legacy alias, if still used)
+- institutionId
+- legalContentManager
+
+Report exact claim names and accepted values in Firestore Rules, Storage Rules, server middleware, token provisioning code, and app UI. Identify mismatches and conflicts. Do not provision or modify claims. Do not assume courtRole and role can safely disagree; define fail-closed behavior and a later dry-run migration requirement.
+
+Trace all privileged Admin SDK routes and relevant Telegram/document/audio endpoints. Verify authentication AND authorization at the backend, including institution scope. Remember Admin SDK bypasses Firebase Rules. Provide file paths, line numbers, and call-site evidence.
+
+PHASE E — EMULATOR TESTS (MUST EXECUTE OR REPORT BLOCKED)
+Use Firebase Local Emulator Suite and @firebase/rules-unit-testing. Java JDK 11+ is the documented minimum; Java 17+ is acceptable. Do not claim Emulator tests passed unless the commands actually ran and returned success.
+
+Create or update isolated tests for the CANDIDATE Rules only. Include at least:
+FIRESTORE:
+- unauthenticated read/write denial for private Telegram data
+- public read only for deliberately public published feeds
+- ordinary authenticated user cannot write Telegram data
+- legalContentManager can perform only specifically authorized content operations
+- admin access and its scope
+- subscriber/statistics/briefing data inaccessible to unauthorized users
+- tenant A cannot read/write tenant B data
+- owner/staff access to court documents according to intended matrix
+- overlapping/catch-all paths do not bypass restrictions
+- create/update/delete tested separately
+- nested documents and queries tested
+STORAGE:
+- unauthenticated read/write denied
+- owner with correct UID and institution claim permitted only intended operations
+- owner with wrong institution claim denied
+- different user denied
+- same-institution judge/registrar read behavior verified
+- cross-institution staff denied
+- global admin behavior verified
+- MIME type and size limits tested
+- metadata update, overwrite, and delete tested
+- every real application upload path covered
+
+For every test report the actual test name, expected result, actual result, and pass/fail. Report total passed, failed, skipped, and blocked separately. If Java or dependencies are unavailable in this preview environment, do not simulate success. Provide precise local/CI setup commands and a reproducible test command.
+
+PHASE F — APPLICATION REGRESSION AND BUILD
+Trace and test the impact on existing SEERAAI PRO workflows, including as applicable:
+- Telegram public feeds and archive
+- Telegram polling and posting
+- Telegram Mini App and webhook-backed operations
+- subscriber/statistics/admin dashboards
+- court document upload, list, view, download, and delete
+- institution-scoped access for judges and registrars
+- witness scheduling/statements and courtroom audio
+- court notifications, templates, and audit logs
+- authentication, sign-out, and role-based UI
+
+Run existing lint/typecheck/build and relevant tests. Report exact commands and results. A successful build does not prove Rules security or functional permissions.
+
+PHASE G — FINAL REPORT AND RELEASE GATE
+Produce a report titled:
+SEERAAI PRO — PHASE 8B.5.2 CANDIDATE RULES COMPLETENESS & COMPATIBILITY REPORT
+
+Include:
+1. Exact file inventory and hashes.
+2. Full active-versus-candidate diff summary.
+3. Completeness verdict: complete Ruleset or partial patch.
+4. Firestore permission matrix and overlap findings.
+5. Telegram collection-by-collection compatibility findings.
+6. Storage permission matrix and real path compatibility.
+7. Custom Claims consistency.
+8. Admin SDK/backend authorization findings.
+9. Emulator commands and actual test results.
+10. Regression/build results.
+11. Critical remaining risks and blockers.
+12. A safe next-step plan.
+
+Use only these evidence labels:
+- VERIFIED PASS — backed by inspected source and/or executed test output
+- VERIFIED FAIL — confirmed defect with exact evidence
+- PARTIALLY VERIFIED — some, but not all, evidence available
+- BLOCKED — could not execute or inspect due to a stated blocker
+- NOT TESTED — no test or inspection performed
+
+RELEASE DECISION:
+If Emulator tests have not run, active production Rules have not been independently read and backed up, any relevant feature compatibility is unknown, or any critical rule overlap remains unresolved, the release status MUST be BLOCKED.
+
+DO NOT publish, deploy, migrate, change claims, modify production, or replace active files during this phase. Human approval for a later production change must be separate, specific, and based on the complete report.
+
+BEGIN PHASE 8B.5.2 NOW. READ-ONLY INSPECTION FIRST; LOCAL CANDIDATE TESTS ONLY.

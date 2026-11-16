@@ -1,0 +1,286 @@
+SEERAAI – TELEGRAM WEBHOOK CONFIGURATION Secure Setup, Verification and
+Webhook Handler Version: 1.0 Date: 07 November 2026
+
+============================================================ 1.
+IMPORTANT IMPLEMENTATION NOTES
+============================================================
+
+This file combines the TypeScript implementation, environment variables,
+secret-generation commands, setup request and example success response.
+
+Before using it: - Ensure Express app is already initialized as app. -
+Ensure the Telegraf bot instance is initialized as bot. - Keep all
+secrets on the backend. Never expose them in frontend code, GitHub
+source files, browser requests or public logs. - Replace YOUR-DOMAIN.com
+with the real HTTPS domain. - Do not paste the environment-variable
+lines into a TypeScript file. Configure them in the server environment
+or Cloud Run. - Ensure the webhook route is registered only once. -
+Register express.json() before the webhook route.
+
+============================================================ 2.
+TYPESCRIPT IMPLEMENTATION
+============================================================
+
+import { timingSafeEqual } from ‘node:crypto’; import type {
+RequestHandler } from ‘express’;
+
+const TELEGRAM_WEBHOOK_PATH = ‘/api/telegram/webhook’;
+
+const TELEGRAM_ALLOWED_UPDATES = [ ‘message’, ‘edited_message’,
+‘callback_query’] as const;
+
+/** * Constant-time secret comparison. */ function safeSecretCompare(
+received: string, expected: string ): boolean { const receivedBuffer =
+Buffer.from(received, ‘utf8’); const expectedBuffer =
+Buffer.from(expected, ‘utf8’);
+
+if (receivedBuffer.length !== expectedBuffer.length) { return false; }
+
+return timingSafeEqual(receivedBuffer, expectedBuffer); }
+
+/** * Protect webhook setup endpoint. */ const
+requireTelegramSetupSecret: RequestHandler = ( req, res, next ) => {
+const expectedSecret = process.env.TELEGRAM_SETUP_SECRET; const
+receivedSecret = req.get(‘x-telegram-setup-secret’) ?? ’’;
+
+if (!expectedSecret) { res.status(503).json({ ok: false, error:
+‘Telegram setup authentication is not configured.’ }); return; }
+
+if ( !receivedSecret || !safeSecretCompare(receivedSecret,
+expectedSecret) ) { res.status(401).json({ ok: false, error:
+‘Unauthorized access.’ }); return; }
+
+next(); };
+
+/** * Validate webhook URL from server environment. */ function
+getTelegramWebhookUrl(): string { const rawUrl =
+process.env.TELEGRAM_WEBHOOK_URL?.trim();
+
+if (!rawUrl) { throw new Error(‘TELEGRAM_WEBHOOK_URL is missing.’); }
+
+const parsedUrl = new URL(rawUrl);
+
+if (parsedUrl.protocol !== ‘https:’) { throw new Error(‘Telegram webhook
+must use HTTPS.’); }
+
+if ( parsedUrl.username || parsedUrl.password || parsedUrl.search ||
+parsedUrl.hash ) { throw new Error(‘Invalid Telegram webhook URL.’); }
+
+if (parsedUrl.pathname !== TELEGRAM_WEBHOOK_PATH) { throw new
+Error(‘Incorrect Telegram webhook endpoint path.’); }
+
+return parsedUrl.toString(); }
+
+/** * Validate Telegram webhook secret. */ function
+getTelegramWebhookSecret(): string { const secret =
+process.env.TELEGRAM_WEBHOOK_SECRET?.trim() ?? ’’;
+
+if (!/[1]{1,256}$/.test(secret)) { throw new Error(‘Invalid
+TELEGRAM_WEBHOOK_SECRET configuration.’); }
+
+return secret; }
+
+/** * Configure SEERAAI Telegram webhook securely.  - Uses POST, not
+GET. * - Does not construct the webhook URL from request headers. * -
+Preserves pending Telegram updates. * - Verifies registration after
+setup. */ app.post( ‘/api/telegram/setup-webhook’,
+requireTelegramSetupSecret, async (_req, res) => { try { const
+webhookUrl = getTelegramWebhookUrl(); const webhookSecret =
+getTelegramWebhookSecret();
+
+      // Confirm that the bot token is valid.
+      const botInfo = await bot.telegram.getMe();
+
+      // Register webhook with Telegram.
+      await bot.telegram.setWebhook(webhookUrl, {
+        secret_token: webhookSecret,
+        allowed_updates: [...TELEGRAM_ALLOWED_UPDATES],
+        drop_pending_updates: false
+      });
+
+      // Verify registration.
+      const webhookInfo =
+        await bot.telegram.getWebhookInfo();
+
+      if (webhookInfo.url !== webhookUrl) {
+        return res.status(502).json({
+          ok: false,
+          error: 'Telegram webhook verification failed.'
+        });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        message:
+          'SEERAAI Telegram webhook successfully configured.',
+        bot: {
+          username: botInfo.username,
+          name: botInfo.first_name
+        },
+        webhook: {
+          url: webhookInfo.url,
+          pendingUpdates:
+            webhookInfo.pending_update_count,
+          allowedUpdates:
+            webhookInfo.allowed_updates
+        }
+      });
+
+    } catch (error: unknown) {
+      const rawMessage =
+        error instanceof Error
+          ? error.message
+          : 'Unknown error';
+
+      // Avoid exposing Telegram credentials in logs.
+      const safeMessage = rawMessage.replace(
+        /bot\d+:[A-Za-z0-9_-]+/g,
+        'bot[REDACTED]'
+      );
+
+      console.error(
+        '[SEERAAI Telegram Webhook Setup]',
+        safeMessage
+      );
+
+      return res.status(500).json({
+        ok: false,
+        error:
+          'Webhook configuration failed. Check server logs.'
+      });
+    }
+
+} );
+
+/** * Verify Telegram webhook secret token. */ const
+verifyTelegramWebhookSecret: RequestHandler = ( req, res, next ) => {
+const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET ?? ’’;
+
+const receivedSecret = req.get(‘X-Telegram-Bot-Api-Secret-Token’) ?? ’’;
+
+if ( !expectedSecret || !receivedSecret ||
+!safeSecretCompare(receivedSecret, expectedSecret) ) {
+res.sendStatus(401); return; }
+
+next(); };
+
+/** * IMPORTANT: * Register JSON middleware before the webhook route. *
+If express.json() is already registered globally, do not add * a
+duplicate parser unnecessarily. */ app.use(express.json({ limit: ‘1mb’
+}));
+
+/** * Telegram webhook receiver. */ app.post( ‘/api/telegram/webhook’,
+verifyTelegramWebhookSecret, async (req, res, next) => { try { await
+bot.handleUpdate(req.body); res.sendStatus(200); } catch (error) {
+next(error); } } );
+
+============================================================ 3. BACKEND
+ENVIRONMENT VARIABLES
+============================================================
+
+Configure these values in the backend environment. These are NOT
+TypeScript statements.
+
+TELEGRAM_WEBHOOK_URL=https://YOUR-DOMAIN.com/api/telegram/webhook
+
+TELEGRAM_WEBHOOK_SECRET=YOUR_RANDOM_TELEGRAM_SECRET
+
+TELEGRAM_SETUP_SECRET=YOUR_PRIVATE_SETUP_SECRET
+
+Replace YOUR-DOMAIN.com with the real domain that points to the deployed
+backend and supports HTTPS.
+
+Generate strong random secrets using the commands below. Use separate
+values for the two secrets.
+
+============================================================ 4. GENERATE
+SECRET VALUES
+============================================================
+
+On Linux, macOS, or a compatible terminal:
+
+openssl rand -hex 32
+
+Run the command twice: - First output: TELEGRAM_WEBHOOK_SECRET - Second
+output: TELEGRAM_SETUP_SECRET
+
+Do not use the same secret for both variables. Do not publish either
+generated value.
+
+============================================================ 5.
+CONFIGURE WEBHOOK
+============================================================
+
+After setting the environment variables and deploying the backend, send
+this POST request:
+
+curl -X POST
+-H “x-telegram-setup-secret: YOUR_PRIVATE_SETUP_SECRET”
+https://YOUR-DOMAIN.com/api/telegram/setup-webhook
+
+Replace: - YOUR_PRIVATE_SETUP_SECRET with the actual setup secret. -
+YOUR-DOMAIN.com with the deployed HTTPS domain.
+
+Do not put the setup secret in frontend JavaScript or a public URL.
+
+============================================================ 6. EXAMPLE
+SUCCESS RESPONSE
+============================================================
+
+The following is an example only. Actual bot information and pending
+update counts depend on the Telegram bot and its current state.
+
+{ “ok”: true, “message”: “SEERAAI Telegram webhook successfully
+configured.”, “bot”: { “username”: “your_bot”, “name”: “SEERAAI” },
+“webhook”: { “url”: “https://YOUR-DOMAIN.com/api/telegram/webhook”,
+“pendingUpdates”: 0, “allowedUpdates”: [ “message”, “edited_message”,
+“callback_query” ] } }
+
+============================================================ 7.
+DEPLOYMENT AND TEST CHECKLIST
+============================================================
+
+[ ] The Express app and Telegraf bot are initialized. [ ]
+TELEGRAM_WEBHOOK_URL points to the real HTTPS endpoint. [ ]
+TELEGRAM_WEBHOOK_SECRET is configured on the backend. [ ]
+TELEGRAM_SETUP_SECRET is configured on the backend. [ ] The two secrets
+are different and kept private. [ ] express.json() is registered before
+the webhook route. [ ] The webhook route is registered only once. [ ]
+The setup endpoint is called using POST. [ ] The setup request includes
+the correct setup-secret header. [ ] Telegram webhook registration is
+verified successfully. [ ] A real Telegram message reaches the bot. [ ]
+Invalid webhook secret requests receive HTTP 401. [ ] Setup requests
+without the setup secret are rejected.
+
+============================================================ 8.
+IMPORTANT TECHNICAL NOTES
+============================================================
+
+1.  drop_pending_updates: false preserves pending Telegram updates.
+    Setting it to true can discard updates waiting for delivery.
+
+2.  The setup endpoint changes the Telegram bot’s webhook settings. Keep
+    it protected. For stronger production security, also restrict access
+    through an administrative network or authenticated admin interface,
+    and consider rate limiting.
+
+3.  The webhook secret middleware checks Telegram’s
+    X-Telegram-Bot-Api-Secret-Token request header. It must use the same
+    secret configured with Telegram’s setWebhook method.
+
+4.  The example uses bot.handleUpdate(req.body). This is suitable for a
+    Telegraf webhook receiver. Do not also run a competing long-polling
+    process (bot.launch()) for the same bot while using this webhook
+    configuration.
+
+5.  Make sure your deployment platform routes HTTPS requests to this
+    Express service and that the exact webhook path is reachable.
+
+6.  The sample code assumes app, bot, and express are already imported
+    and initialized in the existing SEERAAI backend. Integrate it into
+    the existing server rather than creating duplicate app, bot, or
+    webhook instances.
+
+END OF FILE
+
+[1] A-Za-z0-9_-

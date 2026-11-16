@@ -1,0 +1,283 @@
+SEERAAI PRO — PHASE 8B.6.5
+
+APPROVED CANDIDATE SECURITY REMEDIATION, COMPATIBILITY FIX & CI VERIFICATION
+
+You are acting as a senior Firebase Security Engineer, TypeScript Engineer and Release Engineer.
+
+The owner has authorized implementation of the minimal remediation identified in the Phase 8B.6.4 read-only audit.
+
+Your task is to update the EXISTING SEERAAI PRO project safely, without replacing the application.
+
+1. STRICT PROJECT PRESERVATION
+
+Preserve:
+
+- Existing SEERAAI PRO application and source code.
+- Existing Firebase project: leafy-rush-xvd6f.
+- Existing Firestore database and all records.
+- Existing Firebase Storage bucket and uploaded files.
+- Existing Firebase Authentication users and providers.
+- Existing Cloud Run service and deployment configuration.
+- Existing integrations, court documents, user accounts and application features.
+
+ABSOLUTELY DO NOT:
+
+- Deploy or publish production Firebase Rules.
+- Change production Firestore or Storage Rules.
+- Change production database records.
+- Delete or migrate existing users or documents.
+- Change Firebase project IDs or Cloud Run service identity.
+- Replace the existing app with a new application.
+- Expose, request or commit API keys, passwords, tokens or service-account credentials.
+
+2. GIT BRANCH REQUIREMENTS
+
+Work only on:
+
+ci/rules-emulator-tests
+
+Repository:
+https://github.com/ayee71/SEERAAI-.git
+
+First inspect the current branch, repository status and latest commit.
+
+If the branch does not exist, create it from the appropriate existing base without overwriting existing work.
+
+Never commit these candidate changes directly to main.
+
+3. FIRESTORE CANDIDATE REMEDIATION
+
+File:
+firestore.rules.phase8b5.3.integrated.candidate
+
+Make minimal security corrections:
+
+1. Remove all hard-coded email exceptions from isEmailVerified() and isAdmin().
+2. Do not treat anonymous authentication as email verification.
+3. Do not treat phone authentication as email verification. Keep phone authentication as a separately identified authentication method where legitimate application workflows require it.
+4. Admin access must use trusted server-issued custom claims.
+5. Verify that the existing backend actually assigns the required custom claims.
+6. Enforce institution/tenant isolation for every relevant institution-specific operation.
+7. Review hasCourtRole(), canEditCases() and all related helpers.
+8. Review overlapping match blocks and additive allow permissions.
+9. Preserve legitimate existing roles and application workflows.
+10. Do not blindly replace the 503-line integrated candidate with the 794-line alternative.
+
+Inspect the actual application source before changing access rules.
+
+Preserve and verify access for:
+
+- court documents
+- witness scheduling
+- court branding
+- court staff requests
+- court personnel mappings
+- case milestones
+- courtroom layout
+- audit logs
+- Telegram functionality
+- existing user-owned documents
+
+Add or update tests for every modified security boundary.
+
+4. STORAGE CANDIDATE REMEDIATION
+
+File:
+storage.rules.phase8b5.4.integrated.candidate
+
+Critical issues to correct:
+
+A. Remove hard-coded email-based Admin access.
+
+B. Remove unrestricted public access:
+
+allow read: if true;
+
+C. Protect:
+institutions/{institutionId}/courtDocuments/{allPaths=**}
+
+Require authenticated users, valid institution membership and appropriate roles or ownership, according to the actual application authorization model.
+
+D. Preserve the actual application storage paths.
+
+Inspect:
+
+- src/services/courtDocuments.ts
+- src/services/storage.ts
+- all actual Firebase Storage upload and download implementations.
+
+E. Resolve the size mismatch.
+
+The existing application reportedly uses MAX_FILE_SIZE = 5GB for court documents, while the candidate rules use 50MB.
+
+Do not arbitrarily change the application limit to 50MB or 200MB.
+
+Determine the actual Firebase Storage limits, upload implementation, supported file sizes and business requirements.
+
+Choose a secure compatible limit and document it.
+
+If the existing 5GB setting cannot be supported safely, report the exact technical limitation and propose a compatible solution before changing application behavior.
+
+F. Resolve the legal_docs path mismatch.
+
+The existing application reportedly uses:
+
+legal_docs/public/{userId}
+
+The candidate rules reportedly expect:
+
+legal_docs/personal_{uid}/{userId}
+
+Do not break existing users.
+
+Preserve legitimate existing paths while enforcing:
+
+- authenticated ownership
+- correct institution boundaries
+- no cross-user access
+- no unauthorized public access
+
+G. Validate MIME types, file size, institution metadata and uploadedBy identity.
+
+H. Separate read, create, update and delete permissions where appropriate.
+
+I. Preserve legitimate court_admin, judge, registrar and auditor workflows where authorized by the existing application.
+
+5. TEST SUITES
+
+Inspect and update:
+
+tests/firestore.rules.test.ts
+tests/storage.rules.test.ts
+
+Required minimum coverage:
+
+- Firestore: all existing 20 scenarios, plus tests for newly identified security issues.
+- Storage: all existing 8 scenarios, plus tests for the public-read vulnerability, cross-tenant access, owner access, unauthorized uploads, file size limits and MIME restrictions.
+- Test legitimate access and denied access.
+- Verify that tests fail when an assertion fails.
+- Do not swallow errors in empty catch blocks.
+- Verify exact candidate rules filenames are loaded.
+
+Do not fabricate test results.
+
+6. PACKAGE DEPENDENCY REMEDIATION
+
+Inspect the real package.json and package-lock.json before editing.
+
+Current reported versions:
+
+- Firebase: ^11.0.1
+- Firebase Admin: ^13.0.0
+- Node.js: 22.23.2
+- npm: 10.9.8
+
+The reported conflict involves:
+@firebase/rules-unit-testing@6.0.0 requiring Firebase ^13.0.0.
+
+Investigate whether @firebase/rules-unit-testing@^4.0.1 is compatible with the actual Firebase SDK and test code.
+
+Do not upgrade Firebase or Firebase Admin without separate compatibility evidence.
+
+Do not automatically introduce legacy-peer-deps=true.
+
+Investigate the reported Vite/Babel peer dependency conflict and identify a clean, compatible dependency solution.
+
+After editing:
+
+- Keep package.json and package-lock.json synchronized.
+- Run npm ci.
+- Run the relevant type checks.
+- Run the application build if feasible.
+- Report all failures honestly.
+
+7. EMULATOR AND GITHUB ACTIONS
+
+Use only:
+
+demo-seeraai-test
+
+Use:
+
+firebase.emulator.test.json
+
+Ensure commands explicitly specify:
+
+firebase --config firebase.emulator.test.json --project demo-seeraai-test emulators:exec ...
+
+Run both Firestore and Storage suites.
+
+Update:
+
+.github/workflows/rules-test.yml
+
+Requirements:
+
+- Supported Node.js and Java versions.
+- Deterministic dependency installation.
+- Emulator-only execution.
+- Both test suites must run.
+- CI must fail when any security test fails.
+- Upload test evidence and logs as artifacts, including on failure.
+- Do not use production Firebase credentials.
+
+8. HASHES AND HANDOFF PACKAGE
+
+After all approved candidate changes:
+
+- Recompute SHA-256 from actual files.
+- Regenerate SHA256SUMS.txt.
+- Verify every checksum.
+- Regenerate the handoff ZIP.
+- Confirm archive contents and size.
+- Confirm production files are not included or modified.
+
+Do not claim a checksum is verified unless it has actually been calculated from the file.
+
+9. VERIFICATION AND RELEASE GATES
+
+Complete the following in order:
+
+PHASE 1: Candidate code remediation.
+PHASE 2: Dependency compatibility verification.
+PHASE 3: Firestore emulator tests.
+PHASE 4: Storage emulator tests.
+PHASE 5: Application build and type checks.
+PHASE 6: GitHub Actions execution.
+PHASE 7: SHA-256 verification.
+PHASE 8: Draft pull request preparation.
+
+Do not merge the pull request.
+
+Do not deploy production rules.
+
+Do not publish the production application.
+
+10. REQUIRED FINAL REPORT
+
+Provide:
+
+1. Files actually modified.
+2. Complete unified diffs.
+3. Security issues corrected.
+4. Application workflows preserved.
+5. Storage size and path compatibility decisions.
+6. Dependency versions before and after.
+7. npm ci result.
+8. Build and type-check results.
+9. Exact number of tests executed, passed and failed.
+10. GitHub Actions run URL and artifact location.
+11. SHA-256 verification result.
+12. Current branch and commit SHA.
+13. Remaining blockers.
+14. Exact human approval required for the next release stage.
+
+If any test cannot execute, report BLOCKED.
+
+If any existing workflow cannot be verified, do not claim compatibility.
+
+FINAL SAFETY RULE:
+
+This phase authorizes candidate remediation and emulator/CI verification only. It does not authorize production Firebase Rules deployment, pull request merging, Cloud Run deployment or production publishing.
+
+Begin with repository inspection and execute the approved candidate remediation. Preserve all existing production resources.

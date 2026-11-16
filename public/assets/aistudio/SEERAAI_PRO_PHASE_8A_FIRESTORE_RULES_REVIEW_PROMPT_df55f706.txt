@@ -1,0 +1,307 @@
+SEERAAI PRO — PHASE 8A
+FIRESTORE SECURITY RULES: READ-ONLY VERIFICATION, MINIMAL PATCH PROPOSAL & APPROVAL PACKAGE
+
+DOCUMENT ID: SEERAAI-PRO-PHASE-8A-RULES-REVIEW-v1.0
+TARGET REPOSITORY: sai-ethio-legal-ai
+TARGET VERSION: 5.0.0
+EXECUTION MODE: READ-ONLY DISCOVERY + PATCH PROPOSAL ONLY
+DEPLOYMENT MODE: STRICTLY PROHIBITED
+PRODUCTION ACCESS: STRICTLY PROHIBITED
+
+============================================================
+1. MISSION
+============================================================
+
+Continue work on the EXISTING SEERAAI PRO application. Do not create a new app, replace the existing app, migrate projects, or remove existing features, users, records, integrations, Firebase resources, or Cloud Run services.
+
+The latest MASTER INTEGRATED QA report identifies critical Firestore Security Rules defects:
+- calls to signedIn() although the report says the defined helper is isSignedIn();
+- calls to isCourtReporterOrStaff() although the report says no definition was found;
+- court_admin is reportedly absent from role checks;
+- Firestore Rules expect role and institutionId custom claims, while a custom-claims provisioning path was not located;
+- OfflineCaseDraft cloud synchronization has no verified destination and intentionally fails closed.
+
+Your task in this phase is to independently re-check those findings against the CURRENT repository, understand the real data model and authorization flow, and prepare a minimal, evidence-based Firestore Rules patch proposal for formal Security and Judicial Administration approval.
+
+IMPORTANT: The report is evidence to verify, not unquestionable truth. Do not blindly implement its proposed fixes. A role must not be added and access must not be broadened merely because a prior report recommends it.
+
+============================================================
+2. ABSOLUTE SAFETY GUARDRAILS
+============================================================
+
+A. Work only on the existing local repository.
+B. READ-ONLY mode: do not edit, create, delete, rename, overwrite, format, or migrate source/configuration files.
+C. Do not access, authenticate to, query, read, write, or modify any production Firebase project, Firestore database, Firebase Storage bucket, Firebase Auth account, Cloud Run service, or real court record.
+D. Do not run firebase deploy, gcloud deploy, hosting deploy, rules publish, DNS changes, or any production mutation command.
+E. Do not run firebase use against a real project. Do not use production credentials or service-account keys.
+F. Do not print, copy, expose, or include secrets, tokens, private keys, environment-variable values, or real personal data in the report.
+G. Do not install packages, download Java, download emulator binaries, or change dependencies in this phase.
+H. Do not provision or deploy the OfflineCaseDraft collection in this phase.
+I. Do not make any change to the rules in Firebase Console or any remote environment.
+J. If the workspace cannot guarantee local-only, read-only execution, STOP and report the limitation.
+
+The known production identifiers are supplied only as deny-list references and must never be contacted:
+- Firebase project: leafy-rush-xvd6f
+- Firestore database: ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478
+
+============================================================
+3. VERIFY THE CURRENT REPOSITORY BASELINE
+============================================================
+
+Before analysis, report:
+- current working directory and repository identity;
+- package name and version;
+- whether the working tree is a Git repository;
+- whether there are existing uncommitted changes;
+- exact path and size/hash of firestore.rules;
+- exact rules_version declaration;
+- firebase.json Firestore rules file mapping, if present;
+- available local Firebase CLI and emulator tooling versions, without invoking any production project;
+- whether Java is present, using a safe version check only.
+
+Do not claim the baseline is clean unless you have verified it. Do not overwrite earlier phase changes.
+
+============================================================
+4. INDEPENDENT FIRESTORE RULES AUDIT
+============================================================
+
+Read the COMPLETE current firestore.rules file. Do not rely only on line numbers in the previous report, because line numbers may have changed.
+
+Create a complete helper-function inventory and call graph. For every function, identify:
+- exact definition and line range;
+- parameters and return expression;
+- all call sites;
+- authentication and custom-claim fields it relies on;
+- collections or paths whose permissions depend on it.
+
+Specifically verify:
+1. Every occurrence of signedIn() and whether it is defined in the active rules file or imported through a supported mechanism.
+2. Whether isSignedIn() exists and its exact behavior, including null-safe authentication checks.
+3. Every occurrence of isCourtReporterOrStaff() and whether it is defined anywhere in the active ruleset.
+4. Every role used in the rules and every role used by the application code.
+5. Whether court_admin is a real, formally recognized application role, where it is assigned, and what permissions the role is intended to have.
+6. Whether request.auth.token.role and request.auth.token.institutionId are actually present in production account architecture; do not inspect production to answer this. Use only local source, schema, tests, and documented provisioning code.
+7. Whether any backend Admin SDK code provisions or updates custom claims. Search the whole repository, including server.ts, server-app.ts, authentication services, account creation, admin tools, Cloud Functions, and role-management modules.
+8. Whether Firebase Admin SDK bypass behavior is correctly accounted for in backend authorization. Never assume Firestore Rules protect Admin SDK operations.
+9. Whether rules correctly protect public legal sources, private user documents, court/institutional records, and administrative collections.
+10. Whether overlapping match blocks or broad wildcard rules accidentally grant permissions through OR-combined allow expressions.
+11. Whether create, read, list, update, and delete operations are constrained separately and correctly.
+12. Whether ownerUid, uid, institutionId, role, createdBy, and other authorization fields are validated and immutable where necessary.
+13. Whether rules safely handle absent fields, null values, malformed documents, and unauthenticated users.
+14. Whether client query patterns can satisfy the rules. Remember that Firestore Security Rules are not query filters.
+15. Whether collection names and paths in rules match the exact paths used by the client and backend code.
+
+For every finding, provide exact current file paths, line ranges, code excerpts limited to what is needed, and the source references in the repository that prove the finding.
+
+============================================================
+5. ROLE AND INSTITUTION AUTHORIZATION MATRIX
+============================================================
+
+Build a matrix from actual repository evidence. Do not invent role names or institutional privileges.
+
+At minimum, determine whether the following are present and what their real permissions are:
+- judge
+- assistant_judge
+- registrar
+- clerk
+- legal_officer
+- legal_expert
+- court_reporter
+- court_staff
+- court_admin
+- super_admin / system administrator, if present
+
+For each confirmed role, show:
+- where it is defined;
+- how it is assigned or provisioned;
+- whether it is a Firebase custom claim, Firestore user-profile field, or both;
+- which institution it belongs to;
+- read/list/create/update/delete permissions by collection;
+- whether the role may access public, private, or institutional data.
+
+Do not treat similarly named roles as equivalent without evidence.
+
+COURT_ADMIN APPROVAL RULE:
+The previous report says court_admin is missing. Do not add court_admin to the rules as an active permission until the role's authority, scope, assignment method, and exact permissions are confirmed by the application owner and Judicial Administration. Prepare a clearly marked CONDITIONAL patch option only if the codebase contains evidence of the role. Otherwise mark the issue as an unresolved governance decision and retain deny-by-default behavior.
+
+COURT REPORTER / STAFF HELPER RULE:
+Do not define isCourtReporterOrStaff() as a permissive shortcut. Derive its intended meaning only from actual role definitions and workflows. If the current architecture does not establish who qualifies, propose a restrictive design and flag the missing role-policy decision for approval.
+
+============================================================
+6. MINIMAL PATCH PROPOSAL — NO FILE EDITS
+============================================================
+
+Prepare a minimal unified diff proposal for firestore.rules, but DO NOT apply it.
+
+Requirements:
+- Fix only verified defects.
+- Preserve all existing intended authorization boundaries.
+- Never replace a broken helper with a broader allow condition.
+- Never use allow read, write: if true for convenience.
+- Never grant all authenticated users access to court or institutional records.
+- Preserve institution isolation and user ownership checks.
+- Ensure one institution cannot read another institution's records.
+- Ensure one user cannot read another user's private documents or drafts.
+- Separate public-read legal-source collections from private and institutional collections.
+- Deny unknown roles by default.
+- Reject missing or malformed authorization claims safely.
+- Validate immutable ownership and institution fields on update.
+- Validate request.resource.data on create and updates.
+- Avoid a broad wildcard match that overrides a more restrictive policy.
+- Keep the patch small and explain each changed condition.
+
+For each proposed change, include:
+1. current rule and exact location;
+2. verified defect;
+3. proposed replacement;
+4. security effect;
+5. possible compatibility impact on existing users/features;
+6. required approval owner;
+7. tests required before adoption.
+
+If the current codebase does not establish the intended policy, do not guess. Mark that part BLOCKED — POLICY DECISION REQUIRED and provide the exact question the authorized reviewer must answer.
+
+============================================================
+7. CUSTOM CLAIMS PROVISIONING REVIEW
+============================================================
+
+Independently inspect whether the application has a secure custom-claims provisioning mechanism.
+
+If it exists, document:
+- exact server-side function or route;
+- who may invoke it;
+- how the caller's authority is verified;
+- how institution membership is checked;
+- which claims are assigned;
+- how token refresh/re-authentication is handled;
+- audit logging and revocation behavior.
+
+If it does not exist, do not create or edit it in this phase. Produce a separate design proposal that includes:
+- server-only Admin SDK execution;
+- super-admin or formally authorized role checks;
+- server-side institution membership verification;
+- strict allowlist of role values;
+- no client-controlled role or institution assignment;
+- audit log for every role/claim change;
+- revocation and token-refresh handling;
+- negative tests for unauthorized role escalation.
+
+Never expose Admin credentials to the browser. Never trust a client-supplied role or institutionId as proof of authorization.
+
+============================================================
+8. REQUIRED SECURITY TEST MATRIX
+============================================================
+
+Design a rules-unit test matrix for Firebase Emulator execution. Do not claim tests passed if the emulator cannot run.
+
+Include at least these synthetic scenarios:
+A. Unauthenticated user cannot read private user documents.
+B. User A cannot read, list, update, or delete User B's private records.
+C. User A cannot create a record with User B's ownerUid.
+D. Authenticated public user can read only explicitly public legal sources.
+E. Public user cannot write or alter authoritative legislation or precedent records.
+F. Judge in Institution A can access only the institution-scoped resources explicitly permitted to judges.
+G. Judge in Institution A cannot access Institution B records.
+H. Registrar permissions are limited to the approved registrar actions.
+I. Clerk/legal_officer/legal_expert/court_reporter/court_staff are independently tested according to confirmed role policy; do not assume identical permissions.
+J. court_admin remains denied unless and until the role is formally approved and provisioned.
+K. Missing role claim is denied for institutional operations.
+L. Missing institutionId claim is denied for institutional operations.
+M. Malformed or unexpected role values are denied.
+N. A user cannot update their own role or institutionId through a client write.
+O. A court user cannot access another institution's drafts, documents, cases, audit logs, or personnel records.
+P. Unknown collections and unrecognized paths are denied.
+Q. Delete and list operations are checked separately from get/read.
+R. Query patterns used by the client are compatible with the rules.
+S. Admin SDK backend routes separately enforce authorization because Admin SDK bypasses Firestore Rules.
+
+Use synthetic identities and synthetic institution identifiers only. No real court records or real user accounts.
+
+============================================================
+9. LOCAL TEST ENVIRONMENT LIMITATION
+============================================================
+
+The latest report says Java is unavailable and the Firebase Emulator Suite could not run.
+
+Re-check safely. If Java or the required emulator runtime is still unavailable:
+- do not install Java;
+- do not download emulator binaries;
+- do not attempt a cloud Rules publish as a workaround;
+- mark Firebase Emulator tests BLOCKED / NOT RUN;
+- provide the precise local/CI prerequisite for a later authorized run;
+- separate static source review from runtime security verification.
+
+Do not label static inspection as full Rules validation. Do not label a Node unit test as a Firestore rules test.
+
+============================================================
+10. OFFLINE CASE DRAFTS — KEEP FAIL-CLOSED
+============================================================
+
+Re-check src/services/precedentOfflineSync.ts and all OfflineCaseDraft storage/sync paths.
+
+The prior report says destinationConfigured is false and the sync path returns CLOUD_SYNC_DESTINATION_UNAVAILABLE. Confirm whether that remains true.
+
+Do not add a Firestore collection, endpoint, Storage path, or rules in this phase. Do not change the existing fail-closed behavior. Prepare a separate schema proposal only, covering:
+- institutionId;
+- ownerUid / createdBy;
+- draft ID and server revision/version;
+- createdAt / updatedAt server timestamps;
+- status and workflow state;
+- audit metadata;
+- soft-delete/tombstone and conflict handling;
+- read/write/list/delete rules;
+- retention and recovery policy;
+- migration and backward compatibility.
+
+Require formal Judicial Administration and Security approval before any implementation or deployment.
+
+============================================================
+11. REQUIRED DELIVERABLES
+============================================================
+
+Produce one consolidated report with these sections:
+
+1. Executive summary and decision.
+2. Repository baseline and integrity.
+3. Verified findings vs findings not reproduced.
+4. Complete rules helper inventory and call graph.
+5. Public/private/institutional collection access matrix.
+6. Role and institution authorization matrix.
+7. Exact defect list with current line references.
+8. Minimal proposed firestore.rules unified diff (proposal only).
+9. Conditional court_admin option, only if supported by source evidence.
+10. isCourtReporterOrStaff policy question and restrictive proposal.
+11. Custom claims provisioning findings and separate design proposal.
+12. OfflineCaseDraft schema proposal (not implemented).
+13. Security test matrix with PASS / FAIL / BLOCKED / NOT RUN statuses.
+14. Emulator/Java limitations.
+15. Compatibility and regression risks.
+16. Formal approval checklist for Security, Judicial Administration, and application owner.
+17. Exact next action after approval.
+18. Explicit confirmation that no source files were edited and no production resources were contacted.
+
+Every PASS must be backed by a command output, test assertion, or directly inspected source evidence. Distinguish clearly between:
+- EXECUTED AND PASSED;
+- STATICALLY VERIFIED;
+- PROPOSED;
+- BLOCKED;
+- NOT RUN;
+- POLICY DECISION REQUIRED.
+
+Do not use vague claims such as "fully secure" or "production ready".
+
+============================================================
+12. STOP CONDITIONS
+============================================================
+
+Stop without editing anything if:
+- repository identity differs from sai-ethio-legal-ai v5.0.0 and cannot be reconciled;
+- the environment is not demonstrably local-only;
+- a proposed permission depends on an unapproved role or policy;
+- the source does not establish the correct institution or ownership model;
+- a task would require production access, deployment, credentials, or real court data;
+- emulator testing cannot run safely.
+
+At the end, do NOT deploy, do NOT publish, do NOT apply the patch, and do NOT begin the next phase. Return the report and the proposed diff for human review only.
+
+END OF PHASE 8A PROMPT

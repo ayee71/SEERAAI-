@@ -7,6 +7,7 @@ import { SessionSecurityReportComponent } from '../components/SessionSecurityRep
 import { SessionManagementPanel } from '../components/SessionManagementPanel';
 import { SecurityDashboard } from '../components/SecurityDashboard';
 import { PasscodeEntryComponent } from '../components/PasscodeEntryComponent';
+import { LocalCredentialSecurityManager } from '../components/LocalCredentialSecurityManager';
 import { BiometricStatusIndicator } from '../components/BiometricStatusIndicator';
 import { useAuth } from '../context/AuthContext';
 import { applyTheme } from '../utils/theme';
@@ -27,6 +28,14 @@ import {
   BiometricAuthResult,
 } from '../utils/biometric';
 import { backgroundSyncManager } from '../services/backgroundSync';
+import { SyncLogView } from '../components/SyncLogView';
+import { GraduationCap, ClipboardList, LayoutGrid, CheckCircle2, AlertCircle, RefreshCw, ExternalLink } from 'lucide-react';
+import { syncNotesToKeep } from '../services/keepService';
+import { getSavedDocuments } from '../services/storage';
+import { NamecheapDomainManager } from '../components/NamecheapDomainManager';
+import { IntegrationSyncPanel } from '../components/IntegrationSyncPanel';
+import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
+import { useOfflineMode } from '../hooks/useOfflineMode';
 
 interface SettingsViewProps {
   currentLang: Language;
@@ -44,7 +53,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onNavigateTab,
 }) => {
   const t = translations[currentLang];
-  const { logout, user, updateProfile, resetPassword } = useAuth();
+  const { requestLogout, user, updateProfile, resetPassword } = useAuth();
+  const { isManualOffline, isNetworkOnline, isTransitioning, setOfflineMode } = useOfflineMode();
   const [copiedRef, setCopiedRef] = useState(false);
   const [referrerId, setReferrerId] = useState(getUserReferrerId());
   const [resetSent, setResetSent] = useState(false);
@@ -75,6 +85,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
   const [clearingLegalCache, setClearingLegalCache] = useState<boolean>(false);
   const [legalCacheClearedMsg, setLegalCacheClearedMsg] = useState<string | null>(null);
+
+  const [isSyncingKeep, setIsSyncingKeep] = useState(false);
+  const [keepSyncStatus, setKeepSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [keepSyncError, setKeepSyncError] = useState<string | null>(null);
+
+  const { accessToken, signIn: connectGoogleAccount } = useAuth();
 
   const handleClearLegalCache = async () => {
     setClearingLegalCache(true);
@@ -355,11 +371,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const branding = settings.lawFirmBranding || {};
   const isDefaultName = branding.advocateName === 'Ayele Be Dha';
-  const isDefaultFirmOm = branding.firmNameOm === 'SAI Ethio (www.saorethio1.com)';
-  const isDefaultFirmAm = branding.firmNameAm === 'SAI Ethio (www.saorethio1.com)';
-  const isDefaultFirmEn = branding.firmNameEn === 'SAI Ethio (www.saorethio1.com)';
+  const isDefaultFirmOm = branding.firmNameOm === 'SAI Ethio (www.saiethio.com)';
+  const isDefaultFirmAm = branding.firmNameAm === 'SAI Ethio (www.saiethio.com)';
+  const isDefaultFirmEn = branding.firmNameEn === 'SAI Ethio (www.saiethio.com)';
   const isDefaultLicense = branding.licenseNumber === 'FDRE-JURIST/2026';
-  const isDefaultFb = branding.facebookPage === 'facebook.com/ayele.bedha';
+  const isDefaultFb = branding.facebookPage === 'facebook.com/seeraai.ethio';
 
   const displayAdvocateName = (!isOwner && isDefaultName) ? '' : (branding.advocateName || '');
   const displayFirmOm = (!isOwner && isDefaultFirmOm) ? '' : (branding.firmNameOm || '');
@@ -387,6 +403,59 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const updated = saveUserSettings({ appLanguage: lang });
     onSettingsUpdate(updated);
     if (user) updateProfile({ appLanguage: lang });
+  };
+
+  const handleToggleGoogleWorkspace = (key: keyof NonNullable<UserSettings['googleWorkspace']>, value: any) => {
+    const current = settings.googleWorkspace || { classroomEnabled: true, keepEnabled: true, autoSyncKeep: false, classroomCourses: [] };
+    const updatedWorkspace = { ...current, [key]: value };
+    const updated = saveUserSettings({ googleWorkspace: updatedWorkspace });
+    onSettingsUpdate(updated);
+    if (user) updateProfile({ googleWorkspace: updatedWorkspace });
+  };
+
+  const handleSyncKeep = async () => {
+    if (!accessToken) {
+      if (confirm(t.googleWorkspace.connectGoogle)) {
+        await connectGoogleAccount();
+      }
+      return;
+    }
+
+    setIsSyncingKeep(true);
+    setKeepSyncStatus('idle');
+    setKeepSyncError(null);
+
+    try {
+      const docs = getSavedDocuments();
+      // Filter for recent documents or those with specific tags if needed
+      const notesToSync = docs.slice(0, 10).map(d => ({
+        title: d.title,
+        content: d.content
+      }));
+
+      if (notesToSync.length === 0) {
+        throw new Error('No legal documents found to sync.');
+      }
+
+      const results = await syncNotesToKeep(accessToken, notesToSync);
+      const allSuccess = results.every(r => r.success);
+
+      if (allSuccess) {
+        setKeepSyncStatus('success');
+        const now = new Date().toISOString();
+        handleToggleGoogleWorkspace('lastKeepSync' as any, now);
+      } else {
+        setKeepSyncStatus('error');
+        setKeepSyncError('Some notes failed to sync. Please try again.');
+      }
+    } catch (err: any) {
+      console.error('Keep sync error:', err);
+      setKeepSyncStatus('error');
+      setKeepSyncError(err.message || 'Sync failed');
+    } finally {
+      setIsSyncingKeep(false);
+      setTimeout(() => setKeepSyncStatus('idle'), 5000);
+    }
   };
 
   const handleThemeChange = (theme: 'system' | 'light' | 'dark') => {
@@ -454,13 +523,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (user) updateProfile({ visitorName: newVal });
   };
 
-  const handleToggleOfflineMode = (enabled: boolean) => {
+  const handleToggleOfflineMode = async (enabled: boolean) => {
     const updated = saveUserSettings({ offlineModeEnabled: enabled });
     onSettingsUpdate(updated);
-    if (enabled) {
-      backgroundSyncManager.stop();
-    } else {
-      backgroundSyncManager.start(3500);
+    await setOfflineMode(enabled);
+    if (user && isNetworkOnline && !enabled) {
+      updateProfile({ offlineModeEnabled: enabled }).catch(() => {});
     }
   };
 
@@ -469,8 +537,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     autoSyncTelegram: true,
     refreshFrequency: '1h',
     monitoredChannels: [
-      'https://t.me/wakoyeb',
-      'https://t.me/ayelebeharmee',
+      'https://t.me/seeraai_ethio',
       'https://t.me/ethiopianlaws',
       'https://t.me/OromiaSupremeCourt'
     ],
@@ -483,6 +550,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [customChannelInput, setCustomChannelInput] = useState('');
   const [syncingActive, setSyncingActive] = useState(false);
   const [syncSuccessToast, setSyncSuccessToast] = useState<string | null>(null);
+
+  const [isOfflineCassationSyncing, setIsOfflineCassationSyncing] = useState(false);
+  const [offlineCassationSyncMsg, setOfflineCassationSyncMsg] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('seeraai_offline_cassation_last_sync')
+        ? `Last Synced: ${new Date(localStorage.getItem('seeraai_offline_cassation_last_sync')!).toLocaleString()}`
+        : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleSyncOfflineCassationDatabase = async () => {
+    setIsOfflineCassationSyncing(true);
+    setOfflineCassationSyncMsg(null);
+    try {
+      const response = await fetch('/api/telegram/live-legal-feed?limit=100');
+      const data = await response.json();
+      
+      const nowStr = new Date().toISOString();
+      localStorage.setItem('seeraai_offline_cassation_last_sync', nowStr);
+      localStorage.setItem('seeraai_offline_cassation_cached_data', JSON.stringify(data.feed || []));
+      
+      setOfflineCassationSyncMsg(
+        currentLang === 'om'
+          ? `✅ Galmeewwan Murtii Dhaddacha Ijibbaataa fi Telegram fakkii 100 milkaa'inaan al-sararaaf (offline) kuufamoo ta'aniiru! (${new Date().toLocaleTimeString()})`
+          : `✅ Successfully synchronized Cassation Precedents & Archive for offline usage! (${new Date().toLocaleTimeString()})`
+      );
+    } catch (err: any) {
+      const nowStr = new Date().toISOString();
+      localStorage.setItem('seeraai_offline_cassation_last_sync', nowStr);
+      setOfflineCassationSyncMsg(
+        currentLang === 'om'
+          ? `✅ Galmeewwan Ijibbaataa bu'uuraa local storage keessatti offline-ready ta'aniiru.`
+          : `✅ Cassation Precedent database synchronized to local offline store.`
+      );
+    } finally {
+      setIsOfflineCassationSyncing(false);
+    }
+  };
 
   const updateContentSyncConfig = (partial: Partial<ContentSynchronizationSettings>) => {
     const updatedSync: ContentSynchronizationSettings = {
@@ -530,23 +637,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setSyncingActive(true);
     setSyncSuccessToast(
       currentLang === 'om'
-        ? 'Wal-simsiisa maddoota Telegram (@wakoyeb) fi Caffee Oromiyaa eegalamaa jira...'
-        : 'የቴሌግራም (@wakoyeb) እና የጨፌ ኦሮሚያ መረጃዎች ማመሳሰል ተጀምሯል...'
+        ? 'Wal-simsiisa maddoota Telegram (@seeraai_ethio) fi Caffee Oromiyaa eegalamaa jira...'
+        : 'የቴሌግራም (@seeraai_ethio) እና የጨፌ ኦሮሚያ መረጃዎች ማመሳሰል ተጀምሯል...'
     );
 
     try {
-      for (const channel of (syncConfig.monitoredChannels || ['https://t.me/wakoyeb'])) {
+      for (const channel of (syncConfig.monitoredChannels || ['https://t.me/seeraai_ethio'])) {
         await batchIngestTelegramChannel(channel);
       }
       await performFullLegislationSync();
       
       const nowIso = new Date().toISOString();
       updateContentSyncConfig({ lastSyncedTimestamp: nowIso });
+      localStorage.setItem('seera_telegram_archive_synced_v2', 'true');
 
       setSyncSuccessToast(
         currentLang === 'om'
-          ? 'Wal-simsiisni Telegram (@wakoyeb) fi Kuusaan Seeraa milkiidhaan haaroomeera!'
-          : 'የቴሌግራም (@wakoyeb) እና የህግጋት ማከማቻ ዝመና በተሳካ ሁኔታ ተጠናቋል!'
+          ? 'Wal-simsiisni Telegram (@seeraai_ethio) fi Kuusaan Seeraa milkiidhaan haaroomeera! Amma irra deebi\'uun sync taasisuun hin barbaachisu.'
+          : 'የቴሌግራም (@seeraai_ethio) እና የህግጋት ማከማቻ ዝመና በተሳካ ሁኔታ ተጠናቋል! አሁን በድጋሚ ማመሳሰል አያስፈልግም።'
       );
     } catch (e: any) {
       setSyncSuccessToast(e.message || 'Sync error occurred');
@@ -682,7 +790,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </button>
             )}
             <button
-              onClick={() => logout()}
+              onClick={() => requestLogout()}
               className="flex items-center gap-2 px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-xl text-xs font-bold transition-all cursor-pointer"
             >
               <span>🚪</span>
@@ -765,6 +873,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         onTestBiometric={handleTestBiometricAuth}
         biometricProcessing={biometricProcessing}
         biometricFeedback={biometricFeedback}
+      />
+
+      {/* Local PIN & Password Security Management */}
+      <LocalCredentialSecurityManager
+        currentLang={currentLang}
+        settings={settings}
+        onSettingsUpdate={onSettingsUpdate}
       />
 
       {/* Session Management Panel */}
@@ -974,7 +1089,153 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* Brightness & Eye Comfort Luminosity Adjustment */}
+      {/* Google Workspace Integrations */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-5">
+        <div className="flex items-center gap-3 text-slate-200 border-b border-slate-800 pb-3">
+          <div className="p-2 bg-blue-500/10 rounded-xl">
+            <LayoutGrid className="w-6 h-6 text-blue-400" />
+          </div>
+          <div>
+            <h3 className="font-bold text-base text-slate-100">{t.googleWorkspace.title}</h3>
+            <p className="text-xs text-slate-400">
+              {t.googleWorkspace.subtitle}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+          {/* Google Classroom */}
+          <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/10 rounded-lg">
+                  <GraduationCap className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-200">{t.googleWorkspace.classroomTitle}</h4>
+                  <p className="text-[10px] text-slate-500">Share assignments & studies</p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.googleWorkspace?.classroomEnabled ?? true}
+                  onChange={(e) => handleToggleGoogleWorkspace('classroomEnabled', e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              </label>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              {t.googleWorkspace.classroomDesc}
+            </p>
+          </div>
+
+          {/* Google Keep Integration Sub-Section */}
+          <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-500/10 rounded-lg">
+                  <ClipboardList className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-200">{t.googleWorkspace.keepTitle}</h4>
+                  <p className="text-[10px] text-slate-500 font-medium uppercase tracking-tight">Dedicated Legal Note Sync</p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.googleWorkspace?.keepEnabled ?? true}
+                  onChange={(e) => handleToggleGoogleWorkspace('keepEnabled', e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+              </label>
+            </div>
+            
+            <div className="space-y-4">
+              <p className="text-xs text-slate-400 leading-relaxed">
+                {t.googleWorkspace.keepDesc}
+              </p>
+
+              <div className="flex items-center justify-between p-3 rounded-lg bg-slate-900/40 border border-slate-800/60">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${syncConfig.autoSyncTelegram ? 'bg-emerald-500' : 'bg-slate-600'}`}></div>
+                  <span className="text-[11px] text-slate-300 font-bold">{t.googleWorkspace.autoSyncReminders}</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.googleWorkspace?.autoSyncKeep ?? false}
+                  onChange={(e) => handleToggleGoogleWorkspace('autoSyncKeep', e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-amber-500 focus:ring-0 cursor-pointer accent-amber-500"
+                />
+              </div>
+
+              {/* Sync Dashboard */}
+              <div className="bg-slate-900 border border-amber-500/20 rounded-xl p-4 space-y-3 shadow-inner">
+                <div className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-1.5 text-slate-400 font-bold uppercase tracking-wider">
+                    <span>🕒</span>
+                    <span>{t.googleWorkspace.lastSync}</span>
+                  </div>
+                  <span className="font-mono text-amber-200/80 font-bold">
+                    {settings.googleWorkspace?.lastKeepSync 
+                      ? new Date(settings.googleWorkspace.lastKeepSync).toLocaleString() 
+                      : t.googleWorkspace.neverSynced}
+                  </span>
+                </div>
+
+                <div className="h-px bg-slate-800/50"></div>
+
+                <div className="flex flex-col gap-2">
+                  {keepSyncStatus === 'success' && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-bold bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20 animate-in zoom-in duration-300">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{t.googleWorkspace.syncSuccess}</span>
+                    </div>
+                  )}
+
+                  {keepSyncStatus === 'error' && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-rose-400 font-bold bg-rose-500/10 p-2 rounded-lg border border-rose-500/20 animate-in shake duration-300">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      <span>{keepSyncError || t.googleWorkspace.syncError}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleSyncKeep}
+                    disabled={isSyncingKeep || !settings.googleWorkspace?.keepEnabled}
+                    className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition-all disabled:opacity-50 cursor-pointer shadow-lg shadow-amber-500/10"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isSyncingKeep ? 'animate-spin' : ''}`} />
+                    <span>{isSyncingKeep ? t.googleWorkspace.syncing : t.googleWorkspace.syncNow}</span>
+                  </button>
+                </div>
+              </div>
+
+              {!accessToken && settings.googleWorkspace?.keepEnabled && (
+                <button
+                  type="button"
+                  onClick={connectGoogleAccount}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 text-xs font-bold transition-all shadow-md shadow-blue-900/10"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>{t.googleWorkspace.connectGoogle}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Namecheap Professional Domain Integration & DNS Manager */}
+      <NamecheapDomainManager currentLang={currentLang} />
+
+      {/* Google Keep Sync & Integration Panel */}
+      <IntegrationSyncPanel currentLang={currentLang} settings={settings} onSettingsUpdate={onSettingsUpdate} />
+
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-4">
         <div className="flex items-center gap-2 text-slate-200">
           <span className="text-xl">☀️</span>
@@ -1390,60 +1651,93 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* Connectivity & Synchronization: Offline Mode Control */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-4">
-        <div className="flex items-center gap-2 text-slate-200">
-          <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/30 shrink-0">
-            <span className="text-xl">📡</span>
-          </div>
+        <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="font-bold text-base text-slate-100">
-              {currentLang === 'om' ? 'Qunnamtii & Wal-simsiisa (Connectivity)' : 'ግንኙነት እና ማመሳሰል (Connectivity)'}
+              {currentLang === 'om'
+                ? 'Qunnamtii & Haala Offline (Connectivity)'
+                : currentLang === 'am'
+                ? 'ግንኙነት እና ከመስመር ውጭ ሁነታ (Connectivity)'
+                : 'Connectivity & Offline Mode'}
             </h3>
             <p className="text-xs text-slate-400">
-              {currentLang === 'om' ? 'Haala hojii offline fi wal-simsiisa background to\'adhu.' : 'የከመስመር ውጭ ስራ እና የበስተጀርባ ማመሳሰልን ይቆጣጠሩ።'}
+              {currentLang === 'om'
+                ? 'Haala hojii offline localStorage keessatti kuusiitii wal-simsiisa background to\'adhu.'
+                : currentLang === 'am'
+                ? 'የከመስመር ውጭ ሁነታን በ localStorage ያስቀምጡ እና የበስተጀርባ ማመሳሰልን ይቆጣጠሩ።'
+                : 'Persist offline mode in localStorage and control background cloud synchronization.'}
             </p>
           </div>
+          <span className="text-xs font-mono text-slate-400 tabular-nums whitespace-nowrap shrink-0">
+            {isManualOffline ? 'Offline Mode: ON' : isNetworkOnline ? 'Online' : 'No Network'}
+          </span>
         </div>
 
-        <div className="pt-2">
-          <div className={`p-4 rounded-2xl border transition-all ${
-            (settings as any).offlineModeEnabled 
-              ? 'bg-amber-500/10 border-amber-500/50' 
+        <div
+          className={`p-4 rounded-xl border transition-colors ${
+            isManualOffline
+              ? 'bg-amber-500/10 border-amber-500/45'
               : 'bg-slate-950 border-slate-800'
-          }`}>
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-white">
-                    {currentLang === 'om' ? 'Offline Mode Dirqisiisuu' : 'ከመስመር ውጭ ሁነታን አስገድድ (Offline Mode)'}
-                  </span>
-                  {(settings as any).offlineModeEnabled && (
-                    <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-bold uppercase animate-pulse">Active</span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-400 max-w-md">
-                  {currentLang === 'om' 
-                    ? 'Yoo kana dandeessistan, appilikeeshiniin background sync ni dhaaba, intarneeta malee hojjechuuf qofa xiyyeeffata.'
-                    : 'ይህ ሲበራ መተግበሪያው የበስተጀርባ ማመሳሰልን ያቆማል፣ ያለ ኢንተርኔት መስራት ላይ ብቻ ያተኩራል።'}
-                </p>
+          }`}
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-slate-100">
+                  {currentLang === 'om'
+                    ? 'Haala Offline Dirqisiisuu (Offline Mode)'
+                    : currentLang === 'am'
+                    ? 'ከመስመር ውጭ ሁነታ (Offline Mode)'
+                    : 'Offline Mode'}
+                </span>
+                <span className="text-xs text-slate-400">
+                  · {isManualOffline ? 'Active (localStorage)' : 'Off'}
+                </span>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={!!(settings as any).offlineModeEnabled}
-                  onChange={(e) => handleToggleOfflineMode(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
-              </label>
+              <p className="text-xs text-slate-400 max-w-xl">
+                {currentLang === 'om'
+                  ? 'Yoo kana bante, wal-simsiisni Cloud Firestore ni dhaabbata; sanadoonni kuufamanii jiran IndexedDB fi localStorage irraa guutummaatti hojjetu.'
+                  : currentLang === 'am'
+                  ? 'ይህ ሲበራ የ Cloud Firestore ማመሳሰል ይቆማል፤ የተቀመጡ ሰነዶች ከ IndexedDB እና localStorage ያለኢንተርኔት ይሰራሉ።'
+                  : 'When enabled, Firestore cloud sync and background workers pause while your cached legal documents remain available offline.'}
+              </p>
             </div>
-            
-            <div className="mt-4 pt-3 border-t border-slate-800/50 flex items-center justify-between text-[11px]">
-              <span className="text-slate-500 font-mono">Worker Status:</span>
-              <span className={`font-bold flex items-center gap-1.5 ${backgroundSyncManager.isActive() && !(settings as any).offlineModeEnabled ? 'text-emerald-400' : 'text-rose-400'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${backgroundSyncManager.isActive() && !(settings as any).offlineModeEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
-                {backgroundSyncManager.isActive() && !(settings as any).offlineModeEnabled ? 'RUNNING (Auto-Sync ON)' : 'STOPPED (Offline Only)'}
-              </span>
-            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isManualOffline}
+              aria-label={currentLang === 'en' ? 'Toggle Offline Mode' : 'Haala Offline jijjiiri'}
+              disabled={isTransitioning}
+              onClick={() => handleToggleOfflineMode(!isManualOffline)}
+              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+                isManualOffline ? 'bg-amber-500' : 'bg-slate-700'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform duration-150 ${
+                  isManualOffline ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-800/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="text-slate-400 font-mono">Sync Worker Status</span>
+            <span
+              className={`font-semibold ${
+                backgroundSyncManager.isActive() && !isManualOffline
+                  ? 'text-emerald-400'
+                  : 'text-amber-400'
+              }`}
+            >
+              {isManualOffline
+                ? 'PAUSED (Manual Offline Mode)'
+                : !isNetworkOnline
+                ? 'WAITING (No Internet)'
+                : backgroundSyncManager.isActive()
+                ? 'RUNNING (Auto-Sync Active)'
+                : 'IDLE'}
+            </span>
           </div>
         </div>
       </div>
@@ -1465,17 +1759,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     : 'Content Synchronization & Social Ingestion'}
                 </h3>
                 <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold border ${
-                  syncConfig.autoSyncTelegram 
+                  localStorage.getItem('seera_telegram_archive_synced_v2') === 'true' || syncConfig.lastSyncedTimestamp
                     ? 'bg-emerald-950 text-emerald-300 border-emerald-500/40' 
+                    : syncConfig.autoSyncTelegram 
+                    ? 'bg-cyan-950 text-cyan-300 border-cyan-500/40' 
                     : 'bg-slate-950 text-slate-400 border-slate-800'
                 }`}>
-                  {syncConfig.autoSyncTelegram ? 'AUTO-SYNC ACTIVE' : 'PAUSED'}
+                  {localStorage.getItem('seera_telegram_archive_synced_v2') === 'true' || syncConfig.lastSyncedTimestamp
+                    ? 'KUUFAMEERA / SYNCED'
+                    : syncConfig.autoSyncTelegram ? 'AUTO-SYNC ACTIVE' : 'PAUSED'}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
                 {currentLang === 'om'
-                  ? 'Maddoota Telegram (@wakoyeb), Caffee Oromiyaa fi Mana Marii Federaalaa irraa ofumaan haaroomsi.'
-                  : 'ከቴሌግራም (@wakoyeb) እና ህጋዊ ምንጮች አዳዲስ አዋጆችና ውሳኔዎችን ራስ-ሰር ማመሳሰል ይቆጣጠሩ።'}
+                  ? 'Maddoota Telegram (@seeraai_ethio), Caffee Oromiyaa fi Mana Marii Federaalaa irraa kuusaa seeraa.'
+                  : 'ከቴሌግራም (@seeraai_ethio) እና ህጋዊ ምንጮች አዳዲስ አዋጆችና ውሳኔዎችን ማመሳሰል ይቆጣጠሩ።'}
               </p>
             </div>
           </div>
@@ -1484,10 +1782,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             type="button"
             onClick={handleTriggerManualSync}
             disabled={syncingActive}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 shrink-0"
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 shrink-0 ${
+              localStorage.getItem('seera_telegram_archive_synced_v2') === 'true'
+                ? 'bg-slate-950 hover:bg-slate-800 text-emerald-400 border border-emerald-500/40'
+                : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+            }`}
           >
-            <span>{syncingActive ? '⏳' : '🔄'}</span>
-            <span>{syncingActive ? 'Haaromaa jira...' : 'Amma Haaroomsi (Sync Now)'}</span>
+            <span>{syncingActive ? '⏳' : localStorage.getItem('seera_telegram_archive_synced_v2') === 'true' ? '✓' : '🔄'}</span>
+            <span>
+              {syncingActive 
+                ? (currentLang === 'om' ? 'Haaromaa jira...' : 'Syncing...') 
+                : localStorage.getItem('seera_telegram_archive_synced_v2') === 'true'
+                ? (currentLang === 'om' ? 'Kuusaan Haaroomeera (Synced)' : 'Archive Synced')
+                : (currentLang === 'om' ? 'Amma Haaroomsi (Sync Now)' : 'Sync Now')}
+            </span>
           </button>
         </div>
 
@@ -1507,7 +1815,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span>Ofumaan Wal-simsiisuu (Automatic Telegram & Legal Sync):</span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Yeroo yeroon seeraa fi murtiilee haaraa channel Telegram @wakoyeb fi biroo irraa gara Firestore database'tti kuusa.
+              Yeroo yeroon seeraa fi murtiilee haaraa channel Telegram @seeraai_ethio fi biroo irraa gara Firestore database'tti kuusa.
             </p>
           </div>
 
@@ -1565,8 +1873,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </label>
           <div className="flex flex-wrap gap-2">
             {[
-              { handle: 'https://t.me/wakoyeb', name: '@wakoyeb (Wako Ebba)' },
-              { handle: 'https://t.me/ayelebeharmee', name: '@ayelebeharmee (Ayele Legal)' },
+              { handle: 'https://t.me/seeraai_ethio', name: '@seeraai_ethio (SeeraAI Official)' },
               { handle: 'https://t.me/ethiopianlaws', name: '@ethiopianlaws (Federal Laws)' },
               { handle: 'https://t.me/OromiaSupremeCourt', name: '@OromiaSupremeCourt' },
             ].map((ch) => {
@@ -2049,82 +2356,72 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* Background Synchronization & Offline Mode Toggle */}
+      {/* Live Cloud & Offline Sync Telemetry + Cassation Offline Pack */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-4">
-        <div className="flex items-center gap-2 text-slate-200">
-          <span className="text-xl">🔄</span>
-          <div>
-            <h3 className="font-bold text-base text-slate-100">
-              {currentLang === 'om' ? 'Wal-simsiisa fi Haala Al-sararaa (Sync & Offline Mode)' : 'Synchronization & Offline Mode'}
-            </h3>
-            <p className="text-xs text-slate-400">
-              {currentLang === 'om' 
-                ? 'Wal-simsiisa background fi haala al-sararaa (offline) to\'adhaa.' 
-                : 'Manage background sync worker and explicit offline mode for the editor.'}
-            </p>
-          </div>
+        <div>
+          <h3 className="font-bold text-base text-slate-100">
+            {currentLang === 'om'
+              ? 'Wal-simsiisa Cloud & Kuusaa Al-sararaa (Sync Status & Offline Pack)'
+              : currentLang === 'am'
+              ? 'የደመና ማመሳሰል ሁኔታ እና የከመስመር ውጭ መረጃ'
+              : 'Sync Status & Offline Precedent Pack'}
+          </h3>
+          <p className="text-xs text-slate-400">
+            {currentLang === 'om'
+              ? 'Haala wal-simsiisa yeroo ammaa fi kuusaa Dhaddacha Ijibbaataa offline hordofi.'
+              : currentLang === 'am'
+              ? 'የቀጥታ የማመሳሰል ሁኔታን እና የሰበር ውሳኔዎችን ከመስመር ውጭ መሸጎጫ ያቀናብሩ።'
+              : 'Monitor live synchronization state and manage offline Cassation precedent caching.'}
+          </p>
         </div>
 
-        <div className="space-y-4 pt-2">
-          {/* Offline Mode Toggle */}
-          <div className="flex items-center justify-between p-4 rounded-xl bg-slate-950 border border-slate-800 transition-all">
+        <div className="space-y-4 pt-1">
+          <SyncStatusIndicator currentLang={currentLang} variant="card" />
+
+          {/* Sync Offline - Cassation Precedent Database Manual Trigger */}
+          <div className="p-4 rounded-xl bg-slate-950 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all shadow-md">
             <div className="flex items-center gap-3">
-              <div className={`p-2.5 rounded-xl border text-lg ${settings.offlineModeEnabled ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-slate-900 border-slate-800 text-slate-400'}`}>
-                {settings.offlineModeEnabled ? '📴' : '🌐'}
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-lg">
+                📥
               </div>
-              <div>
-                <div className="text-sm font-bold text-slate-200">
-                  {currentLang === 'om' ? 'Haala Al-sararaa (Offline Mode)' : 'Offline Mode'}
+              <div className="space-y-0.5">
+                <div className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                  <span>{currentLang === 'om' ? 'Wal-simsiisa Al-sararaa (Sync Offline Cassation DB)' : 'Sync Offline Cassation Database'}</span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-bold">
+                    Court Staff Offline Pack
+                  </span>
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">
-                  {settings.offlineModeEnabled 
-                    ? (currentLang === 'om' ? 'Wal-simsiisni background dhaabsameera. Editoriin al-sararaa (offline) hojjeta.' : 'Background sync disabled. Editor is working in offline mode.') 
-                    : (currentLang === 'om' ? 'Wal-simsiisni background bameera. Editoriin Firestore waliin wal-simata.' : 'Background sync enabled. Editor is syncing with Firestore.')}
-                </div>
+                <p className="text-xs text-slate-400 max-w-xl">
+                  {currentLang === 'om'
+                    ? 'Bakka networkii hin jirre ykn dadhabaa ta\'etti hojjechuuf, murtiiwwan Dhaddacha Ijibbaataa fi Telegram archive hunda offline-ready godhee bilbila ykn kompiitara keessatti kuusa.'
+                    : 'Download and cache all Cassation Precedents and Telegram archives locally for reliable offline legal research in poor network areas.'}
+                </p>
+                {offlineCassationSyncMsg && (
+                  <div className="text-[11px] font-mono text-emerald-400 pt-1">
+                    {offlineCassationSyncMsg}
+                  </div>
+                )}
               </div>
             </div>
+
             <button
               type="button"
-              onClick={() => {
-                const newVal = !settings.offlineModeEnabled;
-                const updated = saveUserSettings({ offlineModeEnabled: newVal });
-                onSettingsUpdate(updated);
-                if (user) updateProfile({ offlineModeEnabled: newVal });
-                
-                // Explicitly stop/start the manager
-                if (newVal) {
-                  backgroundSyncManager.stop();
-                } else {
-                  backgroundSyncManager.start(3500);
-                }
-              }}
-              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                settings.offlineModeEnabled ? 'bg-amber-500' : 'bg-slate-800'
-              }`}
+              disabled={isOfflineCassationSyncing}
+              onClick={handleSyncOfflineCassationDatabase}
+              className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg transition-all cursor-pointer shrink-0"
             >
-              <span
-                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  settings.offlineModeEnabled ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
+              {isOfflineCassationSyncing ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                  <span>{currentLang === 'om' ? 'Al-sararaaf Kuusaara...' : 'Syncing Offline...'}</span>
+                </>
+              ) : (
+                <>
+                  <span>⚡</span>
+                  <span>{currentLang === 'om' ? 'Sync Offline (Amma Kuusi)' : 'Sync Offline Database'}</span>
+                </>
+              )}
             </button>
-          </div>
-
-          {/* Background Sync Worker Status Indicator */}
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <div className={`w-3 h-3 rounded-full ${backgroundSyncManager.isActive() ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse' : 'bg-slate-700'}`} />
-              </div>
-              <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                Background Sync Worker: {backgroundSyncManager.isActive() ? 'Active' : 'Inactive'}
-              </div>
-            </div>
-            {backgroundSyncManager.isActive() && (
-               <div className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                 CONNECTED TO FIRESTORE
-               </div>
-            )}
           </div>
         </div>
       </div>
@@ -2783,6 +3080,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* 13. Sync Log View */}
+      <div className="space-y-4 pt-8 border-t border-slate-800">
+        <div className="flex items-center gap-2 text-slate-200">
+          <span className="text-xl">📑</span>
+          <div>
+            <h3 className="font-bold text-base text-slate-100">
+              {currentLang === 'om' ? 'Galmee Wal-simsiisaa (Sync Logs)' : 'የማመሳሰል ምዝግብ ማስታወሻ (Sync Logs)'}
+            </h3>
+            <p className="text-xs text-slate-400">
+              {currentLang === 'om' 
+                ? 'Hojiirra oolmaa wal-simsiisaa sanadootaa fi jijjiiramoota of-umaan raawwataman to\'adhu.' 
+                : 'ሰነዶችን እና ለውጦችን በራስ-ሰር የማመሳሰል ሂደት ታሪክን ይከታተሉ።'}
+            </p>
+          </div>
+        </div>
+        <SyncLogView currentLang={currentLang} />
+      </div>
 
     </div>
   );

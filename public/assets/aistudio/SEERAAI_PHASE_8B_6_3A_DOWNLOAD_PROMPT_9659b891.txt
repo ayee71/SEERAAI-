@@ -1,0 +1,30 @@
+SEERAAI PRO — PHASE 8B.6.3A
+EXISTING HANDOFF ZIP — DOWNLOAD DELIVERY ONLY
+
+Continue in the EXISTING SEERAAI PRO Google AI Studio project.
+
+The existing handoff ZIP has already been reported at:
+/public/seeraai_phase_8b_6_2_handoff.zip
+
+Reported exact size: 46,949 bytes
+Reported SHA-256:
+bb2fb79d4df1a65240844c2f8fa1000cb9759c4a3517acf6f5ee19a6ef231203
+
+TASK:
+1. Do not rebuild, modify, rename, or replace the ZIP.
+2. Confirm that this exact file still exists and re-check its size and SHA-256.
+3. Make the existing ZIP available to the project owner as a real downloadable file attachment/artifact in this Chat Box response, if the platform supports downloadable artifacts.
+4. If attachments are not supported, provide a clickable download link that uses the actual current Preview origin plus this exact path:
+   /seeraai_phase_8b_6_2_handoff.zip
+5. Do not invent or guess an absolute URL. Verify that the link resolves to the existing file and that the response has the expected size of 46,949 bytes.
+6. If the current Preview origin cannot be accessed or verified, explain exactly where to open Preview and what prevents generating a full download link. Do not claim the file has been downloaded by the owner.
+
+STRICT SAFETY:
+- Do not edit application source files.
+- Do not change Firebase or production Firestore/Storage Rules.
+- Do not modify Auth, IAM, secrets, environment variables, Cloud Run, hosting, or deployment settings.
+- Do not commit, push, merge, deploy, or publish anything.
+- Do not include credentials, tokens, .env files, court documents, or user data.
+
+FINAL RESPONSE:
+Return the verified file name, actual size, actual SHA-256, whether it exactly matches the expected hash, and a working downloadable attachment/link. If that is technically impossible, state the limitation without fabricating a URL.

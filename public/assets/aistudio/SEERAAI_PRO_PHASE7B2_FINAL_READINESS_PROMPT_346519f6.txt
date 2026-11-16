@@ -1,0 +1,110 @@
+SEERAAI PRO — PHASE 7B.2: FINAL REMEDIATION READINESS REVIEW (READ-ONLY)
+
+ROLE
+You are auditing the EXISTING SEERAAI PRO application. Do not create a replacement application. Preserve the existing app, Firebase project, users, documents, court workflows, integrations, and deployment configuration.
+
+OBJECTIVE
+Review the Phase 7B.1 report against the ACTUAL repository and produce a final, evidence-backed remediation design. This phase is READ-ONLY. It is not approval to implement.
+
+ABSOLUTE EXECUTION GUARDRAILS
+1. Do not edit, create, delete, rename, reformat, or overwrite any source/configuration file.
+2. Do not install packages or dependencies.
+3. Do not write to or delete anything from Firebase, Firestore, Firebase Storage, Firebase Authentication, production databases, or user data.
+4. Do not deploy Firestore rules, Storage rules, Hosting, Cloud Run, DNS, or any production service.
+5. Do not print, inspect, export, or expose secrets, API keys, passwords, tokens, private documents, or personal data.
+6. Do not execute destructive cleanup, sign-out, cache purge, or migration against any real user session or production browser data.
+7. Read-only inspection and non-destructive tests in an isolated local test environment are allowed only if already available and they do not mutate production data. Clearly identify every test actually executed.
+8. If the repository or evidence is unavailable, say NOT VERIFIED. Never invent file paths, line numbers, test files, test outputs, legal sources, or successful results.
+
+REQUIRED REVIEW A — SIGN-OUT FAILURE SAFETY
+Inspect the actual implementations and call graph for:
+- AuthContext.tsx handleSignOut/signOut flow;
+- backgroundSync.ts queue creation, retries, in-flight synchronization, cancellation, and queue removal;
+- storage.ts local document persistence and ownership/session association;
+- indexedDb.ts database name, object stores, indexes, and user-scoped records;
+- every other app-owned localStorage, sessionStorage, Cache API, IndexedDB, service-worker, and browser cache location containing private or user-specific data.
+
+Produce a complete inventory with exact file paths, line ranges, key/store names, data types, and whether each item is cloud-synced, pending, local-only, or non-sensitive. Do not assume that an empty queue proves every local draft has been synced.
+
+Analyze these failure scenarios separately:
+1. No pending queue; purge succeeds.
+2. Pending edits; final sync succeeds.
+3. Pending edits; network is offline or sync fails.
+4. A write starts while sign-out is being initiated.
+5. An in-flight sync request completes after sign-out begins.
+6. Two or more tabs are open for the same account.
+7. Browser closes/crashes during sign-out.
+8. localStorage removal fails.
+9. IndexedDB database deletion is blocked by an open connection or fails.
+10. A second user signs in before cleanup has completed.
+
+CRITICAL DESIGN REQUIREMENT:
+Do not recommend silently redirecting to login and claiming secure cleanup when local-data deletion failed. Define an honest fail-safe state. Explain what happens to the Firebase session, UI access, in-memory credentials, and remaining local data when purge partially or completely fails. Compare viable approaches, including retrying cleanup, blocking account switch until cleanup is complete, a clearly warned sign-out-with-residual-data path, or protecting cached data with encryption. Identify trade-offs and choose a safe, minimal design. Do not implement it.
+
+Pending edits must never be silently lost. The design must distinguish:
+- Retry synchronization;
+- Stay signed in and resume later;
+- Explicitly discard unsynced/local-only changes after a clear confirmation that they will be lost.
+
+Define when a queue item is considered committed to the cloud, how in-flight writes are drained or cancelled, how duplicate retries are prevented, and how multi-tab coordination avoids races. BroadcastChannel/storage events may coordinate tabs but must not transmit secrets or document contents.
+
+REQUIRED REVIEW B — FIRESTORE / STORAGE ACCESS CONTROL
+Inspect actual firestore.rules, storage.rules, relevant server routes, Firebase Admin SDK usage, and custom-claim assignment/verification logic.
+
+Verify separately:
+- Anonymous read of deliberately published public legal-source records only;
+- Public users' private-document CRUD limited to their own UID;
+- No cross-user access;
+- No public-user access to institutional dockets, orders, judgments, court documents, or audit logs;
+- Judge/registrar/court-admin access limited to the correct institution;
+- Legal experts/advocates access only to explicitly assigned records, if this feature actually exists;
+- Server routes independently authenticate and authorize requests, including routes using Firebase Admin SDK (Admin SDK operations may bypass Firestore Security Rules);
+- Storage path ownership and institution checks;
+- List/query access, not just direct document reads.
+
+IMPORTANT FIRESTORE RULE CHECK:
+For document creation, inspect whether ownership is checked against request.resource.data.userId (or an equivalent trusted path/claim), not only resource.data.userId. For updates, ensure existing ownership is checked and the owner/institution identity cannot be changed by the client. For deletes, check the existing resource. Explain any exceptions. Do not infer that a generic expression `request.auth.uid == resource.data.userId` correctly covers create operations.
+
+For every PASS, provide the exact test file path, test case name, command, isolated environment, and actual output or result artifact. If any one is missing, classify the result as NOT VERIFIED or STATIC INFERENCE, not EXECUTED PASS. Do not run tests against production.
+
+REQUIRED REVIEW C — TICKER AND LEGAL SOURCES
+Inspect index.html and the real source of ticker entries. Identify each hard-coded, simulated, stale, or externally sourced entry. Treat unverified proclamation numbers, case numbers, holdings, and Gazette references as non-publishable. Recommend a neutral message such as “Legal-source verification in progress” until an authoritative record is confirmed. For any retained legal entry, require source title, issuing institution, official publication/case identifier, publication/decision date, official URL or source file, retrieval date, and a traceable citation. Do not claim that a legal instrument exists based on a model-generated answer or search snippet alone.
+
+REQUIRED REVIEW D — VERSION AND MODEL CLAIMS
+Verify the actual package version, runtime, dependency versions, and configured model IDs from repository configuration and code. Separate “model name exists” from “this app's configured API call successfully works.” Do not call an API with production secrets. Mark runtime model verification NOT RUN unless supported by safe, real evidence.
+
+REQUIRED REVIEW E — TEST PLAN
+Provide a test matrix with exact proposed test file names and cases for:
+- Sign-out with empty queue;
+- Sync success;
+- Sync failure and Stay Signed In;
+- Explicit discard confirmation;
+- Race with a new write;
+- Two-tab sign-out/account switching;
+- localStorage and IndexedDB deletion failures;
+- preservation of language/theme preferences;
+- public-library anonymous read;
+- private draft cross-user denial;
+- Firestore create/update/delete ownership checks;
+- cross-institution denial;
+- Storage direct download and list denial;
+- server endpoint authorization, including Admin SDK routes;
+- ticker placeholder removal and source validation.
+
+For every test, state whether it was actually run or is only proposed. Do not fabricate test evidence.
+
+REQUIRED OUTPUT FORMAT
+1. Executive decision: READY FOR NARROW IMPLEMENTATION / NOT READY, with reasons.
+2. Repository identity/version evidence.
+3. Corrected local-data inventory.
+4. Sign-out failure-state table and recommended state machine.
+5. Firestore/Storage/server authorization findings.
+6. Ticker/legal-source findings.
+7. Exact minimal file-by-file patch plan, with line references and behavior changes only; no code edits.
+8. Test matrix: EXECUTED versus PROPOSED versus NOT VERIFIED.
+9. Data-loss, privacy, compatibility, and rollback risks.
+10. Final explicit statement confirming no files or production data were changed.
+11. A list of unresolved blockers that require human decision.
+
+APPROVAL BOUNDARY
+Do not begin implementation in this phase. Do not interpret this prompt as authorization to edit code. End by asking for a separate, explicit Phase 7C approval only after the above evidence-backed review is complete. If readiness is not established, recommend the smallest additional read-only audit needed.

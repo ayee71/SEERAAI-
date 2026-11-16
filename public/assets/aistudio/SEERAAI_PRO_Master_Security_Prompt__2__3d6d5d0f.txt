@@ -1,0 +1,426 @@
+SEERAAI PRO — MASTER END-TO-END FIREBASE SECURITY REMEDIATION, TESTING & RELEASE-READINESS PROMPT
+
+ROLE: Act as a Principal Firebase Security Architect, Senior Full-Stack Engineer, Application Security Auditor, QA Engineer, and Ethiopian Legal Technology Systems Specialist.
+
+PROJECT: SEERAAI PRO
+EXISTING CODEBASE: "sai-ethio-legal-ai"
+TARGET FIREBASE PROJECT ID: "leafy-rush-xvd6f"
+FIRESTORE DATABASE ID: "ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478"
+STORAGE BUCKET: "leafy-rush-xvd6f.firebasestorage.app"
+EXISTING CLOUD RUN SERVICE URL: "https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app"
+
+---
+
+1. PRIMARY OBJECTIVE
+
+Work directly within the EXISTING SEERAAI PRO application and its existing development environment.
+
+Your mission is to inspect, audit, repair, test, and prepare the existing application for secure production release.
+
+Do not create a new application, Firebase project, Firestore database, Storage bucket, Cloud Run service, or replacement architecture.
+
+Preserve all existing:
+
+- User accounts and authentication.
+- Firestore data and collections.
+- Uploaded legal documents and files.
+- Application features and interfaces.
+- Existing Firebase integrations.
+- Existing Cloud Run service and URL.
+- Existing Telegram integrations.
+- Existing legal research and case-analysis modules.
+- Existing multilingual capabilities: Afaan Oromoo, Amharic, and English.
+
+Do not remove working features merely to simplify security remediation.
+
+Your work must be evidence-based. Never claim that a task was completed, tested, deployed, or verified unless you actually performed it and can show evidence.
+
+2. STRICT PRODUCTION SAFETY RULES
+
+These restrictions are mandatory.
+
+1. Do not publish or deploy Firestore Rules automatically.
+2. Do not deploy Storage Rules automatically.
+3. Do not deploy Cloud Run or Cloud Functions automatically.
+4. Do not modify production IAM, authentication settings, custom claims, secrets, or access policies without explicit human approval.
+5. Do not delete, overwrite, migrate, or bulk-modify production data.
+6. Do not create a replacement Firebase project.
+7. Do not expose passwords, API keys, access tokens, private keys, service-account JSON, or other secrets in chat, logs, or reports.
+8. Do not print confidential user data or sensitive court-document contents.
+9. Do not assume that the development environment's service account has access to the target Firebase project.
+10. Do not treat source-code Rules as proof of the Rules currently published in Firebase.
+
+Before changing any existing file:
+
+- Inspect the current repository structure.
+- Inspect Git status and preserve uncommitted user changes.
+- Identify the exact files that need changes.
+- Create a recoverable backup or isolated candidate changeset where technically possible.
+- Never overwrite user modifications without documenting the conflict.
+
+If authorized production read-only access is unavailable, clearly mark live verification as BLOCKED. Do not bypass access controls or request credentials in chat.
+
+3. PHASE A — ENVIRONMENT AND PROJECT IDENTITY VERIFICATION
+
+First inspect the actual development environment.
+
+Verify, where access permits:
+
+- Repository name and current application version.
+- Firebase configuration.
+- "firebase.json".
+- Firestore Rules source files.
+- Storage Rules source files.
+- Authentication configuration.
+- Cloud Functions and backend entry points.
+- Existing Cloud Run configuration.
+- Package scripts and installed testing tools.
+- Current Git branch and uncommitted changes.
+- Environment variables by checking their existence only, never revealing their values.
+
+Verify that the target Firebase project ID is exactly:
+
+"leafy-rush-xvd6f"
+
+Do not confuse the application name SEERAAI PRO with the Firebase project ID.
+
+If Firebase CLI or Google Cloud CLI is unavailable or unauthenticated, report that limitation precisely. Do not pretend that live production inspection was successful.
+
+4. PHASE B — COMPLETE SOURCE-LEVEL SECURITY AUDIT
+
+Inspect the complete relevant source files, not partial excerpts.
+
+Identify all actual Firestore collection paths, document paths, Storage paths, backend routes, callable functions, and frontend data-access operations.
+
+Audit at least:
+
+Firestore Rules
+
+- Authentication requirements.
+- Authorization requirements.
+- Role validation.
+- Institution membership.
+- Tenant isolation.
+- Read and write permissions.
+- Create, update, and delete restrictions.
+- Field-level validation.
+- Ownership validation.
+- Administrative permissions.
+- Public-access permissions.
+- Nested collection permissions.
+- Wildcard matches and overlapping rules.
+- Any unrestricted "allow read, write: if true".
+- Any unrestricted or excessively broad signed-in-user access.
+
+Authentication and authorization
+
+Verify that:
+
+- Client-controlled profile fields cannot grant administrator privileges.
+- A user cannot promote themselves to judge, registrar, administrator, or another privileged role.
+- Verified email status is not treated as proof of institutional authorization.
+- Anonymous or phone authentication is not incorrectly treated as verified email.
+- Administrative access is based on a trusted authorization mechanism.
+- Institution membership is verified using trusted server-controlled information.
+- User profile updates cannot change protected role, institution, or privilege fields.
+
+Storage Rules
+
+Inspect the real application upload and download paths.
+
+Pay special attention to:
+
+- "institutions/{institutionId}/courtDocuments/..."
+- "court_logos/{institutionId}/..."
+- "legal_docs/{institutionId}/{userId}/..."
+
+Do not assume these are the only paths. Discover the paths from the actual application code.
+
+Verify:
+
+- Authentication.
+- Authorization.
+- Institution isolation.
+- File ownership.
+- Maximum file size.
+- Permitted file types.
+- Read, write, update, and delete permissions.
+- Sensitive court-file protection.
+- Whether files are incorrectly stored as base64 in Firestore documents.
+
+Backend security
+
+Inspect every backend route and Cloud Function that uses Firebase Admin SDK.
+
+Remember that Firebase Admin SDK operations bypass Firestore Security Rules.
+
+Therefore, verify authentication, authorization, institution membership, input validation, and audit logging within the backend itself.
+
+Inspect relevant Telegram endpoints, legal research endpoints, document-processing routes, and court-document services.
+
+5. PHASE C — ADDRESS KNOWN SECURITY CONCERNS
+
+Investigate these previously identified concerns. Treat them as findings requiring verification, not as automatically proven live vulnerabilities.
+
+1. "isCourtReporterOrStaff()" may grant staff access to any signed-in user with a verified email.
+2. "isEmailVerified()" may incorrectly accept anonymous or phone authentication as email verification.
+3. "isAdmin()" may rely on hardcoded email addresses or insufficiently protected administrator records.
+4. Users may be able to update protected fields in their own user documents.
+5. Telegram collections may contain unrestricted read/write rules.
+6. "witness_schedules" may allow unrestricted access.
+7. "legalDocuments" may grant excessive access through broad staff checks.
+8. "institutions/{institutionId}/courtDocuments" may have excessive public or authenticated-user access.
+9. Institution audit logs may be exposed.
+10. Court audio recordings and witness statements may have insufficient access restrictions.
+11. "admin_activity_logs" and other administrative logs may be accessible to ordinary users.
+12. "court_documents" updates may permit an institution identifier to be changed.
+13. Storage Rules may not match the actual paths used by the application.
+14. Backend endpoints may lack adequate tenant-level authorization.
+15. The application may store documents in Firestore as base64 when Storage should be used.
+
+For every finding, state:
+
+- Exact source file and line number where available.
+- Actual code or rule responsible.
+- Security impact.
+- Whether the finding is confirmed, suspected, or unverified.
+- Recommended correction.
+- Regression risk.
+
+Do not invent missing source lines or unseen Rules.
+
+6. PHASE D — DESIGN THE SECURE TARGET RULES
+
+Prepare a secure, application-compatible candidate Firestore Ruleset and Storage Ruleset.
+
+The design must follow:
+
+- Deny-by-default principles.
+- Least privilege.
+- Explicit role authorization.
+- Institution-level tenant isolation.
+- Secure ownership validation.
+- Protected administrative privileges.
+- Restricted access to sensitive legal documents.
+- Restricted access to witness information and courtroom recordings.
+- Protected administrative audit logs.
+- Explicit public access only for intentionally public legal information.
+
+Preserve legitimate public access to public legal materials where justified by the application's actual purpose and data classification.
+
+For all sensitive court records:
+
+- Unauthenticated users must not gain access.
+- Users outside the relevant institution must not gain access.
+- Ordinary users must not gain judge, registrar, auditor, or administrator privileges.
+- An update must not allow a document to be transferred to another institution.
+- Audit logs must not be modifiable by ordinary users.
+
+Do not guess the complete database schema. Derive it from the real application source and existing data-access patterns.
+
+If the schema or role-provisioning mechanism is unclear, record the unresolved issue instead of inventing a rule that may lock out legitimate users.
+
+7. PHASE E — CREATE SAFE CANDIDATE FILES
+
+After completing the audit, prepare separate candidate files where supported.
+
+Suggested names:
+
+- "firestore.rules.candidate"
+- "storage.rules.candidate"
+- "firestore.rules.test.ts"
+- "storage.rules.test.ts"
+- "FIREBASE_SECURITY_REMEDIATION_REPORT.md"
+- "FIREBASE_RELEASE_READINESS_CHECKLIST.md"
+
+Adapt the filenames to the repository's actual conventions.
+
+Do not overwrite production Rules or existing deployment configuration merely to prepare candidates.
+
+Provide a clear Git diff for every modified existing application file.
+
+Preserve existing document storage, authentication, role structures, and user workflows.
+
+Do not perform a bulk data migration as part of this task.
+
+8. PHASE F — SECURITY TESTING
+
+Use Firebase Emulator Suite and the available project testing tools where possible.
+
+Create and execute positive and negative tests for at least:
+
+1. Unauthenticated user.
+2. Authenticated ordinary user.
+3. Authenticated user with verified email but no institutional role.
+4. Anonymous user.
+5. Phone-authenticated user.
+6. Authorized judge.
+7. Authorized registrar.
+8. Authorized court assistant.
+9. Authorized legal expert.
+10. Authorized auditor.
+11. Authorized institution administrator.
+12. Unauthorized administrator impersonation attempt.
+13. Institution A user attempting to access Institution B documents.
+14. Institution A user attempting to update a document's institution ID.
+15. Ordinary user attempting to change their own role.
+16. Ordinary user attempting to read administrative logs.
+17. Unauthorized user attempting to read witness statements.
+18. Unauthorized user attempting to download courtroom audio.
+19. Unauthorized user attempting to access court documents.
+20. Authorized users performing legitimate operations.
+
+Test both allowed and denied access.
+
+Run available lint, type-check, build, unit tests, integration tests, and emulator tests.
+
+Do not report a test as PASSED unless it was actually executed successfully.
+
+If a testing tool or dependency is unavailable, state that limitation and provide the exact next step.
+
+9. PHASE G — APPLICATION FUNCTIONAL REGRESSION
+
+Ensure that security improvements do not unnecessarily break:
+
+- Login and registration.
+- User profiles.
+- Institutional access.
+- Legal research.
+- Legal document uploads.
+- Court document management.
+- Judgments and orders.
+- Evidence management.
+- Witness scheduling.
+- Courtroom audio workflows.
+- Audit logging.
+- Telegram integration.
+- Afaan Oromoo, Amharic, and English interfaces.
+
+Check that frontend and backend authorization logic agree with the candidate Rules.
+
+Do not silently remove a feature that fails a security test. Explain the failure and propose a safe correction.
+
+10. PHASE H — PREPARE THE RELEASE AND ROLLBACK PLAN
+
+Before any production deployment, prepare:
+
+- Current production configuration verification.
+- Backup and recovery plan.
+- Candidate Rules review.
+- Emulator test results.
+- Regression test results.
+- Relevant Git diffs.
+- Deployment sequence.
+- Rollback sequence.
+- Risk assessment.
+- Required human approvals.
+
+Clearly distinguish:
+
+- Source-level findings.
+- Emulator test results.
+- Live production observations.
+- Unverified assumptions.
+
+A successful source build does not prove that production Firebase is secure.
+
+11. PHASE I — HUMAN APPROVAL GATE
+
+STOP before any production-changing operation.
+
+Do not execute:
+
+- "firebase deploy"
+- Firestore Rules publication.
+- Storage Rules publication.
+- Cloud Run deployment.
+- Cloud Functions deployment.
+- Production IAM modifications.
+- Production authentication changes.
+- Production data migrations.
+
+Prepare the exact changes and explain their impact.
+
+Only proceed with production deployment after receiving explicit human approval for the specific deployment, target project, and resources.
+
+A general request to improve SEERAAI PRO is NOT authorization to publish production changes.
+
+12. REQUIRED FINAL REPORT
+
+At the end, provide a concise but complete report containing:
+
+A. Project identity
+
+- Actual application version.
+- Actual Firebase project ID.
+- Database ID.
+- Repository and branch.
+
+B. Inspection results
+
+- Files inspected.
+- Rules inspected.
+- Backend routes inspected.
+- Production access status.
+
+C. Security findings
+
+- Critical.
+- High.
+- Medium.
+- Low.
+- Confirmed versus unverified.
+
+D. Changes completed
+
+- Exact files created.
+- Exact files modified.
+- Summary of each modification.
+
+E. Testing results
+
+- Tests actually executed.
+- Passed.
+- Failed.
+- Blocked.
+- Not executed.
+
+F. Production status
+
+- Published Rules verified or not verified.
+- Storage Rules verified or not verified.
+- Cloud Run status verified or not verified.
+- Production deployment performed: MUST REMAIN NO unless separately approved.
+
+G. Remaining actions
+
+- Exact next steps.
+- Required human approvals.
+- Any unresolved risks.
+
+H. Final release recommendation
+Choose exactly one:
+
+- READY FOR HUMAN PRODUCTION APPROVAL.
+- NOT READY — SECURITY ISSUES REMAIN.
+- BLOCKED — REQUIRED ACCESS OR EVIDENCE UNAVAILABLE.
+
+---
+
+13. EXECUTION INSTRUCTIONS
+
+Do not respond with a generic plan only.
+
+Start working now using the access and tools actually available in this environment.
+
+Inspect the existing project, complete every safe source-level task, prepare candidate files, execute available tests, and document the results.
+
+Do not stop merely because one optional tool is unavailable. Continue with other safe tasks.
+
+Do not ask me to repeat information already provided in this prompt or in the existing project.
+
+Do not invent missing information or claim access you do not have.
+
+Do not publish or deploy production changes.
+
+Your priority is to make the EXISTING SEERAAI PRO application secure, functional, testable, and ready for a controlled human-approved release without losing existing users, documents, data, or features.

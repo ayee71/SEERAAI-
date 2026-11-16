@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { saveDocumentToFirestore, saveDraftToFirestore, FirestoreDocumentData } from '../services/firestoreDraftService';
 import { getUserSettings } from '../services/storage';
+import { isWriteLocked, trackInFlightWrite } from '../services/signOutSafetyService';
 
 export type AutoSaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
@@ -37,19 +38,37 @@ export function useFirestoreAutoSave({
     latestDataRef.current = data;
   }, [data]);
 
+  // Cancel any pending debounce timer on privacy clear
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onCleared = () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      setSaveStatus('idle');
+    };
+    window.addEventListener('seera_privacy_cleared', onCleared);
+    return () => window.removeEventListener('seera_privacy_cleared', onCleared);
+  }, []);
+
   const performSave = useCallback(
     async (overrideData?: Partial<FirestoreDocumentData>) => {
-      if (!docId) return;
+      if (!docId || isWriteLocked()) {
+        return;
+      }
       const dataToSave = overrideData || latestDataRef.current;
       setSaveStatus('saving');
       setErrorMessage(null);
 
       try {
-        if (collectionName === 'user_documents') {
-          await saveDocumentToFirestore(docId, dataToSave);
-        } else {
-          await saveDraftToFirestore(docId, dataToSave);
-        }
+        await trackInFlightWrite(`autosave:${collectionName}:${docId}`, (async () => {
+          if (collectionName === 'user_documents') {
+            await saveDocumentToFirestore(docId, dataToSave);
+          } else {
+            await saveDraftToFirestore(docId, dataToSave);
+          }
+        })());
 
         const now = new Date();
         setLastSavedAt(now);
@@ -69,7 +88,7 @@ export function useFirestoreAutoSave({
   // Trigger 5-second debounce on data change
   useEffect(() => {
     const settings = getUserSettings();
-    if (!enabled || !docId || settings.offlineModeEnabled) return;
+    if (!enabled || !docId || settings.offlineModeEnabled || isWriteLocked()) return;
 
     // Skip trigger on initial mounting render
     if (isFirstRender.current) {
@@ -92,7 +111,9 @@ export function useFirestoreAutoSave({
 
     // Set new 5-second debounce timer
     timerRef.current = setTimeout(() => {
-      performSave();
+      if (!isWriteLocked()) {
+        performSave();
+      }
     }, debounceMs);
 
     return () => {
@@ -106,7 +127,9 @@ export function useFirestoreAutoSave({
     if (timerRef.current) {
       clearTimeout(timerRef.current);
     }
-    await performSave();
+    if (!isWriteLocked()) {
+      await performSave();
+    }
   }, [performSave]);
 
   return {

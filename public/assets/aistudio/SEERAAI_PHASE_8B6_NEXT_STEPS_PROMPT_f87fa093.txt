@@ -1,0 +1,74 @@
+SEERAAI PRO — PHASE 8B.6.1: CI TEST SUITE VERIFICATION, SAFE BRANCH COMMIT, AND GITHUB ACTIONS EXECUTION
+
+PROJECT IDENTITY
+- Application: SEERAAI PRO
+- Intended GitHub repository: ayee71/SEERAAI-
+- Firebase production project ID: leafy-rush-xvd6f
+- Isolated emulator project ID: demo-seeraai-test
+- Candidate Firestore Rules: firestore.rules.phase8b5.3.integrated.candidate
+- Candidate Storage Rules: storage.rules.phase8b5.4.integrated.candidate
+- Emulator config: firebase.emulator.test.json
+- GitHub Actions workflow: .github/workflows/rules-test.yml
+- Target branch: ci/rules-emulator-tests
+
+IMPORTANT: The previous report establishes candidate-file recovery/integrity and CI harness preparation only. It does NOT establish that Firestore/Storage emulator tests have actually run or passed. Keep release status BLOCKED until real CI evidence is reviewed.
+
+PHASE A — READ-ONLY TEST-SUITE AUDIT
+1. Verify the exact connected remote URL and confirm that it belongs to ayee71/SEERAAI-. Do not assume it is the previously referenced sai-ethio-legal-ai repository.
+2. Inspect package.json and package-lock.json. Identify the actual test scripts and dependencies, including firebase-tools, firebase, and @firebase/rules-unit-testing where required.
+3. List every Firestore Rules and Storage Rules test file, with exact paths.
+4. Verify that the workflow actually invokes a test command that discovers and executes those test files. A successful emulator startup alone is NOT a test pass.
+5. Verify the test command exits non-zero when any assertion fails and reports a non-zero failure to GitHub Actions.
+6. Verify firebase.emulator.test.json loads the candidate Firestore and Storage Rules files, not the production firestore.rules or storage.rules.
+7. Verify the emulator project ID is exactly demo-seeraai-test and that the workflow has no production deploy, publish, Firebase Rules publish, or production data operation.
+8. Verify test coverage includes both allowed and denied cases, including: unauthenticated access; normal user; judge/registrar/admin roles as applicable; institution/tenant isolation; cross-institution denial; user/profile privilege escalation denial; Telegram public-read versus restricted-write; subscriber/log/stat privacy; Storage ownership; MIME/size restrictions; court-document/audio/logo paths; and malformed/missing/conflicting claims where the rule schema supports those cases.
+9. Verify all hash preflight and postflight checks use the expected candidate hashes recorded in the latest Phase 8B.5.10 report. Recompute hashes from the actual files; do not blindly trust the report.
+10. Report any missing tests, invalid paths, missing dependencies, weak assertions, incorrect emulator configuration, or workflow gaps.
+
+If the suite is incomplete, prepare only the minimum safe missing test/config changes using the actual Rules schema. Do not weaken security assertions to make tests pass. Do not claim tests passed unless they were executed and output is available.
+
+PHASE B — PREPARE AN ISOLATED BRANCH
+Only after Phase A confirms the repository identity and the test suite/workflow are materially valid:
+1. Create branch ci/rules-emulator-tests from the current default branch, preserving all unrelated changes.
+2. Stage only the two candidate Rules files, firebase.emulator.test.json, .github/workflows/rules-test.yml, genuine Rules test source files, and only necessary package manifest/lockfile changes.
+3. Do NOT stage production firestore.rules, storage.rules, firebase.json, secrets, .env files, service-account credentials, user data, court documents, build outputs, or unrelated app changes.
+4. Review the complete staged diff and recompute candidate hashes.
+5. Run all available checks. If the local environment cannot download dependencies or run emulator binaries, record the exact blocker and leave CI as pending; do not fabricate local test success.
+
+PHASE C — COMMIT AND PUSH
+1. Commit only the reviewed Phase 8B.6 CI test changes on ci/rules-emulator-tests.
+2. Never commit directly to main/master.
+3. Never force-push, overwrite remote work, or delete files to resolve conflicts.
+4. Push the isolated branch to the verified remote.
+5. If GitHub authentication or write permission is required, stop and tell me the exact permission/action needed. Never ask me to paste tokens, passwords, or API keys.
+6. Report the real commit SHA and push result.
+
+PHASE D — TRIGGER GITHUB ACTIONS WITHOUT MERGING
+1. Inspect the workflow's actual name and trigger list.
+2. Since the reported workflow uses pull_request and workflow_dispatch, create or instruct me to create a draft pull request from ci/rules-emulator-tests into the repository's default branch, without merging it, so the pull_request CI can run if configured for that event.
+3. Manual workflow_dispatch is available only when the workflow file exists on the repository default branch. Do not tell me to merge production changes just to make the Run workflow button appear.
+4. Do not merge the pull request. Do not publish or deploy anything.
+5. Confirm that a real workflow run starts. If it does not, inspect the trigger, Actions permissions, branch protection, and workflow YAML; report the actual blocker.
+
+PHASE E — EVIDENCE AND RELEASE GATE
+1. Wait only within the current interactive execution; do not claim background monitoring.
+2. Inspect the actual workflow run status and job logs.
+3. Download/collect the rules-test-evidence artifact if the run produces it.
+4. Verify that the artifact contains test output, emulator logs, exit status, workflow/run identifier, and before/after SHA-256 hashes.
+5. Verify tests actually executed and include non-zero assertion counts for both Firestore and Storage where applicable.
+6. Distinguish test pass, test failure, skipped tests, cancelled runs, and missing evidence.
+7. Keep RELEASE STATUS = BLOCKED until the project owner reviews the complete evidence, reviews the candidate diff, confirms production baseline/backup and rollback readiness, and separately authorizes any production change.
+
+ABSOLUTE PRODUCTION SAFETY
+- Do not deploy or publish.
+- Do not modify production Firestore or Storage Rules.
+- Do not modify Firebase Auth, custom claims, IAM, service accounts, secrets, Cloud Run, or production data.
+- Do not create another application, repository, Firebase project, or database.
+- Preserve all existing SEERAAI PRO users, documents, integrations, and features.
+- Stop and report when an action would be destructive, production-affecting, or requires ungranted permissions.
+
+FINAL REPORT — WRITE IN AFAAN OROMOO
+Provide exact repository and branch, files staged/committed, test-file paths, test command, number of executed assertions, actual emulator results, workflow run URL/ID, commit SHA, artifact contents, hash verification, blockers, and release status. Never use PASS to describe unexecuted tests.
+
+EXECUTION RULE
+Proceed automatically through safe, non-destructive steps where the connected environment permits. Do not stop for repeated approval of ordinary inspection or local checks. Ask only for required GitHub authorization or a genuinely risky/destructive decision. If the current environment cannot perform an action, state exactly what I must click or authorize; do not pretend the action was completed.

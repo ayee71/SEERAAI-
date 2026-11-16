@@ -1,0 +1,92 @@
+SEERAAI PRO — PHASE 7C.1: POST-IMPLEMENTATION SAFETY VERIFICATION (READ-ONLY)
+
+ROLE
+You are auditing the EXISTING SEERAAI PRO application after the reported Phase 7C local implementation. This is a READ-ONLY verification task. Do not make or suggest that any change has already been independently verified unless you inspect the actual current source and test output.
+
+ABSOLUTE EXECUTION GUARDRAILS
+1. Do NOT edit, create, delete, rename, overwrite, format, or regenerate any source/configuration files.
+2. Do NOT install, remove, or upgrade packages or dependencies.
+3. Do NOT write to or delete anything in Firebase, Firestore, Storage, Auth, production, staging, or any remote service.
+4. Do NOT deploy Firestore rules, Storage rules, Hosting, Cloud Run, DNS, or any other service.
+5. Do NOT print, request, inspect, or expose API keys, passwords, tokens, private user data, or secrets.
+6. Do NOT run destructive cleanup, sign-out, database deletion, or data migration tests against real user data. Use only isolated test fixtures or a disposable local browser profile if available.
+7. If repository/source access or a safe isolated test environment is unavailable, say NOT VERIFIED and stop rather than infer.
+
+AUDIT OBJECTIVE
+Independently verify whether the two reported Phase 7C changes are actually present and safe:
+- /src/context/AuthContext.tsx
+- /index.html
+Also inspect only the directly related existing implementation needed to understand sign-out and local persistence, including:
+- /src/services/backgroundSync.ts
+- /src/services/storage.ts
+- /src/services/indexedDb.ts (if present)
+- any existing auth/session or multi-tab synchronization helper directly called by the sign-out flow.
+Do not broaden the scope or modify unrelated modules.
+
+A. SOURCE IDENTITY AND DIFF PROOF
+1. Confirm current app version from package.json and report the exact version.
+2. Inspect the actual current contents of the changed files.
+3. Provide the exact current function names and line ranges for sign-out, pending-queue inspection, cache purge, IndexedDB deletion, and ticker content.
+4. Provide a concise actual diff summary. If Git history/diff is unavailable, explicitly say so; do not invent a before/after diff.
+5. Resolve the inconsistency in the previous reports: one report listed deletion of seera_offline_db, seera_ai_db, and SeeraAIOfflineDB; another mentioned only SeeraAIOfflineDB. List every database name actually deleted by the current code and identify which code path deletes each one.
+
+B. CRITICAL DATA-LOSS REVIEW — MUST PASS BEFORE ANY DEPLOYMENT
+Trace the full sign-out flow from the UI action through AuthContext and all called services. Determine whether the current implementation:
+1. Prevents new local writes and pauses/coordinates background sync while sign-out is in progress.
+2. Waits for in-flight sync/write operations safely.
+3. Enumerates ALL relevant unsynced queue entries and local-only drafts, not merely one queue or one key.
+4. Distinguishes cloud-confirmed records from queued-but-unsynced and local-only records. A missing queue item is NOT proof that a draft is safely stored in the cloud.
+5. Verifies server/cloud acknowledgment before purging any pending data.
+6. When sync fails or the device is offline, keeps the user signed in and preserves all unsynced work unless the user explicitly confirms a clearly worded discard action.
+7. Requires a second explicit confirmation for “Discard Unsynced Changes & Sign Out,” and clearly identifies that unsynced work will be permanently removed.
+8. Deletes only explicitly enumerated SEERAAI-owned keys and stores. Check whether broad prefix deletion such as all keys beginning `seera_ai_` or `seera_offline_` could delete unrelated, future, or still-needed data.
+9. Handles IndexedDB open connections, blocked deletion, transaction errors, and deletion failure. Do not treat a requested delete as proof that the database was deleted.
+10. Prevents a different user/account in another tab from seeing the prior user's cached data. Check BroadcastChannel/storage-event behavior, auth-state propagation, and failure handling.
+11. Does not redirect to login or permit another account to sign in while sensitive prior-user data remains accessible after a purge failure.
+
+For every item, mark PASS / FAIL / NOT VERIFIED and cite exact file paths and line ranges. Explain any data-loss path plainly.
+
+C. TICKER SOURCE-INTEGRITY REVIEW
+1. Inspect the actual ticker array/content in index.html.
+2. Confirm that unverified Proclamation No. 1385/2026 and Cassation File No. 248912/2026 have been removed from visible content, fallback strings, and duplicate ticker instances.
+3. Check whether any remaining wording (including “database active”) implies that legal sources are verified or synchronized when this has not been established. Flag unsupported claims.
+4. Recommend neutral wording only; do not edit the file.
+
+D. TEST EVIDENCE REVIEW
+Separate tests into exactly these categories:
+- EXECUTED: show actual command, relevant output/exit status, and environment evidence available in this run.
+- PROPOSED: tests not yet run.
+- NOT VERIFIED: claims for which the current run has no evidence.
+Do not repeat prior reports' PASS statements as current evidence. Do not claim Firebase Emulator tests passed unless you actually execute them in an isolated local emulator with test files present and show the relevant output. Do not use production data.
+
+At minimum assess whether safe isolated tests exist for:
+- no pending edits -> targeted purge and successful sign-out;
+- pending queue -> successful sync acknowledgment before purge;
+- offline/network failure -> remain signed in and retain data;
+- local-only draft not represented in the sync queue -> retain data;
+- explicit discard confirmation -> discard only after confirmation;
+- IndexedDB deletion blocked/fails -> prevent unsafe account switch;
+- two tabs / account switch -> prior user's data inaccessible;
+- non-sensitive language/theme preferences preserved;
+- unverified ticker placeholders absent.
+
+E. FINAL DECISION
+Give one of:
+- NO-GO: data-loss/privacy issue exists;
+- NOT VERIFIED: source or isolated test evidence is insufficient;
+- READY FOR STAGING TEST ONLY: all source-level safeguards are present, but isolated browser/emulator testing remains;
+- READY FOR NEXT CONTROLLED STEP: source and isolated tests support the narrow change.
+Do NOT approve public production launch in this phase.
+
+F. REQUIRED REPORT FORMAT
+1. Executive decision.
+2. Exact changed-file/source evidence.
+3. Sign-out flow diagram in plain text.
+4. Data-loss and cross-user privacy findings.
+5. Ticker findings.
+6. Executed / proposed / not verified test matrix.
+7. Minimal remediation list, if needed, with exact files and line ranges.
+8. Explicit confirmation that no files, packages, Firebase resources, production data, secrets, or deployments were changed.
+
+STOP CONDITION
+If any local-only draft or queued edit can be deleted without confirmed cloud synchronization or explicit user discard consent, classify the implementation NO-GO. If the source cannot be inspected, classify it NOT VERIFIED. Do not implement fixes. Wait for separate human approval after delivering the report.

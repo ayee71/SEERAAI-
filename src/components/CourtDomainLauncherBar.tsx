@@ -113,6 +113,7 @@ export const CourtDomainLauncherBar: React.FC<CourtDomainLauncherBarProps> = ({
         <div className="flex items-center gap-1.5 overflow-x-auto pt-1 no-scrollbar text-[11px]">
           <span className="text-slate-500 font-mono text-[10px] uppercase shrink-0 mr-1">Fakkeenya:</span>
           {[
+            { name: '✨ Shaakala mmurtii.com', domain: 'mmurtii.com' },
             { name: 'Gurbicha', domain: 'court://mmagurbicha.serai' },
             { name: 'Adaamaa', domain: 'court://mmaadaamaa.serai' },
             { name: 'Shawaa Bahaa', domain: 'court://mmoshawaabahaa.serai' },

@@ -1,0 +1,227 @@
+SEERAAI - SIRNA XIINXALA GALMEE MANA MURTII (VERSION SIRRAA'E)
+=================================================================
+
+1. KAAYYOO
+-----------
+Sirni kun galmee mana murtii tokko ykn isaa ol fe'ame, jalqabaa hanga dhumaatti tartiiba xiinxala seeraa hordofuun, gabaasa Afaan Oromootiin qopheessa. Dandeettiiwwan isaa:
+
+- Galmee guutuu fuula hundaan dubbisuu fi OCR (madaalliin amanamummaa waliin).
+- Himannaa, gaaffii himataa, deebii himatamaa fi mormii sadarkaa duraa adda baasuu.
+- Ijoo dubbii manni murtii qabate himannaa fi deebii waliin walbira qabuun madaaluu.
+- Ragaa namaa fi ragaa barreeffamaa adda addaan xiinxaluu; walfaallaa ragootaa adda baasuu.
+- Murtii/ajaja seera fi ragaa waliin qorachuu; hanqina, dogoggora seeraa fi dogoggora madaallii ragaa adda baasuu.
+- Galmeelee walbira qabuu (murtii jalqabaa vs ol'iyyannoo).
+- Ijoowwan hin qulqullaa'in fi tarkaanfii seeraan barbaachisu tarreessuu.
+
+MURTII HIN KENNU: Sirni kun murtii seeraa sirrii ta'uu isaa ofumaan hin labsu. Ragaa galmee keessa jiru, seera hojiirra ture, aangoo mana murtii fi hanqina galmee irratti hundaa'uun "yaada xiinxalaa" qofa kenna. Wanti galmee keessatti hin jirre akka jiru hin uumamu.
+
+
+2. MASTER PROMPT (SYSTEM PROMPT SIRRAA'E)
+-----------------------------------------------------------------
+Kutaan kun system prompt app keessatti galmee hundaaf irra deddeebi'amee fayyadamu dha.
+
+SYSTEM ROLE: SEERAAI ETHIOPIAN COURT CASE ANALYSIS ENGINE (Version sirraa'e)
+
+ROOLII:
+Ati ogeessa xiinxala seeraa, madaallii ragaa, qorannoo murtii fi seera adeemsa falmii Mana Murtii Itoophiyaati. Gahee kee xiinxala seeraa qofa; abbaa seeraa miti.
+
+KAAYYOO:
+Galmee mana murtii kan fe'ame guutummaatti dubbisuu, qabiyyee isaa baasuu, himannaa, deebii, mormii, ijoo dubbii, ragaa fi murtii/ajaja seera rogummaa qabu waliin xiinxaluu.
+
+BARREEFFAMA FI MADDA (hundaaf hojiirra oola):
+- Ibsa/xiinxala hunda bira madda galmee agarsiisi: [Galmee: maqaa/lakk.; Fuula: X; Keewwata/Sakata'a: Y].
+- Yoo fuulli hin beekamne "[fuula hin beekamne]" jedhi; hin tilmaamin.
+- Ibsa kee fi qabiyyee galmee jiru adda baasi: "Galmee keessatti:" vs "Xiinxala kiyya:".
+- Qabiyyee Afaan Amaaraa/Ingiliffaa jiru jijjiiruun hin barreessin; akkuma jirutti kaa'ii, itti aansuun hiikaa Afaan Oromoo kenni.
+
+PHASE 1: DOCUMENT EXTRACTION
+- Galmee guutuu fuula hundaan dubbisi; OCR yoo barbaachise raawwadhu.
+- Lakkoofsa galmee, maqaa gareewwanii (himataa/himatamaa/ol'iyyataa/deebi'aa), guyyaa fi mana murtii adda baasi.
+- Fuula dhabame, barruu hin dubbifamne, fi OCR dogoggore mallatteessi.
+- Barruu galmee hin jijjiirin.
+- Yoo galmeen guutuu hin taane ykn dubbisuuf hin danda'amne, jalqaba irratti ifatti himi, hanqina sana irratti hundaa'uun xiinxala kee daanga'i.
+
+PHASE 2: CLAIM ANALYSIS
+- Himannaa jalqabaa, gaaffii himataa, dhugaa bu'uura godhate, ragaa dhiyeesse fi bu'uura seeraa adda baasi.
+- Gaaffiin isaa seeraan fudhatama qabaachuu fi dhabuu isaa qoradhu (aangoo, yeroo/prescription, mirga himachuu, bu'aa gaaffii).
+
+PHASE 3: DEFENCE ANALYSIS
+- Deebii himatamaa guutuu qoradhu.
+- Waan inni fudhate (admission) fi waan morme (denial) adda baasi.
+- Mormii sadarkaa duraa (preliminary objections) tokko tokkoon adda baasi; mormii tokko tokkoof seera fi ragaa barbaachisu ibsi.
+- Deebiin himatamaa himannaa jalqabaa waliin wal-simuu isaa qoradhu.
+
+PHASE 4: ISSUES FRAMED BY THE COURT
+- Ijoo dubbii manni murtii qabate adda baasi.
+- Ijoon kun himannaa fi deebii irraa madde ta'uu isaa qoradhu.
+- Ijoo barbaachisaa hafe, ykn ijoo hin barbaachifne qabame jiraachuu isaa ibsi.
+- Ijoo tokko tokkoon falmii dhugaa irratti rogummaa isaa madaali.
+
+PHASE 5: WITNESS EVIDENCE
+Ragaa namaa tokko tokkoon:
+- Maal jedhe? Waan arge moo waan dhagahe (hearsay)?
+- Ijoo dubbii kam irratti rogummaa qaba?
+- Ragaa biroo waliin wal-simaa? Jecha ragootaa gidduu walfaallaan jiraa?
+- Garee kam deeggara/mormaa? Ragaa tokko kan biraa caalaa fudhachuuf sababni jiraa?
+- Amanamummaa fi ulfaatina ragaa seera ragaa Itoophiyaatiin madaali.
+
+PHASE 6: DOCUMENTARY EVIDENCE
+Ragaa barreeffamaa tokko tokkoon:
+- Madda, guyyaa, qaama baase, mallattoo fi chaappaa.
+- Waan mirkaneessu fi ijoo dubbii irratti rogummaa isaa.
+- Ragaa namaa waliin wal-simuu isaa.
+- Hanqina isaa (fakkeenyaaf: kopii qofa, mirkanaa'uu dhabuu, mallattoo dhabuu).
+
+PHASE 7: APPLICABLE LAW
+- Seera yeroo dhimmichi uumame hojiirra ture adda baasi.
+- Seera addaa fi waliigalaa adda baasi.
+- Keewwata sirrii fi rogummaa qabu qofa fayyadami.
+- Seera ragaa fi adeemsa falmii qoradhu.
+- Murtiiwwan Dhaddacha Ijibbaataa madda isaanii mirkanaa'e qofa fayyadami.
+- Keewwata, lakkoofsa proclamation ykn murtii hin mirkanoofne hin uumin; yoo mirkaneessuu dandeessu "[mirkaneessuu barbaada]" jedhi.
+- Seera haaraa gara duubaatti hin hojiirra oolchin.
+
+PHASE 8: COURT DECISION ANALYSIS
+- Manni murtii ijoowwan qabaman hundarratti murteesseeraa?
+- Ragaa hunda madaaleeraa? Ragaa walfaallaa qabu fureeraa?
+- Seera sirrii hojiirra oolcheeraa? Sababa murtii ibseeraa?
+- Ajajni isaa gaaffii himataa fi deebii irratti hundaa'eeraa? Raawwatamuu danda'aa?
+- Dogoggorri seeraa ykn madaallii ragaa jiraa?
+
+PHASE 9: COMPARATIVE ANALYSIS (yoo galmeen lama ykn isaa ol fe'ame)
+- Galmee tokko tokkoon isaanii adda addaan xiinxali.
+- Murtii jalqabaa fi ol'iyyannoo walbira qabi; sababa tokko diigame ykn cime qoradhu.
+- Madaallii ragaa fi seera hojiirra oolche walbira qabi.
+- Murtiin kam seeraan caalaatti deeggaramu akka danda'u xiinxala kee (akka yaada xiinxalaatti) ibsi.
+- Murtiin ol'iyyannoo mirga dhumaa murteesse moo ajaja qajeelfamaa (remand) qofa kenne adda baasi.
+
+PHASE 10: DEFICIENCIES
+1. Hanqina himannaa.
+2. Hanqina deebii himatamaa.
+3. Hanqina mormii sadarkaa duraa.
+4. Hanqina ijoo dubbii.
+5. Hanqina ragaa namaa.
+6. Hanqina ragaa barreeffamaa.
+7. Hanqina madaallii ragaa.
+8. Dogoggora seeraa.
+9. Hanqina adeemsa falmii.
+10. Hanqina sababeeffannaa murtii.
+11. Hanqina bu'aa ajajaa.
+(Hanqina tokko tokkoof: fuula, ragaa, fi bu'aa isaa agarsiisi.)
+
+PHASE 11: FINAL REPORT (Afaan Oromoo)
+1. Cuunfaa galmee.
+2. Himannaa.
+3. Deebii himatamaa.
+4. Mormii sadarkaa duraa.
+5. Ijoo dubbii.
+6. Madaallii ragaa namaa.
+7. Madaallii ragaa barreeffamaa.
+8. Seera rogummaa qabu.
+9. Xiinxala ijoo dubbii tokko tokkoo.
+10. Xiinxala murtii fi ajajaa.
+11. Hanqina adda baafame.
+12. Xiinxala kiyya: murtii/ajajni kam seeraan caalaatti deeggaramu fi sababni isaa.
+13. Wantoota hin qulqullaa'in.
+14. Tarkaanfii seeraan barbaachisu.
+15. Xumura sababeeffannaa qabu.
+
+STRICT RULES:
+- Dhugaa hin uumin. Ragaa hin uumin. Seera hin uumin. Lakkoofsa murtii hin uumin.
+- Ragaa galmee keessatti hin jirre akka jiru hin dhiyeessin.
+- Yaada qaama falmii akka dhugaa mirkanaa'eetti hin fudhatin.
+- Yoo ragaan gahaa hin taane ifatti ibsi.
+- Murtii dhumaa bakka abbaa seeraa bu'uun hin kennin; xiinxalli kee "yaada xiinxalaa" malee murtii hin ta'u.
+- Xiinxala hundaaf madda galmee fi fuula isaa agarsiisi.
+- Xumura irratti yaadachiisi: gabaasni kun deeggarsa xiinxalaa qofa; ogeessa seeraa waliin fi galmee dhugaa waliin mirkaneeffamuu qaba.
+
+OUTPUT:
+Professional Ethiopian Judicial Legal Analysis.
+Language: Afaan Oromoo.
+Format: mataduree Phase/kutaa tokkoon tokkoon, tarreeffama lakkoofsa qabuun, hiikni gabaabaa fi sirrii ta'e.
+
+
+3. CAASAA APP (MODULE HAARAA - APP HAARAA MITI)
+-----------------------------------------------------------------
+Sirni kun SEERAAI isa duraan jiru keessatti module tokkootti galuu qaba; hojii fi kuusaa Firebase duraanii hin miidhu.
+
+Tartiiba hojii (pipeline):
+ 1. Galmee fe'uu: PDF, DOCX, DOC, suuraa.
+ 2. Document Extraction: fuula tokko tokkoon dubbisuu + OCR; fuula tokko tokkoof "amanamummaa OCR" (confidence) galmeessuu.
+ 3. Chunking: galmee dheeraa fuula/kutaatiin qooduu (context daangaa irraa ittisuuf); kutaa tokko tokkoon cuunfaa gidduu galeessaa baasuu.
+ 4. Legal Analysis Engine: Phase 2-8 (himannaa, deebii, mormii, ijoo, ragaa, seera, murtii).
+ 5. Verification Pass (ADDA, tarkaanfii DIRQAMAA): 
+    - Fuulli citation tokko tokko galmee keessa jiraachuu isaa mirkaneessuu.
+    - Keewwatni/murtiin eerame tarree seera mirkanaa'e (database) keessa jiraachuu isaa mirkaneessuu; yoo hin jirre "[hin mirkanoofne]" jechuun mallatteessuu.
+    - Ibsi galmee keessaa fi xiinxala model adda baasuu.
+ 6. Comparison Engine: galmee lama ykn isaa ol walbira qabuu (Phase 9).
+ 7. Final Report: Afaan Oromoo; Word/PDF baafachuu.
+ 8. Kuusaa: Firestore (metadata, gabaasa, version, audit log) + Firebase Storage (galmee).
+
+Model: OpenAI (Responses API) ykn Gemini (Generate Content API). Lamaanuu bu'aa JSON schema qabuun (Structured Outputs) deebisuu danda'u. Provider tokkoon fayyadami; yoo lamaan fayyadamtu, provider tokko tokkoof prompt fi schema walfakkaataa ta'e fayyadami.
+
+
+4. WANTOOTA KOODII KEESSATTI DIRQAMA TA'AN
+-----------------------------------------------------------------
+Eegumsa fi iftoomina:
+- API key OpenAI/Gemini server-side qofa keessatti kuusi; client irraa hin ilaalamne.
+- Galmee Firebase Storage keessatti kuusi; localStorage keessatti hin kuusin.
+- Fayyadamaan tokko tokko galmee mataa isaa qofa arguu akka danda'u Firebase Auth + Security Rules qopheessi.
+- Galmeen odeeffannoo dhuunfaa qaba; eeyyama fayyadamaa, yeroo kuusaa (retention), fi mirga haquu (delete) ifa godhi.
+- Request rate-limit fi sarara baasii (cost) qabi.
+
+Qulqullina xiinxalaa:
+- Galmee fuula hunda dubbisi; fuula tokko qofa irraa murtii hin kennin.
+- Gabaasa tokko tokkoo fi walbira qabuu addaan qopheessi.
+- Ibsa hunda madda seeraa fi lakkoofsa fuula galmee waliin deeggari.
+- Yoo barruun galmee hin dubbifamne (OCR amanamummaa gadi aanaa), sirni xumura seeraa sobaa kennuu dhiisee, "ragaan gahaa miti" jechuu qaba.
+- Murtiin xumuraa "yaada xiinxalaa" jedhamee, ogeessa seeraatiin akka mirkaneeffamu yaadachiisa waliin kenna.
+- Gabaasni duraan hojjetame Firestore keessatti version waliin kuusama; hin badu.
+- Dogoggora API (timeout, JSON bakka hin jirre) irratti retry fi bifa dogoggoraa ifa ta'e kenni.
+
+
+5. BIFA BU'AA JSON (TILMAAMA SCHEMA)
+-----------------------------------------------------------------
+{
+  "caseMeta": { "caseNumber": "", "court": "", "parties": [], "dates": [] },
+  "extractionIssues": [ { "page": 0, "type": "missing|unreadable|ocr_low_confidence", "note": "" } ],
+  "claim": { "summary": "", "relief": "", "facts": [], "evidence": [], "legalBasis": [], "admissibility": "", "sources": [ { "page": 0 } ] },
+  "defence": { "summary": "", "admitted": [], "denied": [], "preliminaryObjections": [], "sources": [] },
+  "issues": [ { "text": "", "courtFramed": true, "relevance": "", "sources": [] } ],
+  "witnessEvidence": [ { "witness": "", "claim": "", "basis": "saw|heard", "issueLinked": "", "consistency": "", "weight": "", "sources": [] } ],
+  "documentaryEvidence": [ { "doc": "", "origin": "", "date": "", "signedStamped": "", "proves": "", "weaknesses": "", "sources": [] } ],
+  "applicableLaw": [ { "instrument": "", "article": "", "verified": false, "note": "" } ],
+  "decisionAnalysis": { "perIssue": [], "errorsOfLaw": [], "errorsOfEvidenceAssessment": [], "enforceable": "" },
+  "deficiencies": [ { "category": 1, "description": "", "sources": [] } ],
+  "analyticalOpinion": { "stronger": "", "reasons": [], "unresolved": [], "nextSteps": [] },
+  "disclaimer": ""
+}
+Validation: schema validate godhi; yoo "sources" duwwaa ta'e ibsi sana "ragaa hin qabu" jedhii mallatteessi.
+
+
+6. MADAALLII (RATING) - AMMA JIRU
+-----------------------------------------------------------------
+Qabiyyee duraanii (document kennite) madaalliin: 6/10.
+
+Kan gaarii:
+- Caasaa (architecture) fi tartiiba hojii ifa dha.
+- Dirqama server-side API key, Firebase Storage, version, audit log gaarii dha.
+- "Murtii ofumaan hin labsu" jechuun daangaa ifa godhee jira.
+
+Kan sirreeffame:
+- "10/10" madaalliin dizaayinii ragaa/test hin qabu; madaalliin amma 10/10 hin jedhamu. Madaalliin dhugaa'aan galmee dhugaa irratti qorannoo (test) booda qofa kennama.
+- Master prompt isa duraanii dogoggora barreeffamaa ("uum in") fi walitti bu'iinsa (murtii dhumaa hin kennin vs "murtiin kam sirrii") qabaa ture; sirraa'eera.
+- Kutaan "Haala hojii xumuraa" yeroo sobaa (sa'aatii 18 fi daqiiqaa 14) tilmaame; kun hin mirkanoofne, hundeeffamni hin qabu. Haqameera. Faayiliin TypeScript hin uumamne; kana irratti dhugaa jiruu qofa ibsameera.
+- "Worked for 13s" barruu AI biraa dha; haqameera.
+- Verification Pass, chunking, OCR confidence, eegumsa odeeffannoo dhuunfaa, JSON schema dabalameera.
+
+Madaalliin kaayyoo (test dura): 8/10.
+Madaalliin dhugaa'aan: galmee 5-10 dhugaa irratti qoramee, ogeessa seeraatiin madaalamee booda murtaa'a.
+
+
+7. TARKAANFII ITTI AANU
+-----------------------------------------------------------------
+1. Caasaa pirojektii amma jiru (server, Firebase config) ilaali; module haaraa itti galchi.
+2. seeraai-case-analysis-engine.ts: schema (section 5) fi validation waliin barreessi (hin barreeffamne; dhimma kana itti fufuuf gaafadhu).
+3. Galmee 5-10 irratti test godhi; ogeessa seeraatiin bu'aa madaali.
+4. Tarree seera mirkanaa'e (Federal Negarit Gazette, murtiiwwan Dhaddacha Ijibbaataa) database taasisi.

@@ -1,0 +1,171 @@
+SEERAAI PRO — PHASE 8B.4
+TELEGRAM PUBLIC ACCESS, STORAGE TENANT ISOLATION & ADMIN CLAIM REMEDIATION DESIGN
+READ-ONLY PRODUCTION / CANDIDATE-ONLY SOURCE WORK
+
+PROJECT IDENTITY
+Application: SEERAAI PRO (existing application only)
+Repository: sai-ethio-legal-ai
+Current reported package version: 5.0.0 — verify against package.json and lockfile; do not change it in this phase.
+Firebase project: leafy-rush-xvd6f
+Firestore database: ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478
+
+1. NON-NEGOTIABLE PRESERVATION AND SAFETY RULES
+Continue ONLY in the existing SEERAAI PRO repository and existing Firebase project.
+Do not create a replacement app, Firebase project, database, repository, bucket, or Cloud Run service.
+Preserve existing users, documents, data, Storage objects, authentication, integrations, workflows, and UI.
+Do not publish/deploy rules or services. Do not change production IAM, Auth settings, custom claims, secrets, roles, or production data.
+Do not run migrations or assign claims. Do not execute any Admin SDK mutation against production.
+Do not change firebase.json, firestore.rules, or storage.rules in this phase.
+Do not rename or delete existing files. Do not assume the source rules are currently deployed to production: live production Rules remain NOT VERIFIED.
+Do not claim a vulnerability is actively exposed in production unless live production state is independently verified by authorized read-only inspection.
+Do not print secrets, credentials, personal data, court-sensitive data, witness information, user emails, or UIDs in the report. Redact all such values.
+
+2. BASELINE RECONCILIATION
+Inspect the actual repository, not prior summaries alone.
+Verify:
+- package.json and lockfile version;
+- firebase.json Firestore and Storage rules paths;
+- complete firestore.rules and storage.rules;
+- all referenced helper functions;
+- the exact Telegram collections and their data models;
+- all frontend/backend code paths that read, create, update, delete, list, or query those collections;
+- courtDocuments upload/download paths and all other Storage paths.
+Report exact file paths and line numbers. Preserve package version 5.0.0 unless a separate explicit request authorizes a version change.
+
+3. CRITICAL TELEGRAM COLLECTION ACCESS REVIEW
+The Phase 8B.3.1 report says the following collections currently have broad rules equivalent to `allow read, write: if true;` at approximately lines 143–172:
+- telegram_polls
+- telegram_channels
+- telegram_posts
+- telegram_archive
+- telegram_messages
+- telegram_channel_feed
+- telegram_subscribers
+- telegram_user_stats
+- telegram_poll_results
+- telegram_briefing_logs
+
+Treat this as a HIGH-PRIORITY security finding. Public read/write permits unauthenticated users to read, create, overwrite, or delete matching documents unless a more specific operation is independently constrained. Do not describe this as safe merely because the feature is called community archiving.
+
+For EACH collection separately, determine from actual application code and data schema:
+A. Is the collection intended to be publicly readable?
+B. Does it contain only deliberately public information, or could it contain subscriber data, user identifiers, private messages, unpublished drafts, operational logs, moderation data, or court/legal records?
+C. Which exact actor types may read/list/get/create/update/delete?
+D. Which fields may the client set or change?
+E. Which operations are server-only and must be protected from client writes?
+F. Are there query constraints or document fields needed to enforce public visibility?
+
+Produce a per-collection access matrix with separate permissions for get, list, create, update, and delete. Do not use a single broad `read, write` permission where distinct operations are required.
+
+Proposed default design to evaluate against actual product behavior:
+- Publicly released Telegram posts/feed/archive content may be public READ ONLY only when the record is explicitly marked/published as public and contains no private fields.
+- Client writes must be denied by default unless the feature demonstrably requires them. Where writes are required, restrict them to authenticated, authorized roles and validate allowed fields, types, sizes, immutable ownership/channel IDs, and state transitions.
+- Subscriber records, user stats, briefing logs, private messages, moderation records, and poll results must not be presumed public. Identify the actual fields and business requirements before deciding access.
+- Poll submissions, if supported by clients, must be constrained to the authenticated user and valid poll/options; prevent arbitrary result manipulation, duplicate voting where applicable, and unauthorized deletion. Prefer trusted server-side writes for aggregate results when the architecture supports it.
+- `telegram_legal_documents` public read is allowed only if the records are intentionally public legal resources. Inspect whether the collection can contain drafts, uploaded source files, restricted court content, or unverified legal material. If mixed, propose a publication/status model or segregated access paths; do not expose the entire collection indiscriminately.
+
+4. FIRESTORE RULES OVERLAP REVIEW
+Inspect EVERY matching rule for each Telegram collection and all broader parent/recursive matches, including `match /{document=**}`.
+Remember that overlapping Firestore `allow` expressions are additive/OR: any matching allow expression that evaluates true grants access. A broad false rule does not cancel another matching true rule.
+Produce a complete overlap table: request path, matching rules, each allow expression, resulting effective permission, and proposed remediation.
+Review `isAdmin()` and every privileged helper. Identify hardcoded fallback email addresses. Do not reproduce actual addresses in the final report; identify the code location and risk.
+The global recursive admin fallback grants broad administrator access across matched paths. Verify that admin status is established through trusted server-issued custom claims or another secure, auditable mechanism. Do not accept client-editable profile fields as proof of admin status.
+Prepare a safe transition plan to retire hardcoded email fallbacks only after legitimate administrator claims are safely provisioned and verified. Do not change claims or remove the current access path in production.
+
+5. STORAGE TENANT ISOLATION — REQUIRED REVIEW
+The reported path is:
+`/legal_docs/{institutionId}/{userId}/{allPaths=**}`
+The Phase 8B.3.1 summary says owner access checks `request.auth.uid == userId`, while staff read checks a matching institutionId claim and staff role.
+Determine whether owner read AND owner write ALSO require:
+`request.auth.token.institutionId == institutionId`
+If not, flag the missing tenant-boundary check. Do not assume UID ownership by itself proves access to every institution path.
+Review all operations separately: get/download, list, create/upload, update/overwrite, delete, and metadata changes.
+For every upload, validate allowed MIME types, maximum size, and any required metadata. Ensure a user cannot change institutionId, owner UID, or protected metadata through an overwrite/update. Verify all application upload paths exactly match the Rules paths.
+Check other Storage paths used by the app; do not infer that `/legal_docs` is the only path.
+Produce a path/actor/operation matrix and negative test cases for cross-institution access.
+
+6. CUSTOM CLAIMS CONSISTENCY AND FAIL-CLOSED BEHAVIOR
+Review the actual backend token verification, Firebase Rules helpers, and role assignment source of truth.
+Claims reported in the prior audit:
+- admin: boolean
+- role: string
+- courtRole: legacy alias
+- institutionId: string
+- legalContentManager: boolean
+
+Do not silently treat conflicting `role` and `courtRole` values as additive privileges. Specify a canonical precedence and conflict policy. Prefer fail-closed behavior when claims are missing, malformed, stale, or contradictory.
+Verify that `institutionId` is a trusted claim and cannot be self-edited through user profile data.
+Identify all code paths that currently depend on role fields in Firestore documents versus custom claims. Explain token refresh and session impact if roles change.
+Prepare a dry-run-only claim mapping and reconciliation report. Do not create or execute any claim assignment script in this phase. Do not mutate production claims.
+
+7. BACKEND AND ADMIN SDK REVIEW
+Inspect all Telegram, legal-document, court-document, and privileged routes.
+For each route, show exact authentication and authorization middleware, role checks, institution checks, input validation, and any Admin SDK operation.
+Firebase Admin SDK operations bypass client Firestore Rules; therefore confirm server-side authorization before every privileged Admin SDK read/write.
+Do not mark the backend globally VERIFIED merely because one middleware verifies ID tokens. Provide route-by-route evidence. Flag missing or bypassable checks.
+
+8. CANDIDATE-ONLY OUTPUT
+Do not edit the active files `firestore.rules`, `storage.rules`, or `firebase.json`.
+If and only if the source/data model is sufficiently understood, create separate proposed files:
+- firestore.rules.phase8b4.candidate
+- storage.rules.phase8b4.candidate
+These files must not be referenced by firebase.json and must not be deployed.
+If safe rules cannot be designed without product-owner decisions or data-schema evidence, do NOT create guessed rules. Instead provide a precise list of unresolved questions and a proposed design matrix.
+If candidate files are created, preserve the original active files byte-for-byte and report checksums or a verified no-diff status.
+
+9. REQUIRED SECURITY TESTS
+Update or prepare focused emulator tests for at least:
+Telegram:
+- unauthenticated read of explicitly public published post/feed: expected according to approved public-content policy;
+- unauthenticated create/update/delete on every Telegram collection: denied unless a documented public write feature requires a narrowly scoped exception;
+- authenticated ordinary user cannot modify server-managed archive, channel, message, subscriber, or briefing-log records;
+- legalContentManager can perform only explicitly authorized content-management actions;
+- admin access is denied for missing/false/invalid admin claim;
+- conflicting role/courtRole claims fail closed;
+- unpublished/restricted legal documents are not publicly readable;
+- a document in a private collection cannot be queried through another collection or broad rule.
+Storage:
+- owner with matching UID and matching institution can perform permitted operations;
+- owner UID with a different institutionId is denied;
+- staff with matching institution and allowed role has only permitted read access;
+- staff from another institution is denied;
+- ordinary user cannot overwrite or delete another user's file;
+- unauthorized MIME type and oversized upload are denied;
+- unauthenticated access is denied;
+- global admin behavior is explicitly tested.
+
+Use Firebase Emulator and `@firebase/rules-unit-testing`. The preview container previously lacked Java. Do not claim tests passed if they were not executed. Run in a safe local environment or CI with Java 17+ and report exact command output. Separate passed, failed, skipped, and blocked tests. Do not remove or weaken tests to obtain a pass.
+
+10. FINAL REPORT FORMAT
+Title: `SEERAAI PRO — PHASE 8B.4 TELEGRAM & STORAGE REMEDIATION DESIGN REPORT`
+Include:
+1. Executive summary.
+2. Exact repository/package/Firebase config inventory.
+3. Per-collection Telegram access matrix.
+4. Firestore overlapping rule analysis.
+5. Public data classification and privacy findings.
+6. Storage path and tenant-isolation matrix.
+7. Admin hardcoded email and Custom Claims findings.
+8. Backend route authorization matrix.
+9. Candidate file changes and exact diffs, if any.
+10. Emulator test results with actual logs.
+11. Open decisions / blockers.
+12. Production state and release decision.
+
+Classify each finding as VERIFIED PASS, VERIFIED FAIL, PARTIALLY VERIFIED, BLOCKED, or NOT TESTED. Attach exact file/line evidence. Distinguish static source inspection from executed tests and from live production verification.
+
+11. RELEASE GATE
+The release status MUST remain BLOCKED until all of the following are complete:
+- all public Telegram writes are justified and narrowly scoped or denied;
+- private/sensitive Telegram collections are protected;
+- no unintended overlapping allow rule grants access;
+- Storage owner access is institution-bound and cross-tenant tests deny access;
+- administrator proof does not rely on insecure hardcoded email fallbacks, subject to a safe transition plan;
+- Firestore and Storage Emulator suites execute successfully;
+- authorized read-only production Rules inspection and backup are completed;
+- full source diff, rollback, and claim-migration plans are reviewed;
+- separate explicit project-owner approval is obtained for each production change.
+
+Do not publish, deploy, migrate, or modify production. End with the single safest next action and exact evidence still needed.
+
+BEGIN PHASE 8B.4 NOW — SOURCE REVIEW AND CANDIDATE DESIGN ONLY.

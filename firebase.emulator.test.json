@@ -1,0 +1,20 @@
+{
+  "firestore": {
+    "rules": "firestore.rules.phase8b5.3.integrated.candidate"
+  },
+  "storage": {
+    "rules": "storage.rules.phase8b5.4.integrated.candidate"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    },
+    "storage": {
+      "port": 9199
+    },
+    "singleProjectMode": true,
+    "ui": {
+      "enabled": false
+    }
+  }
+}

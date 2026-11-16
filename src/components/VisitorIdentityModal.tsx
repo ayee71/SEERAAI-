@@ -8,7 +8,7 @@ import {
   getBiometricEnrollmentStatus, 
   BiometricEnrollment 
 } from '../utils/biometric';
-import { isOwnerEmail, isOwnerUsername, isOwnerKey, unlockOwnerPrivileges, clearOwnerPrivileges } from '../services/ownerAuth';
+import { isOwnerEmail, isOwnerUsername, clearOwnerPrivileges } from '../services/ownerAuth';
 import { loginAsCourtAdmin, getLocalInstitutions } from '../services/courtInstitutionService';
 
 
@@ -26,9 +26,11 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
   const { 
     user, 
     profile, 
+    authClaims,
     updateProfile, 
     signInWithEmail, 
     signUpWithEmail, 
+    signInAsGuest,
     resetPassword, 
     signIn,
     signInWithBiometrics,
@@ -183,15 +185,10 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
 
     const isOwnerTarget = isOwnerEmail(cleanUsername) || isOwnerUsername(cleanUsername);
     if (isOwnerTarget) {
-      if (accountPassword && isOwnerKey(accountPassword)) {
-        unlockOwnerPrivileges(cleanUsername);
-        onIdentify('Ayele Be Dha', 'SuperAdmin');
-        return;
-      }
       setError(
         currentLang === 'om'
-          ? 'Email/Username kun kan abbaa appiiti. Yoo abbaa taatan PIN (2026) galchaatii seenaa.'
-          : 'ይህ የባለቤቱ መለያ ነው። ባለቤት ከሆኑ ፒን ቁጥር (2026) በማስገባት ይግቡ።'
+          ? 'Email/Username kun kan abbaa appiiti. Tajaajila abbaa banachuuf karaa Google ykn Email/Password Firebase dhugaa tiin seenaa.'
+          : 'This reserved identifier cannot be registered directly. Sign in with verified Firebase credentials.'
       );
       return;
     }
@@ -290,21 +287,6 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
         currentLang === 'om'
           ? 'Maaloo Username ykn Email keessan galchaa.'
           : 'እባክዎ የተጠቃሚ ስም ወይም ኢሜይል ያስገቡ።'
-      );
-      return;
-    }
-
-    const isOwnerTarget = isOwnerEmail(cleanUsername) || isOwnerUsername(cleanUsername);
-    if (isOwnerTarget) {
-      if (accountPassword && isOwnerKey(accountPassword)) {
-        unlockOwnerPrivileges(cleanUsername);
-        onIdentify('Ayele Be Dha', 'SuperAdmin');
-        return;
-      }
-      setError(
-        currentLang === 'om'
-          ? 'Email/Username kun kan abbaa appiiti. Yoo abbaa taatan PIN (2026) galchaatii seenaa.'
-          : 'ይህ የባለቤቱ መለያ ነው። ባለቤት ከሆኑ ፒን ቁጥር (2026) በማስገባት ይግቡ።'
       );
       return;
     }
@@ -569,24 +551,16 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
     try {
       const guestName = referralCreator
         ? `Guest via ${referralCreator}`
-        : 'Ogeessa Seeraa (Guest)';
-      await updateProfile({
-        visitorName: guestName,
-        isLegalProfessional: true,
-        legalRole: 'advocate',
-        verifiedAt: new Date().toISOString(),
-      });
-      await logRealtimeEvent(
-        'visit',
-        `Ogeessa Seeraa (Guest): ${guestName} kallattiin seeneera`,
-        'Legal Gatekeeper',
-        referralCreator || 'Direct Link Entry',
-        guestName
-      );
-      onIdentify(guestName, 'advocate');
+        : 'Keessummaa Seeraa (Guest)';
+      await signInAsGuest(guestName, 'guest');
+      onIdentify(guestName, 'guest');
     } catch (err) {
       console.error('Guest access failed:', err);
-      onIdentify('Ogeessa Seeraa', 'advocate');
+      setError(
+        currentLang === 'om'
+          ? 'Seensi keessummaa hin milkoofne. Maaloo irra deebi’aa yaalaa.'
+          : 'Guest access failed. Please try again.'
+      );
     } finally {
       setIsVerifying(false);
     }
@@ -958,7 +932,7 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
                     setCourtAdminCode(e.target.value);
                     if (error) setError('');
                   }}
-                  placeholder="fkn: GURBICHA-2026"
+                  placeholder="Koodii eeyyamaa galchaa..."
                   className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono"
                 />
               </div>
@@ -1354,7 +1328,7 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
                     setName(e.target.value);
                     if (error) setError('');
                   }}
-                  placeholder="fkn: Obbo Gammachuu / @AyyuLawyer (Optional)"
+                  placeholder="fkn: Obbo Gammachuu / @Username (Optional)"
                   className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-medium"
                 />
               </div>
@@ -1496,7 +1470,7 @@ export const VisitorIdentityModal: React.FC<VisitorIdentityModalProps> = ({
 
           {/* Legal Ownership Footer */}
           <div className="pt-2 border-t border-slate-800 text-center text-[10px] text-slate-500 font-mono">
-            <span>© 2026 SAI Ethio (www.saorethio1.com) • Ogeessa Seeraa Ayele Be Dha</span>
+            <span>© 2026 SAI Ethio (www.saiethio.com) • Ogeessa Seeraa Ayele Be Dha</span>
           </div>
         </div>
       )}

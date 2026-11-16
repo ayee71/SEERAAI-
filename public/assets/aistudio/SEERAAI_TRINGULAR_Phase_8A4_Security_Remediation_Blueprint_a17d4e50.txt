@@ -1,0 +1,279 @@
+SEERAAI TRINGULAR — PHASE 8A.4 SECURITY REMEDIATION BLUEPRINT & CONTROLLED PATCH PLAN
+
+MODE: READ-ONLY SECURITY ANALYSIS
+NO CODE CHANGES — NO FILE MODIFICATIONS — NO DEPLOYMENT — NO PRODUCTION CONFIGURATION CHANGES
+
+1. PROJECT IDENTITY — IMPORTANT CORRECTION
+
+The correct human-readable Firebase project name is:
+
+SEERAAI TRINGULAR
+
+The application/product name is:
+
+SEERAAI PRO
+
+These names must never be confused.
+
+Important instructions:
+
+1. Use SEERAAI TRINGULAR whenever referring to the Firebase project by its human-readable project name.
+2. Use SEERAAI PRO whenever referring to the application/product.
+3. Do not incorrectly label the Firebase project as SEERAAI PRO.
+4. Do not assume that the Firebase project display name is the same as its technical Project ID.
+5. Inspect the existing Firebase configuration and identify separately:
+   - Firebase project display name;
+   - Firebase Project ID;
+   - Firestore database ID;
+   - Firebase Storage bucket;
+   - Cloud Run service name, URL, and region.
+6. The previously recorded technical Project ID is "leafy-rush-xvd6f". Verify it against the actual existing configuration before relying on it.
+7. The previously recorded Firestore database ID is "ai-studio-seeraaitrilingua-18431532-f42a-4a5a-b5b1-c3c0e6b05478". Verify it.
+8. The previously recorded Storage bucket is "leafy-rush-xvd6f.firebasestorage.app". Verify it.
+9. Preserve all existing project identifiers and resources. Do not rename, recreate, migrate, replace, or disconnect any existing Firebase or Google Cloud resource.
+10. Apply this naming correction consistently in the report, documentation, proposed implementation plan, and human-readable references.
+
+2. EXISTING APPLICATION PRESERVATION
+
+This is an existing application security-remediation project.
+
+Do NOT create a new application or replacement project.
+
+Preserve:
+
+- Existing SEERAAI PRO application;
+- Existing Firebase project and authentication configuration;
+- Existing Firestore database and its data;
+- Existing Firebase Storage bucket and files;
+- Existing users, accounts, roles, and permissions;
+- Existing application features and modules;
+- Existing Cloud Run service and deployment configuration;
+- Existing GitHub repository and integrations;
+- Existing institutional and tenant data.
+
+Do not delete, reset, migrate, overwrite, or replace existing resources.
+
+3. PHASE 8A.4 OBJECTIVE
+
+Conduct a comprehensive, evidence-based security assessment of the existing SEERAAI PRO application and prepare a controlled security-remediation blueprint.
+
+The assessment must focus on:
+
+- Firebase Authentication;
+- Firestore Security Rules;
+- Firebase Storage Security Rules;
+- Institutional and tenant isolation;
+- Role-based access control (RBAC);
+- Administrative privileges;
+- Court-document confidentiality;
+- Audit-log integrity;
+- Cloud Functions and backend authorization;
+- Admin SDK security boundaries;
+- File-upload and download controls;
+- Secrets and environment-variable handling;
+- API security;
+- CI/CD and deployment controls;
+- Production-release readiness.
+
+4. PHASE 8A.3 FINDINGS — RE-VERIFY BEFORE ACCEPTING
+
+The previous assessment reported the following possible defects. These are unverified findings and must be checked against the current source code and available configuration.
+
+A. Firestore Rules
+
+- Possible undefined helper functions such as "signedIn()" and "isCourtReporterOrStaff()".
+- Possible broad permissions using "if true".
+- Possible overly broad permissions based only on "isSignedIn()".
+- Possible unrestricted administrative wildcard access.
+- Possible weak administrator email allowlists.
+- Possible users modifying their own protected role or authorization fields.
+- Possible inadequate institutional and tenant-level isolation.
+
+B. Firebase Storage
+
+- Possible mismatch between the paths protected by Storage Rules and those used by the application.
+- Previously reported paths include "legal_docs/...", "institutions/...", and "court_logos/...".
+- Possible use of base64 data URLs as a fallback that stores document data in Firestore.
+- Possible missing file-type, file-size, ownership, and institution-level restrictions.
+
+C. Backend and Administrative Access
+
+- Possible missing or incomplete custom claims and role verification.
+- Possible Cloud Functions authorization weaknesses.
+- Possible Admin SDK operations lacking independent authorization checks.
+- Possible inconsistencies between frontend authorization and backend authorization.
+
+D. Deployment and Production
+
+- Previously reported absence of Firestore and Storage Rules deployment controls in CI/CD.
+- Production publication status was previously marked as NOT DETERMINED.
+- Do not assume that source-code findings prove that the live production environment is vulnerable.
+
+Re-check each finding. Mark it as CONFIRMED, NOT CONFIRMED, PARTIALLY CONFIRMED, or UNVERIFIED, with evidence.
+
+5. SECURITY ASSESSMENT REQUIREMENTS
+
+For every identified defect, provide:
+
+1. Finding ID;
+2. Severity: CRITICAL, HIGH, MEDIUM, or LOW;
+3. Exact affected file and path;
+4. Relevant function, rule, component, or configuration;
+5. Evidence from the current source;
+6. Explanation of the security risk;
+7. Potential impact on users, institutions, court documents, and confidential data;
+8. Recommended remediation;
+9. Dependencies and possible regressions;
+10. Verification test required;
+11. Whether the issue can be verified from source code or requires Firebase/Google Cloud Console access.
+
+Do not invent file names, line numbers, functions, settings, test outputs, or deployment status.
+
+6. REQUIRED SECURITY DESIGN
+
+Prepare a secure target architecture with the following principles:
+
+Authentication
+
+- Authenticated users only where authentication is required.
+- Secure user identity verification.
+- No trust in client-supplied identity or role values.
+
+Authorization and RBAC
+
+- Server-enforced role verification.
+- Institution-scoped permissions.
+- Least-privilege authorization.
+- Explicit protection of administrative and privileged roles.
+- Users must not be able to assign themselves privileged roles.
+
+Institutional and Tenant Isolation
+
+- Users must only access data authorized for their institution.
+- Court documents, cases, evidence, judgments, orders, and audit records must be protected by institution and role.
+- No cross-institution access unless explicitly authorized.
+
+Firestore
+
+- No broad public or authenticated-user-only access to confidential collections.
+- No unconditional permissions for sensitive data.
+- Validate document ownership, institution identity, role, and permitted operations.
+- Protect sensitive fields against unauthorized modification.
+
+Storage
+
+- Align Storage Rules with the exact paths used by the application.
+- Enforce authorization on uploads, downloads, updates, and deletions.
+- Apply appropriate file-size and file-type restrictions.
+- Preserve existing stored files.
+- Do not introduce an alternative storage mechanism without analyzing its security and data-integrity consequences.
+
+Backend and Admin SDK
+
+- Verify authorization independently on trusted backend operations.
+- Do not rely on Firestore Rules as protection for Admin SDK operations.
+- Validate institution scope and role before processing sensitive requests.
+- Protect audit operations against unauthorized modification.
+
+Audit and Monitoring
+
+- Preserve meaningful audit records.
+- Record sensitive access and administrative actions where supported.
+- Protect audit logs from unauthorized alteration or deletion.
+- Recommend appropriate monitoring and alerting.
+
+7. REQUIRED OUTPUTS
+
+Produce a structured report titled:
+
+SEERAAI TRINGULAR — PHASE 8A.4 SECURITY REMEDIATION BLUEPRINT & CONTROLLED PATCH PLAN
+
+Include the following sections:
+
+1. Executive Summary;
+2. Verified Project Identity and Existing Architecture;
+3. Phase 8A.3 Findings Verification;
+4. Current Security Architecture;
+5. Firestore Rules Security Assessment;
+6. Firebase Storage Security Assessment;
+7. Authentication and RBAC Assessment;
+8. Institutional and Tenant Isolation Assessment;
+9. Backend and Admin SDK Security Assessment;
+10. Sensitive Data and Court-Document Protection;
+11. Audit Logging and Monitoring;
+12. CI/CD and Deployment Security;
+13. Confirmed Security Vulnerabilities;
+14. Risk and Severity Matrix;
+15. Recommended Remediation Plan;
+16. File-by-File Proposed Changes;
+17. Regression and Security Test Plan;
+18. Production Verification Checklist;
+19. Remaining Risks and Unverified Items;
+20. Phase 8A.5 Readiness Recommendation.
+
+For every proposed change, clearly identify:
+
+- Existing file;
+- Existing behavior;
+- Security defect;
+- Proposed correction;
+- Expected behavior after remediation;
+- Tests required;
+- Potential side effects.
+
+If exact source evidence is unavailable, explicitly state that it could not be verified.
+
+8. STRICT READ-ONLY RESTRICTIONS
+
+THIS PHASE IS ANALYSIS AND PLANNING ONLY.
+
+You are NOT authorized to:
+
+- Modify source files;
+- Create or delete files;
+- Rewrite Firestore Rules;
+- Rewrite Storage Rules;
+- Modify Firebase configuration;
+- Change Firebase Authentication settings;
+- Change database schemas or data;
+- Modify Cloud Functions;
+- Install or update packages;
+- Change environment variables;
+- Reveal secret values, API keys, tokens, or private credentials;
+- Publish or deploy rules;
+- Deploy Cloud Functions;
+- Deploy Cloud Run;
+- Change production settings;
+- Delete, migrate, or overwrite existing data;
+- Create a replacement application or Firebase project.
+
+Do not run commands that modify the project or production resources.
+
+Do not claim that a test passed unless it was actually executed and its output was inspected.
+
+Do not claim that production rules are secure merely because source files appear secure.
+
+Do not claim that production rules are published unless publication status is independently verified.
+
+9. FINAL REPORTING RULES
+
+Separate all conclusions into:
+
+- VERIFIED FROM SOURCE;
+- VERIFIED FROM CONSOLE;
+- REPORTED BUT NOT VERIFIED;
+- NOT VERIFIED;
+- RECOMMENDED ACTION.
+
+Use exact evidence and explain limitations.
+
+At the end, provide:
+
+1. Overall security assessment;
+2. Critical issues that must be fixed first;
+3. Recommended order of remediation;
+4. Tests required before production deployment;
+5. Whether Phase 8A.4 is complete;
+6. Whether the project is ready to proceed to Phase 8A.5.
+
+Do not implement any remediation. Do not make any code or production changes. Deliver the complete read-only analysis and controlled patch plan only.

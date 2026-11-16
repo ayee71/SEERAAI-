@@ -1,0 +1,77 @@
+SEERAAI PRO — PHASE 7B.1: PLAN CORRECTION AND IMPLEMENTATION READINESS (READ-ONLY)
+
+You are working on the EXISTING SEERAAI PRO application. Preserve the current app, users, Firebase project, Firestore database, Storage buckets, Cloud Run service, integrations, and all existing features. Do not create a replacement app.
+
+STATUS: READ-ONLY. This is NOT approval to implement. Do not edit, create, delete, overwrite, install, deploy, migrate, or write anything. Do not access or alter production data. Do not print secrets.
+
+Review the Phase 7A and Phase 7B reports already supplied in this conversation and inspect the actual repository files before making conclusions. Your task is to correct the remediation design and establish whether it is safe to implement.
+
+MANDATORY ISSUES TO RESOLVE:
+
+1. LOCAL DATA CLASSIFICATION
+Inspect the actual implementations and every caller of:
+- getSavedDocuments()
+- saveDocument()
+- STORAGE_QUEUE_KEY / seera_offline_queue
+- SeeraAIOfflineDB
+- backgroundSyncManager.getQueuedEdits() and sync methods
+- AuthContext sign-out and account-switch handlers
+
+For each item, identify whether it is (a) cloud-synced, (b) queued but not synced, or (c) local-only. Do not assume that zero queued edits means all saved documents are safely stored in the cloud. Show exact file paths and line ranges. Identify every IndexedDB object store and whether it contains sensitive data, pending edits, or non-sensitive cache.
+
+2. SAFE SIGN-OUT / ACCOUNT SWITCH DESIGN
+Design a race-safe sign-out sequence. It must:
+- Prevent new local writes and new sync jobs while sign-out is in progress.
+- Wait for or safely cancel in-flight writes/syncs.
+- Re-check the queue after the last sync attempt.
+- Never silently delete unsynced or local-only user content.
+- On sync failure, allow the user to retry or remain signed in. A destructive discard option must require a separate explicit confirmation naming the data that will be lost.
+- Purge only SEERAAI-owned, user-specific sensitive cache for the account being signed out.
+- Preserve non-sensitive preferences such as language/theme.
+- Handle multiple browser tabs and account switching safely where the existing architecture supports it.
+- If IndexedDB is shared across accounts or contains other data, do not delete the entire database; identify and clear only the relevant user-scoped stores/records.
+- Explain what happens if cache deletion fails. The app must not claim that sign-out cleanup succeeded when it did not.
+
+Do not propose crypto-js encryption with a key stored alongside the ciphertext or a key that remains accessible after sign-out. If encryption is recommended, explain a secure key lifecycle and why it is feasible in this browser architecture. Prefer server-side persistence and minimal client caching for sensitive court records.
+
+3. PUBLIC VS INSTITUTIONAL ACCESS CONSISTENCY
+The reports conflict: Phase 7A says authentication/verified token checks, while Phase 7B says signed-out visitors can read public legal sources. Inspect the actual Firestore and Storage rules and server routes. Distinguish explicitly:
+- anonymous read of only public legal-library data;
+- authenticated read/write of a user's private drafts/history;
+- role- and institution-scoped court records;
+- audit logs and administrative data.
+
+Do not change rules. Provide exact rule matches and explain whether public legal-source access is through Firestore, Storage, or a backend endpoint. Identify any route or storage path that bypasses the intended boundary. Never make public institutional data or court records readable to anonymous users.
+
+4. TEST EVIDENCE
+Do not label any test PASS unless you provide:
+- exact test file and test name;
+- command executed;
+- environment (Firebase Emulator or isolated test environment);
+- actual output/result;
+- whether the test was executed during this audit or merely inferred from code.
+
+Reclassify unsupported PASS claims as NOT RUN or NOT VERIFIED. Include negative tests for cross-user access, cross-institution access, anonymous public-library read, anonymous court-document read denial, unauthorized Storage object download, sign-out with pending queue, sync failure, local-only drafts, account switching, and multi-tab session behavior.
+
+5. TICKER
+Inspect exact hardcoded ticker entries. Remove no code yet. Design a neutral message for any unverified statute or cassation reference. Do not label a record verified without an official publication or identifiable authoritative source, publication date, exact title/number, and working source reference. Identify the source record for every item that may remain.
+
+6. MINIMAL PATCH SCOPE
+Assess whether AuthContext.tsx and index.html are truly the only files needed. Identify all additional files that must be changed for a complete, testable fix, including tests if needed. Do not modify files. Avoid broad refactors and dependency additions.
+
+7. ROLLBACK AND DATA PRESERVATION
+Provide a rollback plan that does not restore an insecure sign-out path silently. Specify how user data is protected before and during rollout. Do not recommend deleting production data or clearing all users' caches remotely.
+
+REQUIRED OUTPUT:
+A. Corrected GO/NO-GO decision for implementation (not public launch).
+B. Evidence table with exact paths and line ranges.
+C. Local-data inventory (cloud-synced / queued / local-only / non-sensitive).
+D. Corrected sign-out/account-switch sequence, including failure and race handling.
+E. Corrected Public-vs-Institutional access matrix, grounded in actual rules and routes.
+F. Test evidence table, separating EXECUTED from NOT RUN / INFERRED.
+G. Ticker entries to neutralize and official sources still required.
+H. Minimal file-by-file implementation plan and test plan.
+I. Remaining uncertainties and risks.
+J. Explicit confirmation that no files, dependencies, Firebase resources, secrets, or production data were changed.
+
+STOP after delivering the corrected plan. Do not implement anything. Wait for a separate explicit approval.

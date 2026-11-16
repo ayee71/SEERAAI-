@@ -42,24 +42,43 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
 
   const isPremium = isOwner || profile?.role === 'premium' || (profile as any)?.subscriptionTier === 'premium' || (profile as any)?.isPremium === true || hasPremiumLicense;
 
-  const mainTabs = isOwner
-    ? [
-        { id: 'home', label: t.nav.home, emoji: '🏠' },
-        { id: 'adminDashboard', label: 'Admin', emoji: '🛡️' },
-        { id: 'explainLaw', label: t.nav.explainLaw, emoji: '⚖️' },
-        { id: 'analyticsFeedback', label: t.nav.analyticsFeedback || 'Hordoffii', emoji: '📊' },
-      ]
-    : [
-        { id: 'home', label: t.nav.home, emoji: '🏠' },
-        { id: 'explainLaw', label: t.nav.explainLaw, emoji: '⚖️' },
-        { id: 'docAnalysis', label: t.nav.docAnalysis, emoji: '📄' },
-        { id: 'citationFinder', label: currentLang === 'om' ? 'Wabii Seeraa' : currentLang === 'am' ? 'የሕግ ድንጋጌዎች' : 'Citation Finder', emoji: '🔍' },
-      ];
+  const mainTabs = [
+    { 
+      id: 'home', 
+      labelOm: 'Mana', 
+      labelAm: 'መነሻ', 
+      labelEn: 'Home', 
+      emoji: '🏠' 
+    },
+    { 
+      id: 'explainLaw', 
+      labelOm: 'Seera', 
+      labelAm: 'ሕግ', 
+      labelEn: 'Law', 
+      emoji: '⚖️' 
+    },
+    { 
+      id: 'documentAnalysis', 
+      labelOm: 'Xiinxala', 
+      labelAm: 'ትንተና', 
+      labelEn: 'Analysis', 
+      emoji: '📄' 
+    },
+    { 
+      id: 'citation', 
+      labelOm: 'Wabii', 
+      labelAm: 'ዋቢ', 
+      labelEn: 'Citation', 
+      emoji: '🔍' 
+    },
+  ];
 
   const baseSections = [
     { id: 'home', label: t.nav.home, emoji: '🏠', desc: 'Maallaqa fuula duraa fi seensa' },
+    { id: 'cassation', label: currentLang === 'om' ? '⚖️ Baafata Murtii Ijibbaataa (Vol 1-25)' : currentLang === 'am' ? '⚖️ የሰበር ውሳኔዎች ማውጫ (ቅጽ 1-25)' : '⚖️ Cassation Master Index (Vol 1-25)', emoji: '⚖️', desc: 'Federal Supreme Court Cassation Decisions Vol 1-25' },
+    { id: 'cassationImporter', label: currentLang === 'om' ? '📥 Faayila Galchi (Importer)' : currentLang === 'am' ? '📥 ፋይል ጫኝ (Importer)' : '📥 File Importer', emoji: '📥', desc: 'Cassation Index Ingestion' },
     { id: 'library', label: currentLang === 'om' ? 'Kuusaa Sanadootaa' : 'Document Library', emoji: '📂', desc: 'Access legal documents' },
-    { id: 'courtWork', label: currentLang === 'om' ? '📁 Fooldara Mana Murtii' : '📁 Court Folder', emoji: isCourtAuth ? '🏛️' : '🔒', desc: 'Judge/Court staff work' },
+    { id: 'personnelFolder', label: currentLang === 'om' ? '📁 Fooldara Mana Murtii' : '📁 Court Folder', emoji: isCourtAuth ? '🏛️' : '🔒', desc: 'Judge/Court staff work & operations' },
     { id: 'templates', label: t.nav.templates, emoji: '📝', desc: 'Sanadoota qophaa\'anii' },
     { id: 'citation', label: currentLang === 'om' ? 'Wabii Seeraa' : 'Citation Finder', emoji: '🔍', desc: 'AI citation search' },
     { id: 'create', label: t.nav.create, emoji: '✍️', desc: 'Drafting legal docs' },
@@ -108,13 +127,13 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
                     ? 'text-[#FFD700] font-bold'
                     : 'text-[#E0E0E0] hover:text-[#FFD700]'
                 }`}
-                title={item.label}
+                title={currentLang === 'om' ? item.labelOm : currentLang === 'am' ? item.labelAm : item.labelEn}
               >
                 <div className={`p-1 rounded-xl transition-colors ${isActive ? 'bg-[#FFD700]/20' : ''}`}>
                   <span className="text-lg">{item.emoji}</span>
                 </div>
                 <span className="text-[10px] tracking-tight mt-0.5 truncate max-w-full font-medium">
-                  {item.label.split(' ')[0]}
+                  {currentLang === 'om' ? item.labelOm : currentLang === 'am' ? item.labelAm : item.labelEn}
                 </span>
               </button>
             );
@@ -175,7 +194,7 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
                 const isActive = activeTab === sec.id;
                 const firestoreRole = profile?.role || profile?.legalRole;
                 const hasStrictPersonnelRole = isOwner || firestoreRole === 'court_personnel' || firestoreRole === 'admin' || firestoreRole === 'judge';
-                const isCourtBenchItem = sec.id === 'courtWork';
+                const isCourtBenchItem = sec.id === 'courtWork' || sec.id === 'personnelFolder';
                 const isLocked = isCourtBenchItem && !isCourtAuth && !hasStrictPersonnelRole;
 
                 return (

@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.admin == true ||
+        request.auth.token.email == 'ayeledha@gmail.com' ||
+        request.auth.token.email == 'ayeledha@saiethio.com' ||
+        request.auth.token.email == 'ayele@saiethio.com'
+      );
+    }
+
+    function isLegalRepositoryManager() {
+      return isSignedIn() && (
+        isAdmin() ||
+        request.auth.token.legalContentManager == true
+      );
+    }
+
+    // Candidate strict Telegram rules
+    match /telegram_posts/{docId} {
+      allow get, list: if true;
+      allow create, update, delete: if isLegalRepositoryManager();
+    }
+    match /telegram_archive/{docId} {
+      allow get, list: if true;
+      allow create, update, delete: if isLegalRepositoryManager();
+    }
+    match /telegram_channel_feed/{docId} {
+      allow get, list: if true;
+      allow create, update, delete: if isLegalRepositoryManager();
+    }
+    match /telegram_polls/{docId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /telegram_channels/{docId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /telegram_messages/{docId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /telegram_subscribers/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /telegram_user_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /telegram_poll_results/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /telegram_briefing_logs/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /telegram_logs/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,224 @@
+SEERAAI PRO — PHASE 8A.1
+FIRESTORE RULES PATCH VALIDATION & AUTHORIZATION REVIEW
+
+Document ID: SEERAAI-PRO-PHASE-8A1-RULES-REVIEW-v1.0
+Target repository: sai-ethio-legal-ai
+Target rules file: firestore.rules
+Mode: READ-ONLY / NO IMPLEMENTATION / NO DEPLOYMENT
+Purpose: Validate the Phase 8A proposed Firestore Rules patch, including the final court_documents diff hunk and Section 18 clarification.
+
+============================================================
+1. MISSION
+============================================================
+
+Continue from the completed Phase 8A report. Perform an independent, read-only validation of the COMPLETE proposed firestore.rules patch against the CURRENT repository source.
+
+This is NOT authorization to edit files or implement the patch. The task is to verify whether the proposed patch is syntactically valid, logically secure, consistent with the existing application data model, and suitable for formal review by Security and Judicial Administration.
+
+The exact final diff clarification supplied for match /court_documents/{docId} is:
+
+allow update: if isSignedIn() && (
+-        request.auth.token.institutionId == resource.data.institutionId || isAdmin()
++        (canEditCases() && hasInstitutionClaim(existing().institutionId) && incoming().institutionId == existing().institutionId) || isAdmin()
+       );
++      allow delete: if isAdmin();
+     }
+
+Treat the above as a proposed diff, not as approved or correct code. Verify it against the entire current firestore.rules file and all relevant application code.
+
+============================================================
+2. ABSOLUTE SAFETY CONSTRAINTS
+============================================================
+
+1. READ-ONLY ONLY. Do not edit, create, delete, rename, format, or overwrite any source, rules, test, package, Firebase, or configuration file.
+2. Do not run firebase deploy, DeployRules, firebase use, gcloud deploy, Cloud Run deployment, Hosting deployment, or any production operation.
+3. Do not access, read, write, or test against production Firebase projects, production Firestore, Storage buckets, Auth users, Cloud Run services, or real court records.
+4. Do not install or download Java, Firebase Emulator binaries, packages, dependencies, or other tools.
+5. Do not alter roles, custom claims, user accounts, institutional records, or OfflineCaseDraft synchronization.
+6. Do not claim that rules compile or pass emulator tests unless those tests were actually executed in an isolated local emulator environment.
+7. If a test cannot run, mark it BLOCKED or NOT RUN and explain why. Never convert static inspection into a runtime PASS.
+8. Do not proceed to Phase 8B implementation. Stop after producing the review report and corrected proposed diff, if one can be established from source evidence.
+
+============================================================
+3. REPOSITORY AND BASELINE VERIFICATION
+============================================================
+
+A. Confirm the actual repository root and the exact path of firestore.rules.
+B. Read the complete firestore.rules file, not only the cited line ranges.
+C. Record its current byte size, line count, and SHA-256 hash. Do not modify it.
+D. Confirm whether the Phase 8A baseline hash and byte count still match. If they differ, report BASELINE_CHANGED and explain; do not overwrite or restore anything.
+E. Read firebase.json only to identify the configured rules path and emulator configuration. Do not modify it.
+F. Inspect the corresponding TypeScript services, server routes, Firebase Admin authorization helpers, user/role provisioning code, and relevant tests. Read only what is needed to verify the rules' actual data model and authorization assumptions.
+
+============================================================
+4. CRITICAL SYNTAX CHECK: existing() AND incoming()
+============================================================
+
+The Phase 8A final diff uses:
+- existing().institutionId
+- incoming().institutionId
+
+Do NOT assume these are built-in Firestore Security Rules functions.
+
+Search the complete firestore.rules file for explicit custom function declarations named existing and incoming. Verify their exact signatures, return types, scope, and semantics. Also search imported/generated rules fragments if the repository actually uses them.
+
+If either helper is not explicitly defined and valid in the rules language, mark the proposed expression INVALID. Do not silently assume the functions exist.
+
+For Cloud Firestore document writes, verify the canonical data references:
+- resource.data: current stored document data before the write.
+- request.resource.data: complete proposed document state after an update.
+
+If appropriate to the existing schema and policy, prepare a corrected proposed expression using these canonical references. Do not implement it.
+
+Verify that the update condition:
+1. checks that the signed-in user has a permitted case-editing role;
+2. checks that the user's trusted institution claim matches the existing document's institutionId;
+3. prevents changing institutionId to another institution in the incoming document;
+4. fails closed if institutionId is absent, null, malformed, or does not match;
+5. does not unintentionally grant cross-institution access through isAdmin() or another overlapping allow rule.
+
+Do not assume hasInstitutionClaim(), canEditCases(), or isAdmin() are valid or secure merely because they appear in the proposed patch. Locate and inspect their actual definitions and every helper they call.
+
+============================================================
+5. DELETE AUTHORIZATION REVIEW
+============================================================
+
+The proposed diff adds:
+
+allow delete: if isAdmin();
+
+Treat this as a NEW authorization grant. Do not accept it as a harmless syntax correction.
+
+Verify:
+1. What exactly does isAdmin() mean in the current rules and backend role model?
+2. Does it mean a project-wide trusted Super Admin, an institution-level administrator, or both?
+3. Can any normal user set or modify the data/claim used by isAdmin()?
+4. Would this expression permit deletion of every court_documents document across every institution?
+5. Are there legal retention, archival, preservation, audit-log, or judicial-record requirements that prohibit hard deletion or require a controlled workflow?
+6. Does the application use soft delete, versioning, retention metadata, or a server-side deletion workflow?
+7. Do any overlapping match statements independently grant delete access?
+
+Unless a formal policy clearly authorizes this exact privilege, recommend that the delete grant be OMITTED from the minimal patch and remain denied. If a delete capability is required, specify the exact approved role, institution boundary, workflow, audit trail, and tests needed before proposing it. Do not invent judicial policy.
+
+============================================================
+6. FULL RULES AND DATA-MODEL REVIEW
+============================================================
+
+Validate every proposed change in the complete Phase 8A diff, including at least:
+
+A. Undefined signedIn() references versus the actual isSignedIn() helper.
+B. Every use of isCourtReporterOrStaff(); verify whether it is defined and what roles it includes.
+C. The proposed court_admin role; verify the role naming used across client code, server code, user profiles, custom claims, and tests. Do not add it to policy by assumption.
+D. hasInstitutionClaim() and how institutionId is sourced and trusted.
+E. canEditCases(), hasCourtRole(), and every helper they depend on.
+F. isAdmin() scope and whether it grants global or institution-scoped authority.
+G. Public collections, private user collections, and institutional/court collections.
+H. Every overlapping or nested match block that could grant broader access.
+I. All read/list/create/update/delete operations separately.
+J. The court_documents path and its actual document schema, including owner, institution, status, and any other fields that the code genuinely uses.
+K. Whether any client-provided field can forge role, institutionId, ownerUid, or approval state.
+
+Remember: Firestore allow rules that match the same request are additive/OR-based. A restrictive rule in one match block does not cancel a broader grant in another matching block. Inspect all relevant matching paths.
+
+============================================================
+7. CUSTOM CLAIMS AND SERVER-SIDE AUTHORIZATION
+============================================================
+
+Inspect whether the repository really provisions trusted Firebase custom claims for role and institutionId. Do not create or modify claims.
+
+Report separately:
+- where custom claims are assigned, if anywhere;
+- which trusted server-side identity/authorization checks protect claim assignment;
+- how existing ID tokens receive refreshed claims;
+- whether missing claims fail closed;
+- whether roles or institution identifiers are read from untrusted client-editable documents;
+- whether backend routes use Firebase Admin SDK and enforce authorization independently.
+
+Important: Firebase Admin/server client libraries bypass Firestore Security Rules. Therefore, Security Rules are not a substitute for authorization checks in Express/Admin SDK routes. Inspect relevant routes and report this separately. Do not call live endpoints.
+
+============================================================
+8. PROPOSED PATCH QUALITY AND MINIMALITY
+============================================================
+
+Produce a proposed corrected unified diff ONLY if every changed line is grounded in the current source and existing approved policy.
+
+Requirements:
+1. Preserve unrelated rules and file formatting.
+2. Do not invent helper functions, role names, claims, collections, or schema fields.
+3. Do not silently widen read, write, update, delete, admin, or cross-institution privileges.
+4. Keep delete permissions out unless independently authorized by documented policy.
+5. Use canonical Firestore rules variables/functions where appropriate.
+6. Explain each changed hunk and its exact security effect.
+7. Mark unresolved decisions as HUMAN POLICY DECISION REQUIRED rather than guessing.
+8. If the original diff cannot safely be corrected from available evidence, return NO SAFE PATCH and list the missing evidence.
+
+============================================================
+9. REQUIRED TEST PLAN
+============================================================
+
+Prepare an isolated Firebase Emulator test matrix for at least:
+
+- unauthenticated user: deny all protected institutional reads and writes;
+- authenticated public user: public read only where intended;
+- ordinary user: cannot read/write another user's private data;
+- institution A judge: permitted operations only on institution A documents;
+- institution A registrar/clerk/legal officer: only explicitly authorized operations;
+- institution A court_admin: test only if the role is formally approved;
+- institution B staff: denied access to institution A documents;
+- missing institution claim: denied;
+- wrong institution claim: denied;
+- forged client-supplied institutionId: denied;
+- update changing institutionId: denied;
+- update preserving institutionId with correct role: allowed only if approved;
+- unauthorized delete: denied;
+- admin delete: test only if exact global/institution-scoped admin policy is approved;
+- overlapping match path: ensure no unintended grant occurs;
+- server/Admin SDK route: separately verify backend authorization because Rules do not protect Admin SDK calls.
+
+Use synthetic users and synthetic documents only. Do not connect the emulator to production. If Java or emulator support is unavailable, mark runtime tests BLOCKED; provide test code/design only and do not claim execution.
+
+============================================================
+10. OFFLINECASEDRAFT AND OTHER RELEASE BLOCKERS
+============================================================
+
+Do not change OfflineCaseDraft sync or provision a cloud collection in this phase. Confirm the reported CLOUD_SYNC_DESTINATION_UNAVAILABLE condition remains unchanged by static inspection, if relevant. Keep its cloud schema and deployment as a separate design/approval task.
+
+Do not treat a Firestore Rules patch as resolving:
+- missing OfflineCaseDraft destination/schema;
+- missing Java/Emulator execution;
+- missing/unsafe custom claims provisioning;
+- plaintext emergency backup export;
+- remote tombstone/delete verification gaps;
+- other release blockers listed in Phase 8A.
+
+============================================================
+11. REQUIRED FINAL REPORT FORMAT
+============================================================
+
+Return one consolidated report with these headings:
+
+1. Executive Decision: PASS FOR REVIEW / REVISE / REJECT / INSUFFICIENT EVIDENCE.
+2. Repository Baseline: exact path, bytes, line count, SHA-256; compare with Phase 8A.
+3. Existing/Incoming Helper Validation: declaration evidence and verdict.
+4. Correct Firestore Data References: explain resource.data and request.resource.data usage.
+5. Court Documents Update Rule: institution-boundary and role analysis.
+6. Delete Rule: privilege analysis and recommendation.
+7. All Other Proposed Hunks: line-by-line correctness and security impact.
+8. Role and Custom Claims Findings.
+9. Overlapping Rules and OR-Grant Analysis.
+10. Admin SDK/Express Backend Authorization Findings.
+11. Corrected Minimal Unified Diff OR NO SAFE PATCH.
+12. Emulator Test Matrix and actual execution status.
+13. Remaining Blockers and Human/Judicial Administration Decisions.
+14. Exact Next Step.
+15. Integrity Declaration.
+
+For every important conclusion, cite exact repository file paths and line ranges. Distinguish VERIFIED FROM SOURCE, STATICALLY INFERRED, NOT VERIFIED, BLOCKED, and HUMAN POLICY DECISION REQUIRED.
+
+Final integrity declaration must explicitly state whether any files were changed, whether any production resources were contacted, and whether any deployment was attempted. It must be truthful and based on observed execution.
+
+============================================================
+12. STOP CONDITION
+============================================================
+
+Stop after issuing the completed read-only validation report and proposed diff (if safe). Do not edit files. Do not implement Phase 8B. Do not deploy. Await human Security and Judicial Administration authorization before any remediation.

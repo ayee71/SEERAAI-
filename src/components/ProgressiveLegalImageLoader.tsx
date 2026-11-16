@@ -82,7 +82,7 @@ export const ProgressiveLegalImageLoader: React.FC<ProgressiveLegalImageLoaderPr
 
         {externalDocUrl && (
           <span className="px-2 py-0.5 rounded bg-slate-950/80 text-slate-400 border border-slate-800 text-[9px]">
-            saorethio1.com
+            {externalDocUrl}
           </span>
         )}
       </div>

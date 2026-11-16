@@ -1,0 +1,223 @@
+SEERAAI PRO — PHASE 8A.2
+ADMIN SDK & BACKEND AUTHORIZATION SECURITY AUDIT
+READ-ONLY SOURCE REVIEW — NO IMPLEMENTATION — NO DEPLOYMENT
+
+Document ID: SEERAAI-PRO-PHASE-8A2-ADMINSDK-AUTH-AUDIT-v1.0
+Repository: sai-ethio-legal-ai
+Target application version: 5.0.0 (verify actual package metadata before relying on it)
+Mode: READ-ONLY, AIRGAPPED, EVIDENCE-BASED SECURITY REVIEW
+Priority: CRITICAL — BACKEND AUTHORIZATION BEFORE FIRESTORE RULES REMEDIATION
+
+============================================================
+1. MISSION
+============================================================
+Audit the EXISTING SEERAAI PRO repository to determine whether every server-side route, Firebase Admin SDK operation, callable function, scheduled task, and privileged data mutation is protected by server-verified authentication, authorization, ownership, and institution scoping.
+
+This is a source-review and patch-proposal phase only. Do not implement any changes. The purpose is to establish a safe, coherent authorization architecture before any Firestore Rules patch or claims migration is approved.
+
+Do not create a new application, replace the existing authentication system, migrate projects, or remove existing user data or features.
+
+============================================================
+2. STRICT SAFETY BOUNDARIES
+============================================================
+1. READ-ONLY ONLY. Do not edit, create, delete, rename, format, or rewrite any source, rules, configuration, test, or deployment file.
+2. Do not install or upgrade packages, Java, Firebase CLI, emulator binaries, or any other dependency.
+3. Do not access production Firebase, Firestore, Storage, Auth accounts, Cloud Run, real court records, user records, production secrets, or external services.
+4. Do not execute firebase deploy, deploy rules, deploy functions, publish, release, or invoke production endpoints.
+5. Do not create or change Firebase custom claims, roles, passcodes, access codes, accounts, or institution mappings.
+6. Do not run tests that make network calls or mutate real data. Static inspection and offline-safe local analysis only.
+7. Never treat request-body fields, localStorage values, client-side role state, UI visibility, or a supplied email string as proof of authorization.
+8. Do not invent route behavior, test outcomes, file locations, line numbers, Firebase policy, or successful remediation.
+9. Preserve the existing application, Firebase project, Cloud Run service, user accounts, documents, and features.
+10. Stop after the report and proposed minimal diffs. Await explicit human/security/judicial approval.
+
+============================================================
+3. REQUIRED SOURCE INVENTORY
+============================================================
+Inspect the actual repository, not just prior reports. Confirm the current branch/worktree state and package version without modifying anything.
+
+Search the entire repository, especially:
+- server.ts
+- server-app.ts
+- src/server/**
+- src/server/firebase-admin-config.ts
+- src/server/legal/legalAnswerRoute.ts
+- functions/src/**
+- all Express routers, middleware, controllers, service modules, scheduled jobs, callable functions, and Firebase Admin SDK wrappers
+- firestore.rules and storage.rules (read-only)
+- courtInstitutionService.ts, courtDocuments.ts, AuthContext.tsx, and all role/session utilities
+
+Inventory every occurrence and call path involving:
+- getFirestore(), getAuth(), getStorage(), initializeApp(), admin.firestore(), admin.auth()
+- getSafeAdminFirestore() and adminDb
+- verifyIdToken(), decodedToken, request.auth, authorization headers
+- setCustomUserClaims() and every role/institution provisioning path
+- court_users, court_institutions, users/{uid}, and cuser_* document identifiers
+- role, courtRole, institutionId, legalContentManager, admin, ownerUid, ownerId, userId
+- passcode, accessCode, PIN, session token, or custom authentication handlers
+- every Firestore read/write/delete/batch/transaction and Storage read/write/delete using privileged server credentials
+
+For each route or function, follow the full middleware chain in registration order. Do not infer protection from a nearby middleware declaration unless it is actually attached to the route or router.
+
+============================================================
+4. KNOWN HIGH-PRIORITY ITEMS TO VERIFY IN SOURCE
+============================================================
+Independently verify or refute every item below. These are leads, not assumed facts.
+
+A. Legal source upload and review:
+- src/server/legal/legalAnswerRoute.ts
+- POST /api/legal/sources/upload
+- POST /api/legal/sources/:id/review
+- Prior finding: missing or invalid Authorization Bearer header may lead to trusting req.body.uploaderRole, req.body.uploaderEmail, req.body.reviewerRole, or related client-supplied identity fields while writes use Admin SDK.
+Verify exact branches, fallback behavior, middleware ordering, and all privileged writes.
+
+B. Case audio endpoints:
+- server-app.ts around the reported lines 5548–5753
+- POST /api/cases/:caseId/audio-recording
+- GET /api/cases/:caseId/audio-recordings
+- Prior finding: no authentication middleware; writes/reads may touch cases/{caseId}/audio_recordings, court_audio_recordings, and activity_logs through Admin SDK.
+Verify actual routes, every affected path, and institution boundaries.
+
+C. Upcoming deadlines:
+- server-app.ts around reported lines 5520–5534
+- POST /api/court/check-upcoming-deadlines
+- Prior finding: unauthenticated request may trigger a scan of adminDb.collection('cases') and create court_notifications across institutions.
+Verify trigger conditions, query scope, write scope, abuse/cost exposure, and whether a scheduler or user route is intended.
+
+D. Evidence metadata extraction:
+- server-app.ts around reported lines 5904 and 6056–6078
+- POST /api/evidence/extract-metadata
+- Prior finding: unauthenticated caller-supplied institutionId/documentId or caseId may cause Admin SDK writes to institutions/{institutionId}/courtDocuments/{documentId} or practice_cases/{caseId}.
+Verify exact request data flow and whether the caller can select arbitrary institutions or records.
+
+E. Firebase Admin authentication mapping:
+- server-app.ts authenticateUser / authorizeAdmin (reported around lines 121–185)
+- Prior finding: authenticateUser looks up court_users/{decodedToken.uid}, while courtInstitutionService.ts may create staff docs with generated IDs cuser_*.
+Verify whether this mismatch causes legitimate users to have null institutionId or bypass fallback behavior.
+
+F. Firebase callable court document functions:
+- functions/src/courtDocuments.ts (reported lines 55–91 and 137–452)
+- Prior finding: requireUser checks request.auth, token.role and non-empty token.institutionId.
+Verify every callable, the precise role allowlists, institution scoping, and any route/path reachable through broader rules.
+
+G. Role and custom claims provisioning:
+- Prior report found zero setCustomUserClaims calls across src/, server.ts, server-app.ts, and functions/src/.
+Verify repository-wide, including aliases/wrappers and scripts. Distinguish “no code call found” from “no claims exist in Firebase”; do not access production to check claims.
+- Verify client fallback behavior in src/services/courtDocuments.ts and courtInstitutionService.ts.
+- Confirm whether localStorage, default role='judge', or a default institution ID affects only UI state or is used in a privileged server path.
+
+H. Firestore Rules overlap:
+- Verify whether match /{document=**} grants read/write to isAdmin() and therefore OR-grants access to every matching path.
+- Verify every overlapping match path and each broad `isSignedIn() || ...`, `if true`, or equivalent grant.
+- Clarify that Admin SDK server-library operations bypass Firestore Security Rules and require server authorization and IAM controls independently.
+
+============================================================
+5. REQUIRED AUTHORIZATION MODEL ANALYSIS
+============================================================
+Recommend a coherent target model without implementing it.
+
+A. Firebase identity:
+- Verify Firebase ID token on the server using the trusted Admin SDK verification path.
+- Reject missing, malformed, expired, revoked (where appropriate), or invalid tokens before reading privileged request-body fields or touching protected data.
+- Do not trust req.body.uploaderRole, reviewerRole, uploaderEmail, institutionId, role, or owner identifiers as authorization facts.
+- Do not trust localStorage, app state, email text from the request body, or passcode success alone as proof of Firebase identity.
+
+B. Role and institution provisioning:
+- Design a server-only, least-privilege custom-claims provisioning workflow if custom claims are the approved design.
+- Specify which trusted administrative actor may grant, change, suspend, or revoke a role and institutionId.
+- Specify verification of the target Firebase UID, employment/staff record, institution assignment, approval evidence, audit logging, and revocation.
+- State how refreshed ID tokens receive changed claims and how sessions with stale claims are handled.
+- A user must never be able to grant themselves admin, judge, registrar, auditor, legalContentManager, court_admin, or another privileged role.
+- Do not implement setCustomUserClaims in this phase.
+- If staff passcode accounts are not Firebase Auth users, propose a secure migration/identity-linking plan. Do not treat a generated cuser_* Firestore ID as a Firebase UID unless source proves it is one.
+- Do not store plaintext passcodes/access codes. Determine whether they are stored plaintext, hashed, salted, rate-limited, rotated, or exposed; report exact evidence and a safe migration recommendation.
+
+C. Institutional scoping:
+- Every privileged court read/write must bind the authenticated UID to a server-controlled role and one authorized institution (or a formally approved multi-institution scope).
+- Institution IDs supplied by a client must be compared against verified identity/authorization records; never accept arbitrary client-selected institution IDs.
+- Prevent cross-institution access even for reads, audio, evidence extraction, deadlines, notifications, and audit logs.
+- Separate public legal sources from confidential user documents and institutional court records.
+
+D. Admin SDK access:
+- For every Admin SDK route, enforce authorization in server middleware/service logic because Firestore Rules do not apply to Admin SDK server libraries.
+- Define route-specific permissions, ownership checks, institution scope, allowed fields, validation, rate limits, audit logs, and error behavior.
+- Avoid a global “any authenticated user” rule for privileged Admin SDK endpoints.
+- Confirm least-privilege Google Cloud IAM/service account scope separately; IAM is not a substitute for end-user authorization.
+
+E. Special privileged actions:
+- Legal source upload: only an approved uploader/curator role can upload; server binds uploader UID and timestamp.
+- Legal source review/publish: a distinct approved reviewer permission; uploader must not self-approve unless formally permitted.
+- Court audio: authorized staff within the case institution only; access and changes logged.
+- Deadline scan: scheduler/service identity or tightly authorized role only; bounded scope and abuse controls.
+- Evidence metadata extraction: caller must prove access to the exact case/document and matching institution before Admin SDK writes.
+- Admin endpoint: define whether “admin” is global or institution-scoped; do not assume a global super-admin grant is acceptable.
+
+============================================================
+6. REQUIRED OUTPUTS
+============================================================
+Produce one consolidated report with these sections:
+
+1. Executive summary and gate decision: PASS / FAIL / BLOCKED / NOT RUN, with precise meaning.
+2. Repository identity and exact files/versions inspected.
+3. Complete Admin SDK usage inventory: file, line range, route/function, operation, target path/collection, auth middleware, authorization check, institution scope.
+4. Express route middleware chain table for every sensitive endpoint.
+5. Verified vulnerabilities with severity Critical/High/Medium/Low, exploit preconditions, affected data, and evidence.
+6. Legal source upload/review trust-boundary analysis.
+7. Audio, deadline, and evidence metadata endpoint analysis.
+8. Custom claims and role provisioning analysis.
+9. court_users/{uid} versus cuser_* identity mapping analysis.
+10. Firestore Rules overlap and global admin wildcard analysis, distinguishing client SDK from Admin SDK access.
+11. Public, private, and institutional data boundary matrix.
+12. Proposed target authorization model and migration sequence, including backward-compatibility risks.
+13. Proposed minimal unified diffs for backend middleware/routes only if fully supported by source; otherwise state NO SAFE PATCH and explain missing policy decisions.
+14. Unit/route/emulator test plan with synthetic identities and data only. Mark tests not run as NOT RUN or BLOCKED.
+15. Required Security, Privacy, and Judicial Administration approvals.
+16. Exact next action and release gate decision.
+17. Explicit confirmation that no files were edited and no production resources were accessed.
+
+For each claim, cite exact repository path and line range from the current source. Use short quoted code snippets only when necessary. Distinguish directly observed evidence from inference and recommendations.
+
+============================================================
+7. MANDATORY ATTACK / REGRESSION SCENARIOS TO DESIGN
+============================================================
+Do not run against production. Create a test plan using synthetic users, tokens, institutions, and documents.
+
+At minimum define expected deny/allow outcomes for:
+1. No Authorization header calling every sensitive route.
+2. Malformed, expired, revoked, or wrong-audience token.
+3. Valid ordinary public-user token attempting legal source upload/review.
+4. Client forging uploaderRole, reviewerRole, uploaderEmail, role, admin, institutionId, ownerUid, or userId.
+5. Judge from Institution A attempting to read/write Institution B data.
+6. Registrar from A attempting case audio/evidence/deadline operations for B.
+7. Staff with cuser_* record but no mapped Firebase UID.
+8. Firebase UID with no approved role or institution claim.
+9. Stale ID token after role revocation or institution reassignment.
+10. Legal-source uploader attempting to approve/publish their own submission.
+11. Unauthenticated deadline-scan abuse and excessive invocation.
+12. Unauthenticated evidence metadata extraction or arbitrary path selection.
+13. Audio read/write against a nonexistent case or another institution's case.
+14. Admin access: verify explicitly approved admin scope; deny or segregate other institutions unless formal policy says otherwise.
+15. Ensure ordinary users retain their own documents and public legal materials without gaining institutional access.
+16. Ensure no privileged operation relies only on Firestore Rules when Admin SDK is used.
+
+For each test specify identity claims, request, expected status, expected no-write/read side effect, audit-log expectation, and evidence required for PASS.
+
+============================================================
+8. CRITICAL DECISION RULES
+============================================================
+- Do not begin Phase 8B Firestore Rules implementation while Admin SDK authorization routes remain unaudited or unauthenticated.
+- Do not deploy hardened Firestore Rules before an approved and tested staff identity/claims provisioning plan exists; doing so may lock out legitimate staff.
+- Do not preserve insecure behavior merely for backward compatibility. Instead identify a controlled migration and fail-closed behavior.
+- Do not approve client-supplied role/email or localStorage role fallback as authorization.
+- Do not add court_admin, court_reporter, court_staff, chief_judge, legalContentManager, or global admin permissions without documented policy approval and explicit mapping.
+- Do not infer that a zero source-code setCustomUserClaims count proves no custom claims exist in deployed Firebase; production access is forbidden in this task.
+- Do not treat the presence of `requireUser` in one callable as proof that all backend routes are protected.
+- Do not equate a TypeScript build or static grep with successful authorization testing.
+- If any critical route cannot be fully traced, mark the authorization conclusion BLOCKED.
+
+============================================================
+9. STOP CONDITION
+============================================================
+Complete the read-only report and, if safe, provide proposed backend-only diffs. Do not apply any diff, change claims, edit Firestore Rules, provision Java/emulators, deploy, or proceed to Phase 8B. Stop and await explicit human, Security, Privacy, and Judicial Administration approval.
+
+END OF PHASE 8A.2 PROMPT

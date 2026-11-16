@@ -1,0 +1,155 @@
+SEERAAI PRO — PHASE 8B.6.6
+
+PRE-PUSH SECURITY, AUTHENTICATION & WORKFLOW COMPATIBILITY AUDIT
+
+READ-ONLY — NO FILE MODIFICATIONS
+
+You are auditing the existing SEERAAI PRO application and its Phase 8B.6.5 candidate remediation.
+
+STRICT MODE: READ-ONLY.
+Do not edit, create, delete, rename, commit, push, merge, deploy, publish, migrate, or modify any production resource.
+
+1. Verify the actual Git state
+
+Inspect the current repository and report:
+
+- Current branch.
+- Whether commit "396c270efab2fbbda9eecfd40b9d42af2310e8a1" exists locally.
+- Whether that exact commit is already present on the remote GitHub branch "ci/rules-emulator-tests".
+- Whether the handoff ZIP contains the same candidate rules, tests, workflow, and package files as the repository.
+  Do not claim that a commit has been pushed unless remote evidence confirms it.
+
+2. Firestore Rules — complete security review
+
+Inspect the complete file:
+"firestore.rules.phase8b5.3.integrated.candidate"
+
+Do not review only the diff summary.
+
+- Enumerate every "match" block and every "allow" statement.
+- Identify all overlapping matches and explain their combined effect.
+- Verify that no permissive legacy rule defeats the intended default-deny behavior.
+- Verify tenant isolation for every institution-related collection and subcollection.
+- Verify that a user cannot modify their own role, admin, courtRole, or institutionId.
+- Verify that audit logs cannot be modified or deleted by unauthorized users.
+- Check whether the "incoming()" helper functions and "dataUrl" validation are valid and correctly applied.
+- Identify any collection or workflow that has unintentionally lost access.
+
+IMPORTANT: Firestore permissions from overlapping matching rules are additive. A restrictive catch-all rule does not cancel another matching rule that grants access.
+
+3. Authentication compatibility
+
+Inspect the actual authentication implementation and identify every sign-in provider used by the existing app.
+
+Specifically test and report the expected access behavior for:
+
+- Verified email/password users.
+- Phone-only users.
+- Anonymous users.
+- Users with trusted admin custom claims.
+- Court staff with valid institution and role claims.
+- Users with missing or expired claims.
+
+The new "isEmailVerified()" excludes phone providers and requires "email_verified == true". Determine whether this blocks existing legitimate users or administrators.
+
+Do not weaken authentication security. Report the exact compatibility impact and the safest options. Do not change any file.
+
+4. Court-document confidentiality
+
+Inspect the complete Firestore and Storage rules, plus the actual court-document service implementation.
+
+Determine whether:
+
+- All staff in an institution can read every court document.
+- Access is restricted by case assignment, document ownership, or another reliable authorization condition.
+- An auditor, legal expert, assistant judge, registrar, and judge have only the access intended for their duties.
+- A user from another institution is denied.
+- A normal user cannot access institutional case documents.
+
+Explicitly classify any institution-wide access as either an approved intended workflow or a security risk requiring a decision.
+
+5. Storage path and upload compatibility
+
+Inspect:
+
+- "storage.rules.phase8b5.4.integrated.candidate"
+- "src/services/courtDocuments.ts"
+- "src/services/storage.ts"
+- Every actual upload and download path used by the application.
+
+Verify whether the Storage rule path:
+"/institutions/{institutionId}/courtDocuments/{documentId}/{fileName}"
+matches the actual object paths exactly, including any nested folders.
+
+Verify that "isValidDocumentUpload()" actually checks:
+
+- Maximum file size.
+- Allowed MIME/content types.
+- Required metadata.
+- Institution ID.
+- Document ID.
+- Uploaded-by UID.
+- Correct behavior for create, update, and delete.
+
+The audit report previously identified a 5GB application upload limit and a 50MB candidate Storage limit. Determine whether the actual client UI and upload service enforce the same limit as the Storage Rules. Do not assume the compatibility problem is solved unless the source code proves it.
+
+Do not change the 50MB or 5GB decision. Report the required owner decision and the precise files that would need a change.
+
+6. Existing application workflows
+
+Verify the actual source code for:
+
+- Court documents and folders.
+- Court branding and logos.
+- Witness scheduling.
+- Courtroom audio.
+- Telegram legal archive and public posts.
+- Personal legal documents under "legal_docs/public/{userId}".
+- Personal legal documents under "legal_docs/personal_{userId}/{userId}".
+
+For each workflow, report whether its real paths, roles, metadata, and operations are allowed by the candidate rules.
+
+Do not claim a workflow is preserved merely because a test file exists.
+
+7. CI and dependencies
+
+Inspect the complete:
+
+- ".github/workflows/rules-test.yml"
+- "firebase.emulator.test.json"
+- "tests/firestore.rules.test.ts"
+- "tests/storage.rules.test.ts"
+- "package.json"
+- "package-lock.json"
+
+Verify:
+
+- CI uses only "demo-seeraai-test".
+- CI cannot connect to or modify production Firebase.
+- Both emulator suites are actually executed.
+- A failed test causes the workflow to fail.
+- "npm ci --legacy-peer-deps" completes successfully in the intended CI environment.
+- The workflow does not accidentally deploy or publish the production application.
+- Test coverage includes the security and compatibility cases listed above.
+
+Do not report tests as PASS unless actual execution evidence exists.
+
+8. Final report — no changes allowed
+
+Return a report containing:
+
+1. Repository and remote branch verification.
+2. Full Firestore rules findings.
+3. Authentication compatibility findings.
+4. Court-document confidentiality findings.
+5. Storage path, file-size, MIME and metadata findings.
+6. Existing application workflow compatibility matrix.
+7. CI and dependency findings.
+8. Missing or inadequate tests.
+9. Risks ranked CRITICAL / HIGH / MEDIUM / LOW.
+10. Exact blockers that must be fixed before pushing.
+11. A final recommendation: "SAFE TO PUSH CANDIDATE BRANCH" or "DO NOT PUSH YET".
+
+Include source file names and exact line numbers for every material finding.
+
+FINAL RESTRICTION: This is a read-only audit. Do not modify files and do not deploy, merge, push, or publish anything.

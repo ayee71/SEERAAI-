@@ -14,7 +14,7 @@ export const PublerIntegrationModal: React.FC<PublerIntegrationModalProps> = ({ 
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const sampleWebhook = 'https://saorethiol.com/api/publer/webhook';
+  const sampleWebhook = 'https://saiethio.com/api/publer/webhook';
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();

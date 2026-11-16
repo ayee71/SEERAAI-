@@ -1,0 +1,392 @@
+SEERAAI PRO — MASTER INTEGRATED QUALITY, SECURITY, LEGAL-ACCURACY & RELEASE-READINESS CAMPAIGN
+Version: MASTER-1.0
+Target: Existing SEERAAI PRO / sai-ethio-legal-ai repository (currently reported as v5.0.0)
+Mode: ONE CONSOLIDATED TEST CAMPAIGN + CONTROLLED LOCAL REMEDIATION ONLY
+Deployment: STRICTLY PROHIBITED
+
+======================================================================
+0. YOUR ROLE AND THE SINGLE MISSION
+======================================================================
+
+Act as the independent principal software architect, QA lead, application-security reviewer, Firebase rules engineer, privacy engineer, and Ethiopian legal-AI quality reviewer for the EXISTING SEERAAI PRO application.
+
+Run one coordinated, end-to-end quality campaign across the entire existing application. Consolidate all relevant prior work from Phases 7A through 7D.3 into one master test plan and one final evidence-based report. Do not restart old phases as separate repetitive audits. Reuse the current repository and the actual source code as the only authority.
+
+The mission is to establish whether the existing SEERAAI PRO app works correctly, securely, and consistently for its intended users, and to identify and safely remediate verified local-code defects. The target is an evidence-based release-readiness decision, not a positive report.
+
+A successful build is NOT proof of runtime correctness. A mocked test is NOT proof of real browser or Firebase behavior. A local emulator test is NOT a production test. Never claim a test passed unless it was actually executed and its result was observed.
+
+======================================================================
+1. ABSOLUTE PRESERVATION AND SAFETY RULES
+======================================================================
+
+1. Work ONLY in the existing SEERAAI PRO repository. Do not create a replacement app, clone a new product, migrate users, or replace the Firebase project.
+2. Preserve existing users, user IDs, private documents, court records, judgments, orders, case files, institutional data, features, routes, UI workflows, and integrations.
+3. NEVER access, read, write, delete, seed, reset, export, or test against production Firebase/Auth/Firestore/Storage data. Do not use production credentials or production endpoints for tests.
+4. NEVER deploy or publish anything. No Firebase rules deployment, Storage rules deployment, Hosting deployment, Cloud Run deployment, DNS/domain change, webhook change, or production release.
+5. Never print, expose, copy into reports, or request API keys, access tokens, passwords, private keys, service-account JSON, bot tokens, or secret environment-variable values. You may report variable NAMES and whether a required variable is present, not its value.
+6. Never run destructive commands such as `git reset --hard`, `git clean -fd`, broad `rm`, database wipes, Firebase project deletion, or production data cleanup.
+7. Before any local modification, inspect `git status` and existing diffs. Preserve all pre-existing user changes. Do not overwrite user work. Make a recoverable local backup/branch/commit only if the repository already supports it and the operation will not overwrite work. Report the exact method used.
+8. Do not upgrade application runtime dependencies or change package versions. Do not rewrite package.json or lockfiles merely to make a test pass.
+9. Test data must be synthetic and clearly marked `TEST_ONLY`. Never use real litigant names, real case files, real court records, or real user personal data.
+10. If a prerequisite is missing, a test is unsafe, the correct data scope is unclear, or a source destination/schema is not established, stop that test and report BLOCKED/NOT RUN. Do not guess, silently bypass, or claim success.
+11. Treat legal and institutional data as confidential by default. Public legal research sources and private user drafts and institutional court records must remain separate.
+12. Do not use a static string, local timestamp, queue deletion, local status flag, or mocked response as proof that a record was saved to the cloud.
+
+======================================================================
+2. EXECUTION MODEL: ONE MASTER CAMPAIGN, GATED STAGES
+======================================================================
+
+Execute the stages below in order in this single campaign. Maintain one shared test register and one final report. Do not ask the user to repeat information already present in the repository or previous reports.
+
+Stage 0 — Repository identity, integrity, and safety preflight.
+Stage 1 — Static code, dependency, build, lint, and type checks.
+Stage 2 — Authentication, authorization, sessions, sign-out, and account switching.
+Stage 3 — Local storage, IndexedDB, offline queue, sync, and data integrity.
+Stage 4 — Real browser, multi-tab, Service Worker, PWA, and shared-device tests.
+Stage 5 — Firebase Auth, Firestore, and Storage Emulator isolation and integration tests.
+Stage 6 — Firestore/Storage rules, RBAC, custom claims, tenant isolation, and audit access.
+Stage 7 — Offline court drafts/case files/templates and institutional retention.
+Stage 8 — Legal AI/RAG grounding, legal source traceability, citation integrity, and anti-fabrication.
+Stage 9 — Afaan Oromoo, Amharic, and English functionality and output quality.
+Stage 10 — Document upload, analysis, drafting, export, and private history.
+Stage 11 — Voice recording, transcription, language handling, and audio privacy.
+Stage 12 — Backend/API security, secrets, validation, rate limits, CORS, and abuse controls.
+Stage 13 — Role-specific UI workflows, mobile/responsive behavior, accessibility, and error handling.
+Stage 14 — Performance, reliability, offline/online recovery, observability, and cost controls.
+Stage 15 — Consolidated remediation verification and final release-readiness gates.
+
+For every test record one of these exact statuses:
+PASS — executed successfully with evidence.
+FAIL — executed and failed, with observed evidence.
+BLOCKED — could not be executed because a prerequisite or safe test environment is missing.
+NOT RUN — intentionally not executed.
+NOT APPLICABLE — genuinely irrelevant, with reason.
+STATICALLY VERIFIED — source inspection only; never treat as runtime PASS.
+MOCKED PASS — executed against mock/stub only; never treat as real integration PASS.
+
+Every PASS must include the exact command or browser action, environment, test data identifier (synthetic only), observed result, and source/test evidence. Do not convert BLOCKED, NOT RUN, STATICALLY VERIFIED, or MOCKED PASS into PASS.
+
+======================================================================
+3. STAGE 0 — REPOSITORY AND ISOLATION PREFLIGHT
+======================================================================
+
+A. Inspect and report:
+- repository root, package name/version, framework/runtime versions, package scripts;
+- current Git branch/status and pre-existing modified/untracked files;
+- Firebase project identifiers found in configuration (redact values if they may identify production; do not connect to them);
+- firebase.json, Firestore rules path, Storage rules path, Vite config, service-worker registration, server entrypoints, and environment-variable NAMES;
+- current tests and test framework availability;
+- available browser runtime, Java runtime, Firebase CLI, emulator binaries/cache, and local ports.
+
+B. Production isolation:
+- Use a clearly separate emulator project ID such as `demo-seeraai-qa` for emulator-only work.
+- Confirm that client SDK and Admin SDK test processes point only to local emulator endpoints before any Firebase operation.
+- Confirm there is no fallback to production if an emulator is unavailable.
+- Do not start the app in a mode that silently initializes the production Firebase project.
+- Block or stub any production network route during browser tests. Permit only explicitly required localhost/Vite, local backend test routes, and emulator ports.
+
+C. If the repository lacks emulator config or emulator wiring:
+- First prepare a plan for temporary, test-only emulator configuration isolated from production.
+- You may create test-only files/configuration in a temporary QA workspace, or add clearly gated local-test-only wiring if necessary and safe.
+- Do not change production defaults. Never make emulator endpoints the normal production configuration.
+- Do not download/install operating-system runtimes or packages without checking the environment's permitted tooling policy. If Java, Firebase CLI, emulator binaries, or browser tooling are unavailable, report exact missing prerequisites and stop only the affected tests.
+- Do not run any Firebase command that could select or modify a real project. Use an explicit emulator-only project and inspect the command before execution.
+
+D. Stop immediately if you cannot prove that a test is isolated from production.
+
+======================================================================
+4. STAGE 1 — STATIC QUALITY, BUILD, AND DEPENDENCY CHECKS
+======================================================================
+
+Run only commands that are available and safe. Record exact commands and outputs:
+- TypeScript check / lint script.
+- Unit-test suite, including `tests/phase7d2_signout_safety.test.ts` if still present.
+- Production bundle build only if it writes local artifacts and does not deploy or call production endpoints. Record generated local paths; do not delete user artifacts.
+- Static scan for TODO/FIXME, unsafe `any`, swallowed exceptions, false sync labels, unhandled promises, and duplicated logout/auth paths.
+- Dependency audit using existing local tooling only; do not upgrade packages.
+
+Inspect build scripts such as `prepare-build.js` before running them. A command named build may write `dist/` or `build/`; this is permitted only as a local artifact and only after confirming it cannot publish or call production. Do not assume `lint` means lint; inspect the actual package script.
+
+======================================================================
+5. STAGES 2–4 — AUTH, STORAGE, OFFLINE, BROWSER, MULTI-TAB, SERVICE WORKER
+======================================================================
+
+Inspect the current implementation and then run real browser tests with synthetic accounts and disposable browser profiles wherever the tooling exists.
+
+Required cases:
+1. Clean sign-out with no pending records.
+2. Pending queue: sync succeeds; only server-confirmed data may be purged.
+3. Pending queue: network loss; no silent deletion; data remains recoverable.
+4. Local-only draft: no cloud destination; must remain pending and require explicit informed choice.
+5. Corrupt JSON, unknown schema version, failed IndexedDB read, unavailable IndexedDB, and timeout; all destructive actions must fail closed.
+6. IndexedDB `onsuccess`, `onerror`, `onblocked`, timeout, overlapping deletion request, and late settlement in real Chromium where possible.
+7. Every database opener sets `onversionchange` and closes connections; verify application tabs and Service Worker handles.
+8. Cross-tab protocol: enumerate live tabs; verify PREPARE, ACK, CLOSE_IDB, ACK_CLOSE, SESSION_TERMINATED; no timeout may be treated as an ACK.
+9. Unresponsive/frozen tab: sign-out enters safe hold or isolation lockdown; a second user must not enter until isolation is verified.
+10. Service Worker pause/resume and close-IDB messages; verify correlation IDs and actual acknowledgements.
+11. Account A signs out, account B signs in; verify no A documents, titles, credentials, court session, role claims, bookmarks, drafts, annotations, or private cache are accessible to B.
+12. All logout call sites (navigation, admin, court dashboard, session management, security dashboard, direct routes) must use the same guarded flow. No bypass via raw `signOut(auth)` or localStorage removal.
+13. Verify default modal consent is non-destructive, inventory counts are real, discard requires two explicit steps, and cancel/stay-signed-in preserves data.
+14. Verify sign-out failure: auth.currentUser, React state, persistence, lockdown, retry, and account-switch behavior remain consistent.
+15. Verify local backups: prominently disclose plaintext versus encrypted state; never call an unencrypted JSON file secure/encrypted. Do not export real data during tests.
+16. Check every sensitive localStorage key, IndexedDB store, cache, service-worker cache, sessionStorage key, and user-scoped namespace. Preferences must be allowlisted; do not preserve sensitive fields accidentally.
+17. Verify exact storage key names from source (including `seera_device_auth_salt`); no guessed key names.
+
+Required invariant: A sign-out flow must never silently destroy unsynced/local-only data, must never permit the next user to read the prior user's plaintext data, and must never treat a failed/blocked purge as successful isolation.
+
+If these requirements cannot all be met simultaneously for a shared device, the safe outcome is to block account switching until the user has synced, securely exported, or explicitly confirmed permanent discard. Do not leave plaintext private data available to the next account.
+
+======================================================================
+6. STAGE 5 — FIREBASE AUTH / FIRESTORE / STORAGE EMULATOR TESTS
+======================================================================
+
+This stage is mandatory for a Staging GO decision. Use only local Auth, Firestore, and Storage Emulators with synthetic data.
+
+Before executing any operation:
+- prove the client SDK is connected to the local Auth and Firestore emulator endpoints;
+- prove the Admin SDK uses emulator environment variables and the demo project only;
+- prove no production credentials or live endpoints are used;
+- isolate the emulator data directory and use synthetic UIDs only.
+
+Test:
+1. Email/anonymous test sign-in as User A and User B.
+2. Custom claims for synthetic Judge, Assistant Judge, Registrar, Court Admin, Legal Expert/Advocate, and ordinary public user, using emulator-only token claims or emulator-supported test setup.
+3. Verified Firestore write: write promise resolves, server read from server succeeds, matching UID/document ID/clientSyncNonce/revision is confirmed, and `hasPendingWrites` and `fromCache` are false where the SDK exposes them.
+4. Read-after-write and update revision/hash consistency.
+5. Cross-user read/write denial.
+6. Cross-institution read/write denial.
+7. Public legal source read access only where explicitly intended; anonymous access must not reach private drafts or court records.
+8. Firestore deletes and conflict handling; verify delete confirmation and tombstone/version behavior.
+9. Storage upload/download ownership and institution scoping, MIME/type/size restrictions, and unauthorized URL access.
+10. Auth sign-out network failure/retry and auth.currentUser verification.
+11. Offline-to-online queue replay and duplicate prevention/idempotency.
+12. Rate limits, backend authorization, and Admin SDK rule-bypass protections.
+
+Do not call any live service if emulator setup fails. Mark affected cases BLOCKED.
+
+======================================================================
+7. STAGE 6 — FIRESTORE / STORAGE RULES, RBAC, CLAIMS, TENANT ISOLATION
+======================================================================
+
+Audit the exact current rules and test them with the Emulator Suite. Do not broaden permissions to make tests pass.
+
+Known issues to explicitly verify from the current repository, not blindly assume:
+- `isSignedIn()` versus references to undefined `signedIn()`;
+- references to `isCourtReporterOrStaff()` or any other helper that may not exist;
+- Court Admin role inclusion versus Judge/Assistant Judge/Registrar checks;
+- custom claim lifecycle for `uid`, `role`, `courtRole`, `institutionId`, and token refresh;
+- create/update ownership validation: use `request.resource.data` for new data and protect immutable owner/institution fields on update;
+- list/query authorization and field-level confidentiality;
+- public library read exceptions;
+- audit logs access;
+- Storage path ownership and institution isolation;
+- Admin SDK endpoints: verify server-side authentication and authorization because Admin SDK can bypass Firestore rules.
+
+If a rule defect is confirmed, create a minimal local-only rule patch and comprehensive emulator tests. Never deploy rules. Preserve least privilege and default deny. If role meaning or court policy is uncertain, do not invent a permission; mark it BLOCKED pending authorized policy clarification.
+
+======================================================================
+8. STAGE 7 — OFFLINE COURT DRAFTS, CASE FILES, TEMPLATES, RETENTION
+======================================================================
+
+Audit each distinct mechanism separately; do not conflate them:
+A. OfflineCaseDraft in `seera_offline_court_case_drafts`.
+B. OfflineCaseFile/cache in `seera_offline_court_case_files`.
+C. IndexedDB `case_files`, `templates`, `sync_queue`, and institutional stores.
+D. Canonical Firestore court cases, court documents, templates, judgments, orders, and audit logs.
+
+For every type, identify:
+- authoritative owner (user UID and/or institution ID);
+- intended readers/writers and roles;
+- canonical cloud collection/path and schema, if one exists;
+- exact create/update/delete rules;
+- backend or Service Worker upload route and acknowledgement;
+- idempotency key, revision/conflict strategy, and server-confirmation metadata;
+- retention and audit requirements.
+
+Do NOT invent a Firestore collection name or backend endpoint. If no approved schema/destination and authorization policy exists for OfflineCaseDraft, keep it explicitly local-only/pending, never mark it synced, and require secure recovery or informed discard before sign-out. Produce a schema/API design proposal for human review; do not ship an unapproved institutional data model.
+
+Canonical institutional records must never be deleted by user sign-out. Re-fetchable local replicas may be purged only under the approved device/privacy policy. Local-only official court material must not be silently discarded. Unencrypted backup exports must be clearly identified as plaintext and must not be described as secure.
+
+======================================================================
+9. STAGES 8–9 — LEGAL AI, RAG, SOURCES, CITATIONS, MULTILINGUAL QUALITY
+======================================================================
+
+Test actual runtime outputs, not just source code or prompt text.
+
+Legal grounding:
+- Prioritize official Federal Ethiopian legislation, official Oromia regional enactments, Federal Supreme Court Cassation decisions, official gazettes, and other approved authoritative sources.
+- Verify each legal citation against a retrievable source record, identifier, publication date, jurisdiction, and relevant text.
+- No invented Proclamation numbers, article numbers, cassation file numbers, holdings, dates, or court decisions.
+- If authoritative evidence is absent or conflicting, say that the source could not be verified; do not fill gaps with model guesses.
+- Clearly distinguish Federal and Oromia regional law, current law and repealed/amended law, and Gregorian/Ethiopian calendar dates.
+- Do not use a generic web result as proof of official Gazette publication.
+- Validate citation links and displayed references; detect stale, duplicate, or unsupported sources.
+- Test retrieval ranking, chunk provenance, document/page pinpoint citations, source freshness, and conflicts.
+
+Run the same synthetic legal test suite in:
+- Afaan Oromoo (including correct Oromo legal terminology and orthography);
+- Amharic;
+- English.
+
+For each language, test: legal Q&A, federal/regional comparison, case-law search, explain-law, document drafting, document analysis, refusal/uncertainty behavior, dates/numbers, and citation consistency. Use qualified human legal review for substantive legal correctness; the model cannot self-certify legal accuracy.
+
+Ticker/UI source statements must be factual. Do not claim an official database is active, synchronized, or verified unless a live health/source check proves it. Prefer honest status text.
+
+======================================================================
+10. STAGES 10–11 — DOCUMENTS, DRAFTING, VOICE, AUDIO
+======================================================================
+
+Document lifecycle:
+- upload/download, PDF/DOCX/XLSX and supported image/audio types;
+- file-size and MIME validation on client and server;
+- user/institution ownership and cross-user denial;
+- document analysis, citations, page references, OCR confidence, and refusal on unreadable content;
+- save, reopen, edit, revision, export, delete, restore, and audit events;
+- no leakage through temporary files, local caches, object URLs, or logs.
+
+Voice/audio:
+- microphone permission denied/granted paths;
+- MediaRecorder format support and chunk handling;
+- upload size limits and server validation;
+- actual `/api/transcribe` speech-to-text route/model response;
+- Afaan Oromoo, Amharic, English test clips made only from synthetic test sentences;
+- transcript accuracy reviewed by fluent speakers; do not claim verbatim transcription without measured results;
+- pause/resume/cancel/retry and UI insertion into the correct field;
+- audio retention/deletion, private access, and no unintended audio logging.
+
+A MediaRecorder recording is not transcription. Prove the actual transcription service path separately.
+
+======================================================================
+11. STAGE 12 — BACKEND / API / SECRETS / ABUSE SECURITY
+======================================================================
+
+Audit every server route and callable endpoint:
+- authentication and role/institution authorization at the server boundary;
+- validation, schema/type checks, payload size limits, MIME restrictions, path traversal, injection, and error handling;
+- rate limiting and abuse controls across legal AI, transcription, document, and admin routes;
+- CORS allowlist and CSRF/session protections where applicable;
+- API keys and Telegram tokens server-side only; no secrets in VITE_ variables, source maps, client bundle, logs, error payloads, or reports;
+- ensure Firebase Admin SDK routes perform explicit authorization because Admin SDK may bypass Security Rules;
+- ensure public endpoints cannot access institutional or private data;
+- verify AI provider fallback does not weaken legal grounding or disclose prompts/private documents;
+- redact logs and prevent PII/case data leakage.
+
+Run secret scans only with tools already available. Report secret names or file locations without printing values. If an actual secret exposure is discovered, stop and recommend rotation through the owner; do not copy the secret into the report.
+
+======================================================================
+12. STAGES 13–14 — UI WORKFLOWS, ACCESSIBILITY, PERFORMANCE, RELIABILITY
+======================================================================
+
+Test role-based flows with synthetic accounts:
+- public visitor;
+- ordinary authenticated user;
+- legal expert/advocate;
+- judge and assistant judge;
+- registrar/court admin;
+- system administrator.
+
+Verify navigation, permissions, empty/error/loading states, localization, mobile layouts, keyboard access, focus management, labels, contrast, responsive layout, and lockdown recovery UI.
+
+Reliability/performance:
+- slow network, offline, reconnect, duplicate retries, browser reload, tab freeze, worker restart, token expiry, API timeout, large legal document, oversized audio, and server outage;
+- no unbounded retry loops, duplicate writes, unbounded local queues, or misleading success messages;
+- memory and storage growth; cache expiry; cleanup behavior;
+- request counts, model token usage, search calls, and rate-limit behavior using local test telemetry only.
+
+Do not estimate real bills as verified facts. Report measured local request counts and identify cost items requiring production billing observation.
+
+======================================================================
+13. CONTROLLED LOCAL REMEDIATION AUTHORIZATION
+======================================================================
+
+You are authorized to make MINIMAL, LOCAL-ONLY changes to the existing source code and test-only configuration for defects that are directly verified during this campaign, subject to all conditions below:
+
+1. Capture baseline repository status and diffs first. Never overwrite pre-existing user changes.
+2. Change only the smallest relevant files; explain why each file is necessary.
+3. Do not add or upgrade application runtime dependencies. Test-only tools may be used only if already present; if installation is required, report the prerequisite and request separate approval rather than changing package manifests.
+4. Local-only `firestore.rules` and `storage.rules` patches are permitted only when supported by existing authorization policy and backed by emulator tests. Do not deploy them.
+5. Do not invent/activate an OfflineCaseDraft cloud schema, collection, role, institution policy, or retention period. If this requires an institutional policy decision, leave it blocked and prepare a design proposal.
+6. Do not weaken security rules, remove authentication, bypass owner/institution checks, disable legal grounding, or relax rate limits just to make tests pass.
+7. Do not erase data to make tests pass. Use synthetic test records and disposable emulator data only.
+8. After each patch, run the narrow relevant tests and regression tests. Preserve exact diffs and rollback instructions.
+9. If a change could affect production data, user identity, court retention, or permission policy, stop and seek explicit approval.
+10. No deployment of any kind is authorized.
+
+======================================================================
+14. STAGE 15 — CONSOLIDATED RELEASE GATES
+======================================================================
+
+Produce separate decisions. Never combine them into one vague GO:
+
+GATE A — Static/Unit Quality:
+All required type checks, lint, tests, and local build pass.
+
+GATE B — Browser Runtime:
+Real Chromium tests pass, including single-tab, multi-tab, Service Worker, IndexedDB, account A-to-B isolation, queue preservation, and lockdown recovery.
+
+GATE C — Firebase Emulator:
+Auth, Firestore, Storage, cross-user denial, institution isolation, server acknowledgement, custom claims, and sign-out failure/retry tests pass using only emulators.
+
+GATE D — Legal/Multilingual Quality:
+Grounded legal citations and output quality are reviewed for Afaan Oromoo, Amharic, and English; unsupported citations are rejected; qualified legal review is recorded as complete or pending.
+
+GATE E — Institutional Data Safety:
+Court record ownership, institution scoping, audit, retention, offline draft destination, and backup policy are explicitly approved and tested. No invented schema or permission.
+
+GATE F — Staging Readiness:
+Only possible after A–E pass, all critical/high issues are closed, emulator/browser tests are reproducible, rollback is ready, and an authorized human approves staging. This campaign itself does not deploy staging.
+
+GATE G — Production Readiness:
+Only possible after staging soak/QA, security review, legal source review, privacy/retention approval, cost/monitoring plan, backups, rollback, domain verification, and separate explicit human deployment approval. This campaign does not authorize production deployment.
+
+A single CRITICAL or HIGH unresolved security, data-loss, legal-integrity, or institutional-isolation issue means NO-GO for the affected gate. Missing emulator/browser tools means BLOCKED, not PASS.
+
+======================================================================
+15. FINAL REPORT FORMAT — ONE CONSOLIDATED REPORT
+======================================================================
+
+Return one comprehensive report with these headings:
+
+1. Executive Summary and overall decision.
+2. Repository identity, branch, baseline integrity, and exact files changed.
+3. Environment isolation proof (emulator endpoints, browser routes, project ID; no secrets).
+4. Master stage-by-stage matrix (Stage 0–15) with PASS/FAIL/BLOCKED/NOT RUN/STATICALLY VERIFIED/MOCKED PASS.
+5. Test catalogue with IDs, exact commands/actions, environment, synthetic test identifiers, outputs, and evidence.
+6. Authentication, sign-out, cross-tab, IndexedDB, offline queue, and shared-device findings.
+7. Firebase Auth/Firestore/Storage Emulator findings and actual rules-test results.
+8. Public versus private versus institutional data access matrix.
+9. OfflineCaseDraft/OfflineCaseFile/court case/template cloud destination and schema status.
+10. Legal RAG, authoritative sources, citation integrity, and anti-fabrication results.
+11. Afaan Oromoo, Amharic, and English results.
+12. Document, audio, voice transcription, and API security results.
+13. Accessibility, mobile/responsive, performance, reliability, and cost observations.
+14. Every defect ranked CRITICAL/HIGH/MEDIUM/LOW with exact file/line evidence and exploit/failure scenario.
+15. Local code remediation completed, exact diffs, tests after each patch, and rollback procedure.
+16. Remaining blockers requiring product owner, judicial administrator, legal reviewer, or security approval.
+17. Separate Gate A–G decisions with mandatory prerequisites.
+18. Exact next action — one step only — and any approval needed.
+19. Explicit declaration that no production resources were accessed or modified and nothing was deployed.
+
+For every source-code claim, provide exact current file path and line range. If a line range cannot be verified, say so. Do not invent output or line numbers. Include only redacted logs.
+
+======================================================================
+16. FINAL STOP CONDITIONS
+======================================================================
+
+Stop and report immediately if:
+- a test may connect to production Firebase or a live user/court record;
+- a required test would delete or alter non-synthetic data;
+- a code change may broaden institutional/public access without an approved policy;
+- an OfflineCaseDraft destination/schema/retention policy is unknown;
+- existing user changes would be overwritten;
+- a secret is at risk of being exposed;
+- a test result cannot be reliably distinguished from a mock;
+- a browser/emulator prerequisite is missing and no safe isolated alternative exists.
+
+Do not continue past a stop condition merely to produce a complete-looking report.
+
+FINAL INSTRUCTION:
+Execute this as ONE MASTER INTEGRATED CAMPAIGN. Test every stage that can safely be tested in the current isolated environment, perform only the narrowly authorized local remediations, and report the rest honestly as BLOCKED or NOT RUN. Preserve the existing SEERAAI PRO application and all real user/institutional data. Do not deploy. Do not declare staging or production GO unless every required gate has actual evidence and the relevant human approvals exist.
+
+END OF MASTER PROMPT

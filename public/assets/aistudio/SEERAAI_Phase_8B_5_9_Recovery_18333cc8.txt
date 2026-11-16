@@ -1,0 +1,58 @@
+SEERAAI PRO — PHASE 8B.5.9
+EXACT CANDIDATE FILE RECOVERY & CI INPUT VERIFICATION
+
+MISSION
+Recover the exact integrated candidate Firebase Rules files and their associated test suites from the existing SEERAAI PRO repository or its existing version history. Do not create replacement rules and do not infer missing file contents from previous reports.
+
+PROJECT PRESERVATION
+- Continue only in the existing SEERAAI PRO application and existing repository.
+- Do not create a new Firebase project, repository, application, or replacement backend.
+- Do not modify or deploy production resources.
+- Do not modify active production firestore.rules, storage.rules, firebase.json, Firebase Auth, Firestore data, Storage data, IAM, Cloud Run, Functions, claims, or secrets.
+- Do not use production credentials or connect to the production Firebase project.
+- Perform read-only inspection and recovery only.
+
+EXACT FILES TO FIND
+1. firestore.rules.phase8b5.3.integrated.candidate
+2. storage.rules.phase8b5.4.integrated.candidate
+3. Firestore Rules Emulator test files associated with these candidates
+4. Storage Rules Emulator test files associated with these candidates
+5. package.json and the existing lockfile (package-lock.json, pnpm-lock.yaml, or yarn.lock)
+6. Any CI workflow/configuration already prepared for these tests
+
+RECOVERY PROCESS
+A. Inspect the current repository root, active branch, other existing branches, and relevant commit history for the exact filenames above.
+B. Search existing project files and version history. Do not assume a file exists merely because an earlier report said it was created.
+C. If a file is found, recover the exact committed version and report its branch, commit identifier, path, file size, line count, and SHA-256 hash.
+D. If a file is not found, report NOT FOUND. Do not recreate, approximate, or substitute its contents.
+E. Confirm whether the recovered Firestore and Storage test suites explicitly load the two exact candidate files, rather than the active production Rules files.
+F. Confirm whether the isolated Emulator configuration uses only project ID demo-seeraai-test.
+G. If the current preview workspace cannot access the GitHub repository or its history, stop and provide precise manual steps for the project owner to download the exact files from the repository.
+
+OUTPUT
+Produce a recovery manifest with one row per required file containing:
+- Exact filename and repository path
+- Found / Not Found
+- Branch and commit identifier, if found
+- File size and line count, if found
+- SHA-256 hash, if found
+- Whether it is required for Emulator testing
+
+Then report:
+- Whether all required inputs are available
+- Any mismatched file references or test configuration problems
+- The exact files the project owner must upload if recovery is incomplete
+- The next safe action
+
+STOP CONDITIONS
+- If either integrated candidate Rules file is missing, stop. Do not write new Rules.
+- If test files or dependency lockfile are missing, report exactly what is missing.
+- Do not run tests against production Rules or a production Firebase project.
+- Do not claim any test passed unless it was actually executed and evidence is available.
+- Do not publish, deploy, commit, push, or modify any file without explicit approval for that exact action.
+
+FINAL STATUS MUST BE ONE OF:
+PASS — exact candidate files and all required CI inputs recovered and verified.
+BLOCKED — one or more required files or repository access is missing.
+
+STOP after the recovery report. No production changes are authorized.

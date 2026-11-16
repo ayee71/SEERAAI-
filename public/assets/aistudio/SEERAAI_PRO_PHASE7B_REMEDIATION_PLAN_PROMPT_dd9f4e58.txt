@@ -1,0 +1,102 @@
+SEERAAI PRO — PHASE 7B: CONTROLLED REMEDIATION DESIGN (PLAN ONLY)
+
+You are working on the EXISTING SEERAAI PRO application. This is a continuation of Phase 7A. Do not create a replacement app, migrate projects, or remove existing users, documents, Firebase data, court modules, or features.
+
+CURRENT PHASE 7A FINDINGS TO ADDRESS
+1. Private drafts and document titles are stored as plaintext in localStorage and IndexedDB:
+   - localStorage keys reported: seera_ai_saved_documents, seera_offline_queue
+   - IndexedDB database reported: SeeraAIOfflineDB
+   - reported files: src/services/storage.ts, src/services/backgroundSync.ts, src/services/precedentOfflineSync.ts
+2. A shared-device user may sign out without the browser's app-owned local cache being cleared. Another person using the same browser may then see cached draft content or titles.
+3. The 2026 ticker contains Proclamation No. 1385/2026 (described as “Digital Evidence & Judicial Proceedings Act”) and Cassation File No. 248912/2026. The Phase 7A report itself classifies these entries as simulated baseline preview content, not fully verified official publications. They must not be presented as real, verified laws or real court decisions.
+4. The report calls several security tests PASS but does not provide test scripts, emulator output, test identities, request/trace evidence, or coverage reports.
+5. The proposed AES/crypto-js encryption using a session-derived key has not been technically justified. Do not assume it provides meaningful protection. Do not implement it in this phase.
+6. Offline queues may contain unsynchronized user edits. A blind cache purge at sign-out could destroy a user's only copy of pending work.
+
+STRICT EXECUTION MODE: PLAN ONLY
+- Inspect source code and produce a precise, evidence-based remediation design.
+- DO NOT edit, create, delete, rename, format, or overwrite any source/configuration file.
+- DO NOT install packages or change dependencies.
+- DO NOT run any command that writes to Firebase, Firestore, Storage, Auth, Cloud Run, production services, or production data.
+- DO NOT deploy Firestore rules, Storage rules, hosting, Cloud Run, or DNS.
+- DO NOT print, expose, or request API keys, passwords, tokens, service-account data, or other secrets.
+- Do not claim a test passed unless you actually ran the test in an isolated local/emulator environment and provide its output. If the environment cannot run it, mark NOT RUN.
+
+TASK A — TRACE THE REAL STORAGE FLOW
+Inspect the actual implementations and report exact file paths, line ranges, function names, and relevant code excerpts for:
+- Every localStorage key that stores user drafts, document titles/content, chat history, or offline queue items.
+- Every IndexedDB database, object store, cache entry, and service-worker/Cache API store used for user data.
+- Whether any institutional court document, evidence, order, judgment, or confidential case data can enter client-side persistent cache.
+- How records are associated with Firebase Auth UID and institution ID.
+- How backgroundSync handles a sign-out, token expiry, account switch, offline state, and failed synchronization.
+- Whether any unsynchronized edits would be lost by clearing the queue.
+Do not infer from filenames. Trace the actual call graph and data structures.
+
+TASK B — DESIGN SAFE SHARED-DEVICE SIGN-OUT AND ACCOUNT-SWITCH HANDLING
+Produce a minimal design that meets all of these conditions:
+1. Never clear unrelated browser storage, Firebase Auth internals, or other applications' data. Clear only explicitly identified SEERAAI-owned keys/stores/caches.
+2. Prevent User B from viewing User A's local drafts, cached titles, chat history, or offline queue after account switch or sign-out.
+3. On sign-out, first detect pending unsynchronized changes. Never silently discard a user's only copy. Specify a safe user flow: sync successfully before cleanup; if sync fails, explain the pending-data risk and provide explicit “stay signed in and retry” versus “discard pending local changes and sign out” choices. Do not discard without explicit user action.
+4. Handle abrupt browser close, expired auth session, revoked session, and account switch—not just clicking a sign-out button.
+5. On next login, verify cache ownership against the authenticated UID before loading any user-specific local data. Treat missing/mismatched ownership metadata as unsafe and do not display that cache.
+6. Public legal materials may remain cached only if they are genuinely public and contain no user-private or institutional data.
+7. Do not cache confidential institutional records, evidence, draft judgments, internal audit logs, or non-public case files in shared-device persistent storage. If current offline features depend on this, describe the compatibility impact and propose a safe alternative without deleting the feature.
+8. Do not add crypto-js or claim client-side encryption is secure merely because the key is derived from a login/session. If encryption is proposed, explain threat model, key lifecycle, recovery, XSS limitations, and why it is stronger than UID scoping plus purge. Prefer minimizing/purging sensitive cache.
+
+TASK C — TICKER LEGAL SOURCE INTEGRITY
+- Locate every 2026 ticker entry and identify whether each is backed by a primary official source.
+- For each entry, provide the exact official source title, issuing body, publication number, Ethiopian/Gregorian date as applicable, Gazette issue/page, and source URL if available.
+- If no official primary-source proof exists, classify the item UNVERIFIED/SIMULATED and recommend hiding/removing it from production display until verified.
+- Specifically do not present “Proclamation No. 1385/2026 — Digital Evidence & Judicial Proceedings Act” or “Cassation File No. 248912/2026” as real official law/case law without primary-source evidence.
+- Do not invent replacement laws or cases. If verification is unavailable, use a neutral “Legal sources are being verified” status instead of fictional ticker items.
+
+TASK D — AUTHORIZATION TEST PLAN AND EVIDENCE
+Inspect Firestore rules, Storage rules, and every relevant Express route. Remember that Firebase Admin/server SDK operations bypass Firestore Security Rules; server routes must independently authenticate and authorize each request.
+Create a test matrix for at least:
+- Signed-out visitor: public legal library read; private drafts denied; institutional records denied.
+- User A versus User B: cross-user read/update/delete denied.
+- Public user versus institution: all non-public court documents and audit logs denied.
+- Legal expert/advocate: access only to explicitly assigned cases; unassigned cases denied.
+- Judge/assistant judge/registrar: only the correct institution and role permissions.
+- System administrator: least-privilege, explicit privileged access, and auditable break-glass behavior; do not assume unrestricted global CRUD is safe.
+- Storage direct URL/token/path guessing and cross-user/cross-institution access.
+- All Express endpoints using Firebase Admin SDK, including AI, document, audio, sync, and download routes.
+For every existing “PASS” claim in the prior report, identify its test name, test file, command, environment, actual output, and relevant coverage. If no evidence exists, downgrade it to NOT VERIFIED.
+Recommend Firebase Local Emulator Suite and @firebase/rules-unit-testing for Firestore and Storage tests. Do not run against production. Cite the official Firebase testing approach in the report if external citations are available.
+
+TASK E — MODEL AND API CONFIGURATION VALIDATION
+- Trace exact runtime model IDs and API methods used for legal chat, Google Search grounding, and audio transcription.
+- Verify model IDs against current official Google documentation available in the environment. Distinguish model display names from API endpoint IDs.
+- Confirm whether transcription uses a verbatim mode or a smart/normalized mode; do not label it “verbatim” unless the exact API configuration supports that claim.
+- Do not change model IDs, packages, API versions, or secrets in this phase. Flag unsupported or unverifiable values.
+
+TASK F — PUBLIC-APP READINESS DECISIONS
+Explicitly decide whether current evidence supports public launch. Assess:
+- Is anonymous public legal Q&A intentionally supported, or is authentication required? Explain the actual current route behavior.
+- Rate limiting, abuse prevention, quota controls, and cost monitoring evidence.
+- Data separation between public legal content and institutional court information.
+- Privacy notice, retention/deletion controls, and shared-device protections.
+- Domain/DNS status and production configuration without making changes.
+
+REQUIRED OUTPUT
+Return these sections:
+1. Executive decision: GO / NO-GO for public launch, with reasons.
+2. Evidence-backed findings: exact paths, line numbers, function names, and observed behavior.
+3. Confirmed vulnerabilities, severity, exploit scenario, and affected data.
+4. Ticker source verification table; unverified entries must be clearly marked.
+5. Storage/sign-out flow diagram or numbered sequence, including pending offline edits.
+6. Authorization test matrix, with PASS only where actual test evidence is supplied; otherwise NOT VERIFIED / NOT RUN.
+7. Minimal remediation proposal, ordered by risk, naming exact files and expected behavior.
+8. Compatibility/data-loss risks for existing users and offline features.
+9. A proposed patch list/diff summary for review, but NO CODE CHANGES in this phase.
+10. A verification checklist and rollback plan.
+
+FINAL SAFETY CHECK
+Before responding, confirm explicitly:
+- No source file was modified.
+- No Firebase/production data was written or deleted.
+- No rules, hosting, backend, DNS, or Cloud Run deployment occurred.
+- No secrets were printed.
+- Every unsupported claim is labeled NOT VERIFIED.
+
+STOP after providing the plan and proposed patch summary. Wait for explicit human approval before making any code changes.

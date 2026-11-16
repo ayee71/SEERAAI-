@@ -87,11 +87,14 @@ export async function indexLegalDocument(text: string, metadata: Record<string, 
 /**
  * Performs a cosine similarity search against the local vector index.
  */
-export async function searchLegalDocuments(query: string, topK: number = 3): Promise<VectorDocument[]> {
+export async function searchLegalDocuments(query: string, topK: number = 3, institutionId?: string): Promise<VectorDocument[]> {
+  const scopePrefix = institutionId ? `inst:${institutionId}` : 'public';
+  const cacheKey = `${scopePrefix}::${query}`;
+
   // If running in browser, proxy through backend API to preserve server-side API key isolation
   if (typeof window !== 'undefined') {
     try {
-      const cachedResults = await getRagCacheFromDB(query);
+      const cachedResults = await getRagCacheFromDB(cacheKey);
       if (cachedResults && cachedResults.length > 0) return cachedResults;
     } catch (e) {
       // cache miss
@@ -118,7 +121,7 @@ export async function searchLegalDocuments(query: string, topK: number = 3): Pro
 
       const results = await res.json();
       if (Array.isArray(results)) {
-        await saveRagCacheToDB(query, results).catch(() => {});
+        await saveRagCacheToDB(cacheKey, results).catch(() => {});
         return results;
       }
       return [];
@@ -131,14 +134,24 @@ export async function searchLegalDocuments(query: string, topK: number = 3): Pro
   // Server-side execution
   await ensureIndexLoaded();
   
-  // Check cache
-  const cachedResults = await getRagCacheFromDB(query);
+  // Check tenant-scoped cache
+  const cachedResults = await getRagCacheFromDB(cacheKey);
   if (cachedResults) return cachedResults;
 
   try {
     const queryEmbedding = await getEmbedding(query);
     
-    const similarities = vectorIndex.map(doc => ({
+    // Strict tenant isolation: if institutionId is provided, include only that institution or explicit public docs;
+    // if absent, exclude all tenant-scoped documents.
+    const filteredDocs = institutionId 
+      ? vectorIndex.filter(doc =>
+          doc.metadata?.institutionId === institutionId ||
+          doc.metadata?.courtId === institutionId ||
+          (!doc.metadata?.institutionId && !doc.metadata?.courtId)
+        )
+      : vectorIndex.filter(doc => !doc.metadata?.institutionId && !doc.metadata?.courtId);
+    
+    const similarities = filteredDocs.map(doc => ({
       doc,
       similarity: cosineSimilarity(queryEmbedding, doc.embedding)
     }));
@@ -147,8 +160,8 @@ export async function searchLegalDocuments(query: string, topK: number = 3): Pro
     
     const results = similarities.slice(0, topK).map(s => s.doc);
     
-    // Save to cache
-    await saveRagCacheToDB(query, results);
+    // Save to tenant-scoped cache
+    await saveRagCacheToDB(cacheKey, results);
     
     return results;
   } catch (err) {

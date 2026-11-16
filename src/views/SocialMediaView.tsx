@@ -93,37 +93,19 @@ export const SocialMediaView: React.FC<SocialMediaViewProps> = ({ currentLang, o
               Kallattii Telegram & Facebook Na Quunamaa (Official Channels & Ingestion)
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Gaaffii seeraa qabduuf ykn Telegram channel <strong className="text-cyan-300">@wakoyeb</strong> fi <strong className="text-cyan-300">@ayelebeharmee</strong> irraa seera kuufachuuf:
+              Gaaffii seeraa qabduuf ykn Telegram channel <strong className="text-cyan-300">@seeraai_ethio</strong> irraa seera kuufachuuf:
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
           <a
-            href="https://t.me/ayelebeharmee"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
-          >
-            <span>✈️</span>
-            <span>Telegram (Qunnamaa)</span>
-          </a>
-          <a
-            href="https://t.me/wakoyeb"
+            href="https://t.me/seeraai_ethio"
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
           >
             <span>⚖️</span>
-            <span>@wakoyeb (Telegram)</span>
-          </a>
-          <a
-            href="https://www.facebook.com/AyyuLawyer"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
-          >
-            <span>📘</span>
-            <span>Facebook Page</span>
+            <span>@seeraai_ethio (Telegram)</span>
           </a>
         </div>
       </div>
@@ -339,7 +321,7 @@ export const SocialMediaView: React.FC<SocialMediaViewProps> = ({ currentLang, o
                     </div>
                     {showBranding && (
                       <div className="mt-2 text-[10px] text-amber-300 font-bold uppercase tracking-wider">
-                        Ayele Beharmee | Legal Practitioner
+                        SeeraAI Legal | Expert Analysis
                       </div>
                     )}
                   </div>
@@ -348,7 +330,7 @@ export const SocialMediaView: React.FC<SocialMediaViewProps> = ({ currentLang, o
 
             <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
               <span>Layout Template: <strong className="text-amber-400 uppercase">{cardTemplate}</strong></span>
-              <span className="text-emerald-400 font-bold">✓ www.saorethio1.com</span>
+              <span className="text-emerald-400 font-bold">✓ www.saiethio.com</span>
             </div>
           </div>
 

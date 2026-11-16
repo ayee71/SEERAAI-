@@ -3,7 +3,7 @@ import { doc, onSnapshot, setDoc, collection, addDoc, serverTimestamp } from 'fi
 import { db, handleFirestoreError, OperationType } from '../services/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Language } from '../i18n/translations';
-import { UserSettings, saveUserSettings } from '../services/storage';
+import { UserSettings, saveUserSettings, hasConfiguredLocalPin, hasConfiguredLocalPassword } from '../services/storage';
 
 interface SecurityDashboardProps {
   currentLang: Language;
@@ -33,7 +33,7 @@ export const SecurityDashboard: React.FC<SecurityDashboardProps> = ({
   biometricProcessing,
   biometricFeedback,
 }) => {
-  const { user, profile, updateProfile, logout } = useAuth();
+  const { user, profile, updateProfile, requestLogout } = useAuth();
   const [activeSessionCount, setActiveSessionCount] = useState<number>(1);
   const [sessionActionLoading, setSessionActionLoading] = useState(false);
   const [sessionFeedback, setSessionFeedback] = useState<string | null>(null);
@@ -148,8 +148,8 @@ export const SecurityDashboard: React.FC<SecurityDashboardProps> = ({
       setShowRevokeConfirm(false);
 
       setTimeout(() => {
-        logout();
-      }, 1500);
+        requestLogout();
+      }, 800);
     } catch (err: any) {
       handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
       setSessionFeedback('Dogoggora seensa haqamaa: ' + (err.message || 'Error'));
@@ -225,7 +225,7 @@ export const SecurityDashboard: React.FC<SecurityDashboardProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {/* WebAuthn Live Status Pill */}
           <div
             className={`px-2.5 py-1.5 rounded-lg border flex items-center justify-between text-xs transition-colors ${
@@ -238,6 +238,21 @@ export const SecurityDashboard: React.FC<SecurityDashboardProps> = ({
             <span className="font-bold flex items-center gap-1 text-[11px] shrink-0">
               <span>{isWebAuthnActive ? '🟢' : '🟡'}</span>
               <span>{isWebAuthnActive ? 'Active' : 'Inactive'}</span>
+            </span>
+          </div>
+
+          {/* PIN & Auth Status Pill */}
+          <div
+            className={`px-2.5 py-1.5 rounded-lg border flex items-center justify-between text-xs transition-colors ${
+              hasConfiguredLocalPin()
+                ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                : 'bg-amber-950/60 border-amber-500/40 text-amber-300'
+            }`}
+          >
+            <span className="font-medium truncate">Local PIN</span>
+            <span className="font-bold flex items-center gap-1 text-[11px] shrink-0">
+              <span>{hasConfiguredLocalPin() ? '🟢' : '🟡'}</span>
+              <span>{hasConfiguredLocalPin() ? 'Configured' : 'Not Set'}</span>
             </span>
           </div>
 

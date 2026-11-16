@@ -1,0 +1,135 @@
+SEERAAI FREEDOM FRAMEWORK — PHASE 1 READ-ONLY TECHNICAL AND OPEN-SOURCE
+LICENSE AUDIT
+
+You are working on the EXISTING SEERAAI legal AI application.
+
+Your task is to perform Phase 1 of the SEERAAI Freedom, Open-Source and
+Digital Rights Framework.
+
+CRITICAL PRESERVATION REQUIREMENTS
+
+1.  Do NOT create a new application.
+2.  Do NOT replace the existing application.
+3.  Do NOT delete or rename existing files.
+4.  Do NOT modify existing Firebase configuration, Firestore rules,
+    Firebase Storage, Authentication, or database collections.
+5.  Do NOT change the existing Firebase project or Cloud Run service.
+6.  Do NOT remove or replace Gemini or OpenAI integrations.
+7.  Preserve all existing users, court documents, legal databases and
+    application features.
+8.  This phase is READ-ONLY. Do not implement code changes or install
+    packages.
+
+TASK 1 — SOFTWARE INVENTORY
+
+Inspect and document:
+
+-   package.json
+-   package-lock.json
+-   All direct and transitive dependencies
+-   React and Vite packages
+-   Firebase client and admin SDKs
+-   Google GenAI SDK
+-   OpenAI SDK and API integrations, if present
+-   Backend services
+-   Frontend components
+-   Third-party libraries and utilities
+
+TASK 2 — LICENSE COMPLIANCE
+
+Identify the license of each dependency.
+
+Classify licenses, including:
+
+-   MIT
+-   Apache-2.0
+-   BSD
+-   ISC
+-   GPL-2.0
+-   GPL-3.0
+-   LGPL
+-   AGPL
+-   MPL
+-   Proprietary
+-   Unknown or unverified
+
+Use SPDX identifiers where available.
+
+Flag:
+
+-   Unknown licenses
+-   Potentially incompatible licenses
+-   Missing copyright notices
+-   Missing required attribution
+-   Dependencies whose license obligations require further legal review
+
+Do not assume that every GPL or AGPL package is automatically
+incompatible. Assess the dependency’s actual use, integration and
+distribution context.
+
+TASK 3 — DATA OWNERSHIP AND PRIVACY AUDIT
+
+Inspect the existing:
+
+-   Firebase Authentication
+-   Firestore
+-   Firebase Storage
+-   Firestore Security Rules
+-   Institution-based RBAC
+-   Court document management
+-   Audit logging
+-   User data access paths
+
+Identify who can read, upload, modify, export and delete information.
+
+Pay special attention to sensitive court records and institutional
+access restrictions.
+
+Do not recommend unrestricted deletion or sharing of judicial records.
+
+TASK 4 — AI PROVIDER INDEPENDENCE
+
+Inspect Gemini and OpenAI integration architecture.
+
+Identify:
+
+-   Model configuration
+-   API key management
+-   Backend-only environment variables
+-   Model fallback mechanism
+-   Provider-specific dependencies
+-   Potential vendor lock-in
+
+Do not expose API keys or secrets in the report.
+
+TASK 5 — REQUIRED AUDIT REPORTS
+
+Prepare the following documentation without changing the application:
+
+1.  docs/compliance/SEERAAI_TECHNICAL_INVENTORY.md
+2.  docs/compliance/SEERAAI_LICENSE_AUDIT.md
+3.  docs/compliance/SEERAAI_DATA_RIGHTS_AUDIT.md
+4.  docs/compliance/SEERAAI_AI_TRANSPARENCY_AUDIT.md
+5.  docs/compliance/SEERAAI_VENDOR_INDEPENDENCE_AUDIT.md
+6.  docs/compliance/SEERAAI_RECOMMENDATIONS.md
+
+For each finding, include:
+
+-   Existing implementation
+-   Evidence and file path
+-   Identified risk
+-   Recommended improvement
+-   Priority: Critical, High, Medium or Low
+-   Whether implementation requires a code change
+
+FINAL REQUIREMENT
+
+Before proposing any implementation, provide a complete audit summary.
+
+Explicitly identify what is already compliant, what is partially
+implemented, what is missing, and what cannot be verified.
+
+Do not claim that a feature exists unless the source code confirms it.
+
+WAIT FOR APPROVAL BEFORE IMPLEMENTING PHASE 2 OR MODIFYING ANY EXISTING
+FILES.

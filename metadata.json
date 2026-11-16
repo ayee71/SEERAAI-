@@ -1,6 +1,6 @@
 {
-  "name": "SAI Ethio (www.saorethio1.com) - SeeraAI Legal AI",
-  "description": "SAI Ethio: Professional trilingual legal content, translation, and analysis platform for Afaan Oromoo, Amharic (አማርኛ), and English at www.saorethio1.com.",
+  "name": "SAI Ethio (mmurtii.aistudio) - SeeraAI Legal AI PRO",
+  "description": "SAI Ethio PRO v5.0.0: Elite trilingual legal content, judicial research, and AI analysis platform for Afaan Oromoo, Amharic (አማርኛ), and English at mmurtii.aistudio.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

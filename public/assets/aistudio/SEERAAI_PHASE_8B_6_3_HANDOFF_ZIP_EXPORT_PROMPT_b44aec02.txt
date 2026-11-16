@@ -1,0 +1,52 @@
+SEERAAI PRO — PHASE 8B.6.3A
+SAFE HANDOFF ZIP EXPORT & DOWNLOAD LINK
+
+Continue working in the EXISTING SEERAAI PRO project only.
+
+OBJECTIVE
+Make the already-prepared Phase 8B.6.2 handoff ZIP downloadable by the project owner from the Google AI Studio preview. Do not publish or deploy the application.
+
+EXPECTED FILE
+/public/seeraai_phase_8b_6_2_handoff.zip
+Expected size (as previously reported): 46,949 bytes
+Expected SHA-256:
+bb2fb79d4df1a65240844c2f8fa1000cb9759c4a3517acf6f5ee19a6ef231203
+
+STRICT SAFETY RULES
+1. READ-ONLY with respect to the application source, Firebase resources, production data, and deployment configuration.
+2. Do not modify app features, UI, routing, package manifests, Firebase settings, Cloud Run settings, or production Firestore/Storage Rules.
+3. Do not create a new project, repository, Firebase project, or replacement application.
+4. Do not push, commit, merge, deploy, publish, or request credentials.
+5. Never print or expose API keys, tokens, passwords, .env values, court documents, personal data, or user records.
+
+TASKS
+1. Check whether the exact ZIP file exists at the expected path.
+2. If it exists, calculate its actual byte size and SHA-256. Do not assume the expected values are correct.
+3. Inspect only the ZIP member names. Confirm that it contains the intended Phase 8B.6.2 handoff files, including:
+   - .github/workflows/rules-test.yml
+   - firebase.emulator.test.json
+   - firestore.rules.phase8b5.3.integrated.candidate
+   - storage.rules.phase8b5.4.integrated.candidate
+   - tests/firestore.rules.test.ts
+   - tests/storage.rules.test.ts
+   - package.json
+   - package-lock.json
+4. Check for prohibited content such as .env files, credentials, API keys, private court records, or unrelated full-application files. Do not display any secret values. If any prohibited content is found, STOP and report the filename only.
+5. If the ZIP exists, passes the checks, and its actual hash matches the expected SHA-256, expose the existing ZIP through the Google AI Studio downloadable artifact/file interface or a working direct download link in the preview. Use the real available file path; do not invent a URL.
+6. If the file does not exist or its hash differs, do not silently replace it. Explain exactly what is missing or different and ask for owner approval before rebuilding the package.
+7. If the preview cannot expose a downloadable artifact or link without modifying the application, do not modify the application. Explain the limitation and provide the safest available export method.
+
+REQUIRED FINAL REPORT
+Return:
+- Whether the ZIP exists.
+- Actual file size.
+- Actual SHA-256 and whether it matches the expected value.
+- Whether the required files are present.
+- Whether prohibited content was detected (yes/no; list filenames only if yes).
+- A real clickable download link or downloadable artifact, if supported.
+- If download is not supported, the exact limitation and safest next step.
+
+IMPORTANT RELEASE GATE
+This is only a handoff ZIP export. It does not prove the GitHub branch was pushed, does not prove GitHub Actions passed, does not approve merging, and does not authorize deploying candidate Firestore or Storage Rules. Keep production release status BLOCKED.
+
+Start now. Do not make any application or production changes.

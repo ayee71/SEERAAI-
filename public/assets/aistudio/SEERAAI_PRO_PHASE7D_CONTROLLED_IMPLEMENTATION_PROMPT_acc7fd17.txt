@@ -1,0 +1,115 @@
+SEERAAI PRO — PHASE 7D: CONTROLLED SIGN-OUT & OFFLINE-DATA IMPLEMENTATION
+MODE: EXPLICITLY AUTHORIZED, NARROW SOURCE-CODE IMPLEMENTATION — LOCAL DEVELOPMENT ONLY
+
+CONTEXT
+You are modifying the EXISTING SEERAAI PRO / SAI Ethio Legal AI repository. Preserve the existing application, Firebase project, Firestore database, Storage buckets, user accounts, institutional workflows, routes, features, and data. Do not create a replacement application.
+
+The approved design basis is the user's Phase 7C.3.3 Final Implementation Readiness Gate. Implement only the minimal changes required to make sign-out, offline-data handling, IndexedDB deletion, and multi-tab session termination safe.
+
+MANDATORY PRE-FLIGHT — STOP IF ANY CHECK FAILS
+1. Inspect the current Git status and exact current source. Do not overwrite unrelated or uncommitted user changes. Do not run destructive Git commands.
+2. Confirm the actual current contents and function signatures in:
+   - src/context/AuthContext.tsx
+   - src/components/LogoutConfirmationModal.tsx
+   - src/services/backgroundSync.ts
+   - src/services/indexedDb.ts
+   - src/services/storage.ts
+   - any service-worker/background-sync module that actually writes these stores.
+3. Reconfirm actual database name, object-store names, localStorage keys, user-scoping rules, sync functions, in-flight write tracking, auth state observer, and all IndexedDB open-connection sites. Do not rely solely on previous reports. Do not invent names or assume the reports are still current.
+4. If the actual repository differs materially from the Phase 7C.3.3 inventory, stop and provide the discrepancy report. Do not improvise or expand scope without approval.
+5. Do not change package versions, install packages, or introduce a new dependency.
+
+IMPLEMENTATION REQUIREMENTS
+A. Sign-out lock and sync lifecycle
+- Implement a per-session sign-out state/lock that prevents new local edits and queue additions once sign-out begins.
+- Pause background polling and service-worker sync triggers using the existing architecture. Do not destroy unrelated listeners or permanently disable sync.
+- Track and await actual in-flight writes/sync tasks. A timeout must produce an explicit safe-hold result, never be interpreted as successful synchronization.
+- Inventory ALL relevant stores before any purge. Distinguish, at minimum:
+  1) server-confirmed records;
+  2) queued/pending edits;
+  3) local-only drafts/annotations;
+  4) disposable derived caches;
+  5) non-sensitive preferences;
+  6) local copies of institutional/court records.
+- Treat a record as cloud-confirmed only with a successful server acknowledgement tied to the correct user, document ID, and revision/version. A local timestamp, optimistic UI update, queue removal, or client-side flag alone is not proof.
+- Do not silently discard pending or local-only work. Offer Retry Sync, Stay Signed In, and an explicit destructive discard choice with a second clear confirmation. Default destructive consent to false.
+- If a user declines discard and sync cannot complete, keep the same user signed in and block account switching. Do not leave the app in a state where another user can access the previous user's plaintext drafts.
+- Do not invent an encryption scheme or claim offline drafts are safely retained after sign-out unless the existing code actually provides and tests user-specific encryption. If no safe encrypted recovery/export mechanism exists, disclose this limitation and use the safe-hold behavior.
+
+B. IndexedDB lifecycle
+- Implement an awaited deletion helper using the actual database names found in source.
+- Handle onsuccess, onerror, onblocked, and a bounded timeout. `onblocked`, timeout, or an exception is NOT success.
+- Register `db.onversionchange` on every relevant database connection so the connection closes promptly when deletion is requested. Find and update every actual connection-opening location needed for this guarantee.
+- A BroadcastChannel message requesting connections to close is advisory; do not assume it closed a connection without an acknowledgement or an actual successful delete result.
+- If deletion remains blocked or fails, enter an explicit isolation/lockdown state and prevent another account from logging into that browser profile until isolation is verified. Do not report sign-out cleanup as complete.
+- Never delete an entire database if it contains user data that has not been safely synced or explicitly discarded. If selective object-store/record cleanup is safer and consistent with the existing schema, prefer it; explain the choice.
+
+C. Cross-tab coordination
+- Use the existing browser messaging architecture where possible; do not create competing channels unnecessarily.
+- Implement a two-stage protocol with a unique correlation ID and the current UID: PREPARE_SIGN_OUT, tab acknowledgements, then SESSION_TERMINATED only after the initiating flow reaches the appropriate confirmed state.
+- Each receiving tab must verify the UID, stop writes/sync, close its IndexedDB connections, clear in-memory sensitive state, and acknowledge preparation. Ignore messages for another UID or stale correlation ID.
+- A missing acknowledgement is a failure/unknown state, not success. The initiating tab may request database closure and attempt deletion, but must not allow account switching or claim full isolation unless deletion and auth-state checks succeed.
+- Do not rely on window.dispatchEvent for cross-tab communication.
+
+D. Firebase Auth ordering and failure handling
+- Coordinate Firebase sign-out with local purge so neither a stale authenticated session nor a previous user's plaintext cache can be exposed to the next account.
+- After calling signOut(auth), verify the actual auth observer/current-user state before reporting signed-out completion.
+- If Firebase sign-out fails or auth state remains authenticated, do not claim success and do not permit another account to sign in. Enter a clear safe-hold/lockdown result and preserve diagnostic information without logging secrets.
+- If local purge fails after Firebase sign-out, keep the app locked against account switching and report cleanup incomplete. Do not treat a redirect alone as proof that storage was purged.
+- Never clear institutional canonical records on Firestore/Storage. Distinguish those server records from their local replicas. Local replicas of sensitive institutional records must follow the applicable institutional policy and must not remain readable to a subsequent user on a shared device. If the retention policy is unknown or a proposed action could affect official records, stop that specific operation and report the policy dependency.
+
+E. Modal and user experience
+- Default destructive cache clearing/discard consent to false.
+- Show a live, accurate count of pending edits and local-only drafts from the actual stores. If inventory fails or is uncertain, display “unable to verify” and choose the safe-hold path; do not show zero.
+- Provide localized messages in Afaan Oromoo, Amharic, and English using the existing translation architecture.
+- Preserve non-sensitive preferences such as language/theme only when the actual keys are verified as non-sensitive and not user-identifying.
+- Make all choices clear: Retry Sync, Stay Signed In, and Discard Unsynced Data & Sign Out. The destructive path must require an additional explicit confirmation.
+
+F. Ticker
+- Preserve the Phase 7C neutral legal-source verification notices. Do not reintroduce unverified proclamation numbers, cassation file numbers, or unsupported claims of an active official repository.
+
+SCOPE LIMITS — STRICT
+- Do not modify Firestore rules, Storage rules, Firebase production data, Auth users, documents, buckets, API keys, secrets, Cloud Run, Hosting, DNS, domains, or production configuration.
+- Do not deploy anything.
+- Do not change the public/institutional permission model in this phase.
+- Do not add features unrelated to safe sign-out/offline data handling.
+- Do not delete or rewrite user documents, court records, or production data.
+
+TESTS REQUIRED
+Create or update focused local tests using the existing test framework only; do not install dependencies. At minimum cover:
+1. Clean sign-out with no pending/local-only data.
+2. Pending queue with successful sync and confirmed server acknowledgement.
+3. Network loss / sync timeout preserves data and blocks account switching.
+4. Local-only draft detection even when the queue is empty.
+5. Explicit discard requires second confirmation; default is false.
+6. IndexedDB onsuccess, onerror, onblocked, timeout, and retry behavior.
+7. Open connections receive versionchange and close.
+8. Cross-tab PREPARE/ACK/TERMINATED sequencing, wrong UID, stale correlation ID, and missing ACK.
+9. Firebase signOut rejection or auth observer remaining non-null.
+10. Purge failure after Firebase sign-out keeps the app locked and does not allow next-user login.
+11. Local institutional replicas are not confused with canonical server records.
+12. Preferences remain intact only where explicitly intended.
+
+Run the available TypeScript check, linter, build, and focused tests. Distinguish tests actually executed from tests unavailable or merely proposed. Do not claim runtime safety from build/lint alone.
+
+DELIVERABLES
+1. Exact list of changed files and why each was necessary.
+2. Full diff summary and relevant code excerpts/line ranges.
+3. State-machine behavior for success and every failure path.
+4. Test names, commands, environment, and actual outputs/status.
+5. Data-loss, privacy, multi-tab, institutional-retention, and rollback assessment.
+6. Explicit list of anything not verified or not tested.
+7. Confirm that no production resources or data were touched and nothing was deployed.
+
+STOP CONDITIONS
+Stop without making further changes if:
+- pre-flight finds repository/version/schema mismatch;
+- there is no reliable way to identify local-only or unsynced records;
+- implementation would require unapproved changes outside the named scope;
+- institutional retention rules are needed but unavailable;
+- a test reveals potential data loss, account leakage, or inconsistent auth state;
+- a required connection/module cannot be safely coordinated.
+
+At a stop condition, retain all current data and changes already safely made, provide the exact blocker and proposed minimal next action, and wait for separate human approval. Never claim “zero data loss,” “fully secure,” or “production ready” unless supported by executed evidence.
+
+BEGIN WITH PREFLIGHT. IMPLEMENT ONLY THE APPROVED NARROW SCOPE. NO PRODUCTION DEPLOYMENT.

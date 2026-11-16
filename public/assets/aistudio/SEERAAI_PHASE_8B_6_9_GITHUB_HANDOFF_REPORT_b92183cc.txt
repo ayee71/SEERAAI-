@@ -1,0 +1,115 @@
+SEERAAI PRO - PHASE 8B.6.9
+GITHUB IMPORT, BRANCH VALIDATION & CI EXECUTION - REPORT
+Date: 2026-11-16
+
+FINAL STATUS: BLOCKED
+
+====================================================
+1. WHAT I CHECKED (actual results)
+====================================================
+- Candidate ZIP "seeraai_phase_8b_6_8_candidate_handoff.zip":
+  NOT FOUND. /mnt/user-data/uploads is empty in this session and a
+  filesystem search found no file with that name.
+- ZIP size / SHA-256 verification: NOT PERFORMED (no file to hash).
+  Expected size:   204,547 bytes
+  Expected SHA-256: 31119addd0a766a1c73e5e19d6fb2cbd3b82ad3b6e2ce905827a113b06bc0d9b
+- GitHub access: NONE. This chat environment has no GitHub connector,
+  no gh CLI, no credentials, and network access is disabled.
+- Branch "ci/rules-emulator-tests": cannot be inspected.
+- 16-file checksum check (SHA256SUMS.txt): NOT PERFORMED.
+- Diff of firestore.rules / storage.rules / firebase.json vs main:
+  NOT PERFORMED.
+- TypeScript check, build, Firestore + Storage emulator tests:
+  NOT RUN (no project files, no network to install packages).
+- Commit / push: NOT DONE. No commit SHA exists.
+- GitHub Actions "rules-emulator-tests": NOT RUN. No run URL exists.
+
+Nothing was committed, pushed, merged, or deployed. Nothing was
+fabricated.
+
+====================================================
+2. WHY BLOCKED
+====================================================
+(a) The ZIP is not in this session. Please re-upload it.
+(b) No authenticated GitHub access exists here, so tasks 4, 5, 9, 10
+    cannot be done from this chat.
+
+====================================================
+3. MANUAL STEPS (run on your own machine)
+====================================================
+Replace <REPO_URL> with your repository URL.
+
+STEP 1 - Verify the ZIP
+  ls -l seeraai_phase_8b_6_8_candidate_handoff.zip
+  # expect size 204547
+  sha256sum seeraai_phase_8b_6_8_candidate_handoff.zip
+  # expect 31119addd0a766a1c73e5e19d6fb2cbd3b82ad3b6e2ce905827a113b06bc0d9b
+  STOP if either differs.
+
+STEP 2 - Clone and check the branch
+  git clone <REPO_URL> seeraai && cd seeraai
+  git fetch origin
+  git rev-parse origin/main
+  git ls-remote --heads origin ci/rules-emulator-tests
+  # If the branch exists, confirm it is based on latest main:
+  git merge-base --is-ancestor origin/main origin/ci/rules-emulator-tests && echo "based on latest main"
+  # If it does not exist, create it from main:
+  git checkout -b ci/rules-emulator-tests origin/main
+
+STEP 3 - Unpack candidate files (on the branch only)
+  git branch --show-current     # must print ci/rules-emulator-tests
+  mkdir /tmp/cand && unzip seeraai_phase_8b_6_8_candidate_handoff.zip -d /tmp/cand
+  cd /tmp/cand && sha256sum -c SHA256SUMS.txt     # all 16 must say OK
+  # then copy the files into the repo at the paths listed in the handoff.
+  # Do NOT overwrite files you have modified locally; review with git diff.
+
+STEP 4 - Confirm production files are unchanged
+  git diff --stat origin/main -- firestore.rules storage.rules firebase.json
+  # expected: no output
+
+STEP 5 - Local checks
+  npm ci
+  npx tsc --noEmit
+  npm run build
+  npx firebase emulators:exec --only firestore,storage "npm test"
+  # (use the exact test script names from the candidate package.json)
+
+STEP 6 - Review before commit
+  git status
+  git diff --stat
+  Send me this output; I will review it before you commit.
+
+STEP 7 - Commit and push (only after review/approval)
+  git add <the 16 candidate files only>
+  git commit -m "ci: add rules emulator tests (phase 8B.6.8 candidate)"
+  git rev-parse HEAD          # record commit SHA
+  git push origin ci/rules-emulator-tests
+  # NEVER push to main. NEVER merge. NEVER deploy.
+
+STEP 8 - Run the workflow
+  gh workflow run rules-emulator-tests --ref ci/rules-emulator-tests
+  gh run list --workflow rules-emulator-tests --branch ci/rules-emulator-tests
+  gh run watch <RUN_ID>
+  # record the run URL and the real result.
+
+====================================================
+4. REPORT TEMPLATE (fill in after the manual steps)
+====================================================
+ZIP verification result : ____
+Branch name             : ci/rules-emulator-tests
+Changed files           : ____
+Build result            : ____
+Firestore emulator tests: ____
+Storage emulator tests  : ____
+Commit SHA              : ____
+GitHub Actions run URL  : ____
+Final status            : PASS / FAIL / BLOCKED
+
+====================================================
+5. NEXT ACTION FROM YOU
+====================================================
+Re-upload seeraai_phase_8b_6_8_candidate_handoff.zip. I will then
+verify its size and SHA-256, unpack it, check all 16 files against
+SHA256SUMS.txt, and show you the proposed file changes before any
+commit. (Emulator tests may still need your machine or CI, since
+this environment has no network.)

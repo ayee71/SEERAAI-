@@ -1,9 +1,33 @@
-// SeeraAI Service Worker with Safe Offline Precedent Notification Handling
-const CACHE_NAME = 'seera-legal-precedents-v4-1-0';
+// SeeraAI Service Worker with Judicial Offline Precedents, Legislation & Civil Procedure Code (SDFHH) Caching Strategy
+const CACHE_NAME = 'seera-judicial-cache-v4-1-0';
+const STATIC_CACHE_NAME = 'seera-static-assets-v4-1-0';
 const PRECEDENTS_CACHE_KEY = '/offline-precedents-store.json';
 
+const CRITICAL_OFFLINE_URLS = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/version.json',
+  '/favicon.ico',
+  '/apple-touch-icon.png',
+  '/og-image.jpg',
+  '/offline-precedents-store.json',
+  '/assets/aistudio/___________________1-25___4__48c4c792.html',
+  '/assets/aistudio/cassation_index_reviewed_289caf70.html',
+  '/assets/aistudio/Baafata_Murtii_Sirraayame_Civil__1__7174d174.html',
+  '/assets/aistudio/Baafata_Murtii_Sirraayame_Civil_Contract_c4e1de74.html',
+  '/assets/aistudio/seeraai_cassation_file_importer_6ab28a0c.html',
+  '/src/data/cassationMasterIndex.ts'
+];
+
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
+  event.waitUntil(
+    caches.open(STATIC_CACHE_NAME).then((cache) => {
+      return cache.addAll(CRITICAL_OFFLINE_URLS).catch((err) => {
+        console.warn('Initial offline static asset precaching warning:', err);
+      });
+    }).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (event) => {
@@ -11,7 +35,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME) {
+          if (key !== CACHE_NAME && key !== STATIC_CACHE_NAME) {
             return caches.delete(key);
           }
         })
@@ -29,14 +53,131 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// SMART FETCH STRATEGY: Offline Legal Precedents, Legislation & Civil Procedure Code (SDFHH)
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  const url = new URL(request.url);
 
-// PASS THROUGH ALL FETCH REQUESTS - never block or rewrite requests
-self.addEventListener('fetch', () => {
-  // Let the browser handle network naturally
+  // Skip non-GET requests, non-http(s), or chrome extensions
+  if (request.method !== 'GET' || !url.protocol.startsWith('http')) {
+    return;
+  }
+
+  // 1. Navigation Requests (App Shell) -> Network First with Index.html Cache Fallback
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).then((response) => {
+        if (response && response.status === 200) {
+          const responseClone = response.clone();
+          caches.open(STATIC_CACHE_NAME).then((cache) => cache.put('/index.html', responseClone));
+        }
+        return response;
+      }).catch(async () => {
+        const cachedShell = await caches.match('/index.html') || await caches.match('/');
+        if (cachedShell) return cachedShell;
+        return new Response('<html><body><h2>SeeraAI Offline Judicial Mode</h2><p>Judicial precedents and Civil Procedure Code (SDFHH) loaded in offline session.</p></body></html>', {
+          headers: { 'Content-Type': 'text/html' }
+        });
+      })
+    );
+    return;
+  }
+
+  // 2. Judicial Data Endpoints (Precedents, Cassation, Legislation, Proclamations, SDFHH / Civil Procedure Code)
+  const isJudicialEndpoint = 
+    url.pathname.includes('/precedents') ||
+    url.pathname.includes('/cassation') ||
+    url.pathname.includes('/legislation') ||
+    url.pathname.includes('/proclamations') ||
+    url.pathname.includes('/sdfhh') ||
+    url.pathname.includes('/civil-procedure') ||
+    url.pathname.includes('/offline-precedents-store.json') ||
+    url.pathname.includes('/version.json');
+
+  if (isJudicialEndpoint) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then(async (cache) => {
+        try {
+          const networkResponse = await fetch(request);
+          if (networkResponse && networkResponse.status === 200) {
+            cache.put(request, networkResponse.clone());
+          }
+          return networkResponse;
+        } catch (error) {
+          console.info('Serving cached judicial data for offline session:', url.pathname);
+          const cachedResponse = await cache.match(request);
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          const fallbackStore = await caches.match('/offline-precedents-store.json');
+          if (fallbackStore) {
+            return fallbackStore;
+          }
+          return new Response(JSON.stringify({ offlineMode: true, message: 'Serving local cached legal database' }), {
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      })
+    );
+    return;
+  }
+
+  // 3. Static Bundles & Media (JS, CSS, Images, Fonts) -> Cache First with Network Fallback
+  if (
+    request.destination === 'style' ||
+    request.destination === 'script' ||
+    request.destination === 'image' ||
+    request.destination === 'font' ||
+    url.pathname.match(/\.(js|css|png|jpg|jpeg|svg|ico|woff2?)$/)
+  ) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(STATIC_CACHE_NAME).then((cache) => cache.put(request, responseClone));
+          }
+          return networkResponse;
+        }).catch(() => {
+          return new Response('', { status: 408, statusText: 'Offline' });
+        });
+      })
+    );
+    return;
+  }
 });
+
+const swOpenIDBConnections = new Set();
+let swSignOutPaused = false;
+
+function registerSwIDBConnection(db) {
+  swOpenIDBConnections.add(db);
+  db.onversionchange = () => {
+    try { db.close(); } catch {}
+    swOpenIDBConnections.delete(db);
+  };
+  db.onclose = () => {
+    swOpenIDBConnections.delete(db);
+  };
+  return db;
+}
+
+function closeAllSwIDBConnections() {
+  let closed = 0;
+  for (const db of Array.from(swOpenIDBConnections)) {
+    try {
+      db.close();
+      closed++;
+    } catch {}
+    swOpenIDBConnections.delete(db);
+  }
+  return closed;
+}
 
 // Background Sync handler
 self.addEventListener('sync', (event) => {
+  if (swSignOutPaused) return;
   if (event.tag === 'sync-legal-precedents') {
     event.waitUntil(handlePrecedentsSync());
   } else if (event.tag === 'sync-queued-document-edits') {
@@ -47,12 +188,14 @@ self.addEventListener('sync', (event) => {
 });
 
 async function checkDeadlinesAndNotify() {
+  if (swSignOutPaused) return 0;
   try {
     const deadlines = await getDeadlinesFromIDB();
     const now = Date.now();
     let notificationsShown = 0;
 
     for (const d of deadlines) {
+      if (swSignOutPaused) break;
       const targetTime = new Date(d.deadlineDate).getTime();
       const diffHours = (targetTime - now) / (1000 * 60 * 60);
 
@@ -75,57 +218,89 @@ async function checkDeadlinesAndNotify() {
 }
 
 async function getDeadlinesFromIDB() {
+  if (swSignOutPaused) return [];
   return new Promise((resolve) => {
     const request = indexedDB.open('SeeraAIOfflineDB');
     request.onsuccess = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains('deadlines')) return resolve([]);
+      const db = registerSwIDBConnection(event.target.result);
+      if (swSignOutPaused || !db.objectStoreNames.contains('deadlines')) {
+        try { db.close(); } catch {}
+        swOpenIDBConnections.delete(db);
+        return resolve([]);
+      }
       const transaction = db.transaction('deadlines', 'readonly');
       const store = transaction.objectStore('deadlines');
       const getAllRequest = store.getAll();
-      getAllRequest.onsuccess = () => resolve(getAllRequest.result || []);
-      getAllRequest.onerror = () => resolve([]);
+      let result = [];
+      getAllRequest.onsuccess = () => { result = getAllRequest.result || []; };
+      transaction.oncomplete = () => {
+        try { db.close(); } catch {}
+        swOpenIDBConnections.delete(db);
+        resolve(result);
+      };
+      transaction.onerror = () => {
+        try { db.close(); } catch {}
+        swOpenIDBConnections.delete(db);
+        resolve([]);
+      };
+      transaction.onabort = () => {
+        try { db.close(); } catch {}
+        swOpenIDBConnections.delete(db);
+        resolve([]);
+      };
     };
     request.onerror = () => resolve([]);
   });
 }
 
 async function saveDeadlineUpdateToIDB(deadline) {
+  if (swSignOutPaused) return;
   return new Promise((resolve) => {
     const request = indexedDB.open('SeeraAIOfflineDB');
     request.onsuccess = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains('deadlines')) return resolve();
+      const db = registerSwIDBConnection(event.target.result);
+      if (swSignOutPaused || !db.objectStoreNames.contains('deadlines')) {
+        try { db.close(); } catch {}
+        swOpenIDBConnections.delete(db);
+        return resolve();
+      }
       const transaction = db.transaction('deadlines', 'readwrite');
       const store = transaction.objectStore('deadlines');
       store.put(deadline);
-      transaction.oncomplete = () => resolve();
+      transaction.oncomplete = () => {
+        try { db.close(); } catch {}
+        swOpenIDBConnections.delete(db);
+        resolve();
+      };
+      transaction.onerror = () => {
+        try { db.close(); } catch {}
+        swOpenIDBConnections.delete(db);
+        resolve();
+      };
+      transaction.onabort = () => {
+        try { db.close(); } catch {}
+        swOpenIDBConnections.delete(db);
+        resolve();
+      };
     };
     request.onerror = () => resolve();
   });
 }
 
-
-
 async function handleQueuedEditsSync() {
+  if (swSignOutPaused) return;
   try {
-    // Notify all open window clients to execute queued edits reconciliation
     const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of windowClients) {
       client.postMessage({ type: 'SEERA_SYNC_QUEUED_DOCUMENT_EDITS' });
     }
-
-    await showPrecedentNotification({
-      title: 'Hojiin Offline Qindaa\'ee Ture Sync Ta\'eera! ⚖️',
-      body: 'Gulaalliin sanada seeraa offline qindeeffamee ture milkaa\'inaan kuusaa keessaniin wal simateera.',
-      tag: 'document-edits-sync-complete',
-    });
   } catch (err) {
     console.error('Document edits sync error in SW:', err);
   }
 }
 
 async function handlePrecedentsSync() {
+  if (swSignOutPaused) return;
   try {
     await showPrecedentNotification({
       title: 'Murtiiwwan Seeraa Offline Kuufamaniiru ⚖️',
@@ -164,11 +339,51 @@ self.addEventListener('message', (event) => {
     return;
   }
 
+  if (event.data.type === 'SEERA_PAUSE_SYNC') {
+    swSignOutPaused = Boolean(event.data.paused);
+    if (swSignOutPaused) {
+      closeAllSwIDBConnections();
+    }
+    if (event.source) {
+      try {
+        event.source.postMessage({
+          type: 'SEERA_SW_ACK_PAUSE',
+          correlationId: event.data.correlationId || null,
+          paused: swSignOutPaused,
+        });
+      } catch {}
+    }
+    return;
+  }
+
+  if (event.data.type === 'SEERA_CLOSE_IDB_CONNECTIONS' || event.data.type === 'CLOSE_IDB_CONNECTIONS') {
+    swSignOutPaused = true;
+    const closedCount = closeAllSwIDBConnections();
+    const ackPayload = {
+      type: 'SEERA_SW_ACK_CLOSE_IDB',
+      correlationId: event.data.correlationId || null,
+      closedCount,
+    };
+    if (event.source) {
+      try {
+        event.source.postMessage(ackPayload);
+      } catch {}
+    } else {
+      event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+          for (const client of windowClients) {
+            try { client.postMessage(ackPayload); } catch {}
+          }
+        })
+      );
+    }
+    return;
+  }
+
   if (event.data.type === 'CHECK_DEADLINES') {
     event.waitUntil(checkDeadlinesAndNotify());
     return;
   }
-
 
   if (event.data.type === 'NOTIFY_PRECEDENTS_DOWNLOADED') {
     const { count, precedentTitles, customTitle, customBody } = event.data;
@@ -200,7 +415,7 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// Safe notification click: only focus existing window if already open, never open new URL on host domain
+// Safe notification click
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
@@ -213,7 +428,6 @@ self.addEventListener('notificationclick', (event) => {
           } catch {}
           return client.focus();
         }
-
       }
     })
   );
