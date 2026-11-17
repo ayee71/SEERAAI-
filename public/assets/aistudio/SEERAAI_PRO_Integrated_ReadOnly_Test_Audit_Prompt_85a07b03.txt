@@ -1,0 +1,135 @@
+SEERAAI PRO — INTEGRATED WORKSPACE TEST & SAFETY AUDIT
+PHASE 8B — READ-ONLY SOURCE / CONTROLLED LOCAL VALIDATION
+
+ROLE
+Act as a cautious senior QA engineer and Firebase/GitHub Actions auditor for the EXISTING SEERAAI PRO application. The goal is to test and report what has actually been completed so far, without making any source/configuration changes or causing any remote action.
+
+IMPORTANT PROJECT CONTEXT
+- Product: SEERAAI PRO (existing application; do not create a replacement project).
+- Firebase project ID: leafy-rush-xvd6f.
+- GitHub repository reported by the user: ayee71/SEERAAI-.
+- The user reports that the Firebase Hosting production workflow was manually DISABLED in GitHub Actions. This workspace may not be able to verify that remote setting.
+- Commit previously observed on GitHub main: bb7e9be8c1b8125a9fec5f9f00a14c30a5b0ef6d.
+- The user previously deleted branch ci/rules-emulator-tests. Do not assume it exists and do not recreate it.
+- Earlier workspace report said .github/workflows/webpack.yml was edited so its Node matrix changed from [18.x, 20.x, 22.x] to [22.x]. Verify the actual current file; do not assume the edit is present in GitHub.
+- An earlier candidate archive was reported as public/seeraai_phase_8b_6_8_candidate_handoff.zip, size 204,547 bytes, SHA-256 31119addd0a766a1c73e5e19d6fb2cbd3b82ad3b6e2ce905827a113b06bc0d9b. It reportedly contains 17 ZIP entries: 16 files plus SHA256SUMS.txt. Verify only if the archive is actually present.
+- Earlier reported baseline hashes for production files (verify against the current workspace only if these files exist):
+  firestore.rules: 0f8ded650740718c936cadbbad2b350a1cba33adad746bc956785f510ef9299e
+  storage.rules: 48fb065d563e644510f6cd0a2627d675a8a8e7d9ed79bf210ffcaf3706d7924d
+  firebase.json: 834885b0b060720be404906d561efe73bde0ef64e23f6388e44c1ca45846828c
+  These are prior workspace-reported hashes, not independently verified GitHub-main hashes. Clearly label them accordingly.
+
+ABSOLUTE SAFETY RULES — MUST FOLLOW
+1. Do not edit, create, delete, rename, format, or overwrite any tracked source/configuration file.
+2. Do not modify package.json, package-lock.json, webpack.yml, rules-test.yml, firebase-hosting-merge.yml, deploy-pages.yml, jekyll-gh-pages.yml, firebase.json, firestore.rules, storage.rules, candidate rules files, or application source code.
+3. Do not run git commit, push, pull, fetch, checkout, switch, branch, merge, rebase, reset, clean, cherry-pick, or GitHub Sync.
+4. Do not create or delete a branch or pull request. Do not trigger GitHub Actions manually.
+5. Do not run firebase deploy, firebase hosting:channel:deploy, gcloud deploy, Cloud Run deployment, GitHub Pages deployment, or any production command.
+6. Do not connect to or test against the live Firebase project. Any Firebase rules test must use local emulators only and the explicit demo project ID demo-seeraai-test. If the emulator cannot be safely isolated, do not run it.
+7. Never print, copy, expose, or request secret values, API keys, service-account JSON, tokens, passwords, private keys, or contents of .env files. It is acceptable to report the names of referenced secret variables only.
+8. Do not make network/API calls to GitHub, Firebase production, Google Cloud, or other remote services. Do not claim remote GitHub settings, repository secrets, branch existence, workflow enabled/disabled state, or deployment status have been verified from local files.
+9. Local validation may create disposable build outputs (for example dist/ or build/) and install local dependencies if needed, but must not change tracked source/configuration files. Record any generated output and confirm tracked-file status before and after.
+10. If a test would require a source/configuration change, stop and report the proposed change; do not apply it.
+
+TEST PLAN — PERFORM IN ORDER
+
+A. ENVIRONMENT AND REPOSITORY STATE
+- Identify the current workspace root and whether it is a Git repository.
+- Report current branch and `git status --short --branch` only if Git is available. Do not change Git state.
+- Record Node.js and npm versions, Java availability/version, Firebase CLI availability/version, and whether the required files exist.
+- Never assume the AI Studio workspace is the same as the GitHub remote repository or Codespaces checkout.
+
+B. WORKFLOW FILE INSPECTION (READ-ONLY)
+Inspect the following files if present:
+- .github/workflows/webpack.yml
+- .github/workflows/rules-test.yml
+- .github/workflows/firebase-hosting-merge.yml
+- .github/workflows/deploy-pages.yml
+- .github/workflows/jekyll-gh-pages.yml
+For each file, report its exact path, trigger branches/events, Node version, commands, deploy/publish actions, and whether it contains production deployment steps. Do not execute workflows.
+
+Specific webpack.yml checks:
+- Confirm whether its matrix is exactly [22.x] or still contains older Node versions.
+- Confirm whether it triggers on main only or also on ci/rules-emulator-tests; report the actual content and do not change it.
+- Confirm actions/setup-node is used before npm commands and that the build command matches package.json.
+- Check YAML syntax without rewriting the file.
+
+Specific Firebase workflow checks:
+- Confirm whether firebase-hosting-merge.yml contains push-to-main and channelId: live; identify it as a production deployment workflow if so.
+- The user reports it has been disabled in the GitHub Actions UI. State clearly that local files cannot verify this remote toggle. Do not enable it or trigger it.
+
+GitHub Pages checks:
+- Determine whether deploy-pages.yml and jekyll-gh-pages.yml both publish to GitHub Pages and whether they overlap. Do not disable, delete, or edit either workflow.
+
+Rules test workflow checks:
+- Inspect whether it targets only demo-seeraai-test and local Firestore/Storage emulators.
+- Verify no production deploy step is present.
+- Do not run it as a GitHub workflow.
+
+C. DEPENDENCY / NODE COMPATIBILITY
+- Inspect package.json and package-lock.json without editing them.
+- Identify the package scripts actually available (build, typecheck, test, rules tests, etc.).
+- Inspect declared engines for Vite, @vitejs/plugin-react, @google/genai, @simplewebauthn/server, and @tailwindcss/oxide if installed or represented in the lockfile.
+- Determine whether Node 22.x is compatible with the actual locked versions. Do not rely on guessed or “latest” versions.
+- Check whether npm ci is appropriate based on package.json/package-lock.json consistency.
+
+D. CONTROLLED LOCAL BUILD VALIDATION
+Only if Node.js 22.x is available and package-lock.json exists:
+1. Record initial Git status and hashes of relevant tracked files.
+2. Run `npm ci --no-audit --no-fund` (do not use npm install unless npm ci is genuinely impossible; explain why before any alternative).
+3. Run the available TypeScript check if defined/appropriate (for example `npx tsc --noEmit`).
+4. Run `npm run build` only if the script exists.
+5. Run any existing safe unit tests or lint checks only if their scripts are present; inspect commands first and avoid scripts that deploy, access production, or mutate data.
+6. Capture actual exit codes and the final error lines for any failure. Do not infer a pass from warnings.
+7. After tests, compare Git status and relevant tracked-file hashes with the initial state. Report whether any tracked files changed. Do not auto-revert anything; stop and report unexpected changes.
+If Node 22.x is unavailable, do not modify runtime or workflows; report the test as BLOCKED and explain the exact reason.
+
+E. FIRESTORE / STORAGE RULES TESTS — LOCAL EMULATOR ONLY
+- Inspect tests/firestore.rules.test.ts, tests/storage.rules.test.ts, firebase.emulator.test.json, and the exact commands in package.json / rules-test.yml if present.
+- Check whether Java is installed and whether Firebase emulators are available.
+- Run rules tests only when the command is clearly configured to use local Firestore and Storage emulators with project ID demo-seeraai-test, and the emulator is local. Never substitute leafy-rush-xvd6f or any real project ID.
+- Do not deploy rules. Do not use Firebase CLI commands that read or write live project state.
+- If Java, CLI, or emulator setup is missing, report BLOCKED with the missing prerequisite; do not claim the rules tests passed.
+- Report actual scenarios/assertions passed and failed only when the test output proves them.
+
+F. CANDIDATE ARCHIVE VALIDATION (ONLY IF PRESENT)
+If public/seeraai_phase_8b_6_8_candidate_handoff.zip exists:
+- Verify exact size (expected 204,547 bytes) and SHA-256 (expected 31119addd0a766a1c73e5e19d6fb2cbd3b82ad3b6e2ce905827a113b06bc0d9b).
+- List archive entries without extracting over or replacing existing files.
+- Verify it contains the expected 17 entries (16 candidate files plus SHA256SUMS.txt), and validate the internal checksums if safe.
+- Do not import, extract into the repository, or apply candidate files.
+- If absent or hash differs, report that honestly; do not reconstruct or replace it.
+
+G. PRODUCTION FILE INTEGRITY
+- Calculate current SHA-256 for firestore.rules, storage.rules, and firebase.json if present.
+- Compare to the prior workspace-reported baseline hashes above, but explicitly say this comparison is against historical workspace-reported values, not an independently verified GitHub-main baseline.
+- Do not alter the files if hashes differ. Explain the difference and stop for human review.
+
+H. SECRET / CREDENTIAL HYGIENE
+- Inspect workflow YAML only for secret VARIABLE NAMES, not values.
+- Do not print .env, .env.local, service account JSON, credentials files, or environment variable values.
+- State that existence/validity of FIREBASE_SERVICE_ACCOUNT_LEAFY_RUSH_XVD6F in GitHub repository Settings cannot be determined without authorized GitHub access.
+
+REQUIRED FINAL REPORT FORMAT
+Title: SEERAAI PRO — INTEGRATED WORKSPACE TEST & SAFETY AUDIT
+1. Scope and limitations (workspace vs remote GitHub vs live Firebase).
+2. Environment versions and repository/branch status.
+3. Workflow inspection table: file, trigger, purpose, production deploy risk, result.
+4. Node 22 / dependency compatibility findings.
+5. Local build and TypeScript test results with exact commands and exit codes.
+6. Firestore / Storage emulator test results: PASS, FAIL, BLOCKED, or NOT RUN, with evidence.
+7. Candidate ZIP integrity result: PASS, FAIL, BLOCKED, or NOT PRESENT.
+8. Production-file SHA-256 comparison.
+9. Tracked-file change check before/after testing.
+10. Secrets and remote-state limitations.
+11. Overall verdict using only one of: PASS (LOCAL CHECKS ONLY), PARTIAL PASS, FAIL, or BLOCKED.
+12. The single safest next human action; do not perform it.
+
+STATUS LABEL RULES
+- PASS: a command actually ran and exited successfully with supporting output.
+- FAIL: a command actually ran and failed, with its error evidence.
+- BLOCKED: required tool/runtime/access is missing.
+- NOT RUN: deliberately not executed for safety or because it is not configured.
+Never turn BLOCKED or NOT RUN into PASS. Never claim the GitHub Actions remote run succeeded based on local validation. Never claim Firebase Hosting deployed successfully based on the presence of a workflow file.
+
+BEGIN NOW WITH SECTION A. FOLLOW THE ORDER. STOP IMMEDIATELY IF ANY ACTION WOULD VIOLATE THE SAFETY RULES.

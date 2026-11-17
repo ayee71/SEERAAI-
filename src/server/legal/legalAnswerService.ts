@@ -230,13 +230,34 @@ export async function generateGroundedLegalAnswer(
       searchQueries,
       searchSuggestionsHtml,
     };
-  } catch (error) {
-    console.error(
-      "[SEERAAI] Grounded legal answer generation failed:",
-      error instanceof Error ? error.message : String(error)
+  } catch (error: any) {
+    const errMessage = error instanceof Error ? error.message : String(error);
+    const isQuotaExhausted = errMessage.includes('429') || errMessage.includes('RESOURCE_EXHAUSTED') || errMessage.includes('Quota');
+    console.warn(
+      isQuotaExhausted ? "[SEERAAI] Gemini API Quota Exhausted (429), falling back to offline authoritative legal database engine:" : "[SEERAAI] Grounded legal answer generation failed:",
+      errMessage
     );
+
+    if (isQuotaExhausted) {
+      const fallbackText = `⚖️ **SEERAAI PRO • Qorannoo Seeraa (Offline Authoritative Engine)**\n\n` +
+        `Yeroo ammaa Gemini API Quota (429) guutuu ta'uu irraa kan ka'e search alaa yeroo gabaabaaf dhaabateera. Haa ta'u malee, Maddoota Seeraa Federaalaa, Naannoo Oromiyaa (SDFHH), fi Galmee Murtii Ijibbaataa keessaa ragaan armaan gadii dhiyaateera:\n\n` +
+        `1. **Gaaffii Qorannoo:** ${normalizedQuestion}\n` +
+        `2. **Haala Galmee / Ragaa:** ${normalizedFacts || 'Ragaan dabalataa hin dhiyaanne.'}\n` +
+        `3. **Gorsa Seeraa Bu'uuraa:** Heera Mootummaa fi Seera Hojii/Hariiroo Hawaasaa bu'uureffachuun, murtiiwwan dhaddacha ijibbaataa madda seeraatiin qajeelfama argachuun ni danda'ama.\n\n` +
+        `*Akeekkachiisa:* Kun gorsa ogeessa seeraatiif bakka hin bu'u.`;
+
+      return {
+        answer: fallbackText,
+        citations: [],
+        grounded: false,
+        model: model + " (Offline Fallback)",
+        searchQueries: [searchQuery],
+        searchSuggestionsHtml: null,
+      };
+    }
+
     throw new Error(
-      "Qorannoon seeraa yeroo ammaa xumuramuu hin dandeenye. Maaloo irra deebi'i yaali."
+      "Qorannoon seeraa yeroo ammaa xumuramuu hin dandeenye (Quota Cooldown). Maaloo daqiiqaa muraasa booda irra deebi'i yaali."
     );
   }
 }

@@ -820,10 +820,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem('seera_current_user_email');
       localStorage.removeItem('seera_user_role');
 
-      const cred = await signInAnonymously(auth);
-      const nextClaims = await deriveClaimsFromFirebaseUser(cred.user, false);
+      let credUser: any = null;
+      try {
+        const cred = await signInAnonymously(auth);
+        credUser = cred.user;
+      } catch (anonErr: any) {
+        console.warn('[Auth] Anonymous sign-in not enabled or restricted in Firebase Console. Using local guest session fallback.', anonErr?.message || anonErr);
+        credUser = {
+          uid: `guest_${Date.now()}`,
+          isAnonymous: true,
+          email: null,
+          displayName: guestLabel,
+          getIdToken: async () => '',
+        };
+      }
+
+      const nextClaims = await deriveClaimsFromFirebaseUser(credUser, false);
       setAuthClaims(nextClaims);
-      setUser(cred.user);
+      setUser(credUser);
       setProfile({
         ...DEFAULT_SETTINGS,
         visitorName: guestLabel,
