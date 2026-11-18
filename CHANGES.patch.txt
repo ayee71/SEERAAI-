@@ -1,0 +1,584 @@
+--- /tmp/optionc_before/firestore.rules.phase8b5.3.integrated.candidate	2026-11-17 15:17:33.492914987 +0000
++++ firestore.rules.phase8b5.3.integrated.candidate	2026-11-17 15:18:09.777679923 +0000
+@@ -10,16 +10,22 @@
+       return request.auth != null;
+     }
+ 
++    function signInProvider() {
++      return request.auth.token.get(['firebase', 'sign_in_provider'], '');
++    }
++
+     function isNonAnonymous() {
+       return isSignedIn() &&
+-        request.auth.token.firebase.sign_in_provider != 'anonymous';
++        signInProvider() is string &&
++        signInProvider() != '' &&
++        signInProvider() != 'anonymous';
+     }
+ 
+     // Strict email verification check: never treats phone or anonymous auth as verified email
+     function isEmailVerified() {
+       return isNonAnonymous() &&
+-        request.auth.token.email_verified == true &&
+-        request.auth.token.firebase.sign_in_provider != 'phone';
++        request.auth.token.get('email_verified', false) == true &&
++        signInProvider() != 'phone';
+     }
+ 
+     function isOwner(userId) {
+@@ -29,34 +35,46 @@
+     // Strict claim-based global administrator check (no hardcoded unverified emails)
+     function isAdmin() {
+       return isEmailVerified() && (
+-        request.auth.token.admin == true ||
+-        request.auth.token.role == 'superadmin'
++        request.auth.token.get('admin', false) == true ||
++        request.auth.token.get('role', '') == 'superadmin'
+       );
+     }
+ 
+     function effectiveCourtRole() {
+-      return request.auth.token.courtRole is string
+-        ? request.auth.token.courtRole
+-        : (request.auth.token.role is string ? request.auth.token.role : '');
++      return request.auth.token.get('courtRole', '') is string &&
++        request.auth.token.get('courtRole', '') != ''
++        ? request.auth.token.get('courtRole', '')
++        : (request.auth.token.get('role', '') is string ? request.auth.token.get('role', '') : '');
+     }
+ 
+     function isLegalRepositoryManager() {
+       return isEmailVerified() && (
+         isAdmin() ||
+-        request.auth.token.legalContentManager == true ||
++        request.auth.token.get('legalContentManager', false) == true ||
+         effectiveCourtRole() in ['judge', 'legal_expert', 'court_admin']
+       );
+     }
+ 
++    // Option C narrow policy: legislation_repository create/update restricted to verified admins,
++    // explicit legalContentManager claim holders, or verified institutional legal_expert staff.
++    function canManageLegislationRepository() {
++      return isAdmin() || (
++        isEmailVerified() && (
++          request.auth.token.get('legalContentManager', false) == true ||
++          (hasInstitution() && effectiveCourtRole() == 'legal_expert')
++        )
++      );
++    }
++
+     function hasInstitution() {
+       return isEmailVerified() &&
+-        request.auth.token.institutionId is string &&
+-        request.auth.token.institutionId.size() > 0 &&
+-        request.auth.token.institutionId.size() <= 128;
++        request.auth.token.get('institutionId', '') is string &&
++        request.auth.token.get('institutionId', '').size() > 0 &&
++        request.auth.token.get('institutionId', '').size() <= 128;
+     }
+ 
+     function belongsToInstitution(institutionId) {
+-      return hasInstitution() && request.auth.token.institutionId == institutionId;
++      return hasInstitution() && request.auth.token.get('institutionId', '') == institutionId;
+     }
+ 
+     function hasCourtRole() {
+@@ -103,6 +121,13 @@
+       return resource.data;
+     }
+ 
++    function hasValidOptionalDataUrl(data) {
++      return data.get('dataUrl', null) == null || (
++        data.get('dataUrl', null) is string &&
++        data.get('dataUrl', '').toUtf8().size() <= 65536
++      );
++    }
++
+     function isValidId(id) {
+       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+     }
+@@ -148,7 +173,8 @@
+ 
+     match /legislation_repository/{id} {
+       allow read: if true;
+-      allow write: if isAdmin();
++      allow create, update: if canManageLegislationRepository();
++      allow delete: if isAdmin();
+     }
+ 
+     match /legalEnactments/{id} {
+@@ -579,9 +605,7 @@
+       
+       match /courtDocuments/{docId} {
+         allow read: if isInstitutionStaff(institutionId);
+-        allow create, update: if canEditCasesIn(institutionId) && (
+-          incoming().dataUrl == null || (incoming().dataUrl is string && incoming().dataUrl.size() <= 65536)
+-        );
++        allow create, update: if canEditCasesIn(institutionId) && hasValidOptionalDataUrl(incoming());
+         allow delete: if isCourtAdminOf(institutionId);
+       }
+ 
+@@ -593,15 +617,23 @@
+     }
+ 
+     match /court_documents/{docId} {
+-      allow read: if resource.data.isPublic == true ||
+-                     isInstitutionStaff(resource.data.institutionId);
+-      allow create: if canEditCasesIn(incoming().institutionId) &&
+-                       incoming().institutionId is string && incoming().institutionId.size() > 0 &&
+-                       (incoming().dataUrl == null || (incoming().dataUrl is string && incoming().dataUrl.size() <= 65536));
+-      allow update: if canEditCasesIn(existing().institutionId) &&
+-                       incoming().institutionId == existing().institutionId &&
+-                       (incoming().dataUrl == null || (incoming().dataUrl is string && incoming().dataUrl.size() <= 65536));
+-      allow delete: if isCourtAdminOf(existing().institutionId);
++      allow read: if resource.data.get('isPublic', false) == true ||
++                     (resource.data.get('institutionId', '') is string &&
++                      resource.data.get('institutionId', '').size() > 0 &&
++                      isInstitutionStaff(resource.data.get('institutionId', '')));
++      allow create: if incoming().get('institutionId', '') is string &&
++                       incoming().get('institutionId', '').size() > 0 &&
++                       incoming().get('institutionId', '').size() <= 128 &&
++                       canEditCasesIn(incoming().get('institutionId', '')) &&
++                       hasValidOptionalDataUrl(incoming());
++      allow update: if existing().get('institutionId', '') is string &&
++                       existing().get('institutionId', '').size() > 0 &&
++                       canEditCasesIn(existing().get('institutionId', '')) &&
++                       incoming().get('institutionId', '') == existing().get('institutionId', '') &&
++                       hasValidOptionalDataUrl(incoming());
++      allow delete: if existing().get('institutionId', '') is string &&
++                       existing().get('institutionId', '').size() > 0 &&
++                       isCourtAdminOf(existing().get('institutionId', ''));
+     }
+ 
+     match /{document=**} {
+--- /tmp/optionc_before/storage.rules.phase8b5.4.integrated.candidate	2026-11-17 15:17:33.492982911 +0000
++++ storage.rules.phase8b5.4.integrated.candidate	2026-11-17 15:18:26.537692090 +0000
+@@ -2,35 +2,43 @@
+ service firebase.storage {
+   match /b/{bucket}/o {
+     
++    function signInProvider() {
++      return request.auth.token.get(['firebase', 'sign_in_provider'], '');
++    }
++
+     function isSignedIn() {
+       return request.auth != null &&
+-        request.auth.token.firebase.sign_in_provider != 'anonymous';
++        signInProvider() is string &&
++        signInProvider() != '' &&
++        signInProvider() != 'anonymous';
+     }
+ 
+     function isEmailVerified() {
+       return isSignedIn() &&
+-        request.auth.token.email_verified == true &&
+-        request.auth.token.firebase.sign_in_provider != 'phone';
++        request.auth.token.get('email_verified', false) == true &&
++        signInProvider() != 'phone';
+     }
+     
+     function isAdmin() {
+       return isEmailVerified() && (
+-        request.auth.token.admin == true ||
+-        request.auth.token.role == 'superadmin'
++        request.auth.token.get('admin', false) == true ||
++        request.auth.token.get('role', '') == 'superadmin'
+       );
+     }
+ 
+     function effectiveCourtRole() {
+-      return request.auth.token.courtRole is string
+-        ? request.auth.token.courtRole
+-        : (request.auth.token.role is string ? request.auth.token.role : '');
++      return request.auth.token.get('courtRole', '') is string &&
++        request.auth.token.get('courtRole', '') != ''
++        ? request.auth.token.get('courtRole', '')
++        : (request.auth.token.get('role', '') is string ? request.auth.token.get('role', '') : '');
+     }
+ 
+     function belongsToInstitution(institutionId) {
+       return isEmailVerified() &&
+-        request.auth.token.institutionId is string &&
+-        request.auth.token.institutionId.size() > 0 &&
+-        request.auth.token.institutionId == institutionId;
++        request.auth.token.get('institutionId', '') is string &&
++        request.auth.token.get('institutionId', '').size() > 0 &&
++        request.auth.token.get('institutionId', '').size() <= 128 &&
++        request.auth.token.get('institutionId', '') == institutionId;
+     }
+ 
+     function isAllowedCourtDocMime() {
+@@ -130,7 +138,7 @@
+       allow write: if isValidDocumentUpload() && (
+         isAdmin() ||
+         (isEmailVerified() && (
+-          request.auth.token.legalContentManager == true ||
++          request.auth.token.get('legalContentManager', false) == true ||
+           effectiveCourtRole() in ['judge', 'legal_expert', 'court_admin']
+         ))
+       );
+--- /tmp/optionc_before/tests/firestore.rules.test.ts	2026-11-17 15:17:33.493075080 +0000
++++ tests/firestore.rules.test.ts	2026-11-17 15:18:28.952163682 +0000
+@@ -104,6 +104,12 @@
+   const ctxAuditorA = () => testEnv.authenticatedContext('aud_a1', { email: 'aud.a1@court.gov.et', email_verified: true, courtRole: 'auditor', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).firestore();
+   const ctxCourtAdminA = () => testEnv.authenticatedContext('cadmin_a1', { email: 'cadmin.a1@court.gov.et', email_verified: true, courtRole: 'court_admin', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).firestore();
+   const ctxAdmin = () => testEnv.authenticatedContext('super_admin_1', { email: 'admin@seeraai.et', email_verified: true, admin: true, role: 'superadmin', firebase: { sign_in_provider: 'password' } }).firestore();
++  const ctxLegalContentMgr = () => testEnv.authenticatedContext('lcm_1', { email: 'lcm@seeraai.et', email_verified: true, legalContentManager: true, firebase: { sign_in_provider: 'password' } }).firestore();
++  const ctxJudgeAWithLcm = () => testEnv.authenticatedContext('judge_lcm_a1', { email: 'judge.lcm@court.gov.et', email_verified: true, courtRole: 'judge', institutionId: INST_A, legalContentManager: true, firebase: { sign_in_provider: 'password' } }).firestore();
++  const ctxCourtAdminAWithLcm = () => testEnv.authenticatedContext('cadmin_lcm_a1', { email: 'cadmin.lcm@court.gov.et', email_verified: true, courtRole: 'court_admin', institutionId: INST_A, legalContentManager: true, firebase: { sign_in_provider: 'password' } }).firestore();
++  const ctxExpertUnverified = () => testEnv.authenticatedContext('exp_unver_1', { email: 'exp.unver@court.gov.et', email_verified: false, courtRole: 'legal_expert', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).firestore();
++  const ctxExpertNoInst = () => testEnv.authenticatedContext('exp_noinst_1', { email: 'exp.noinst@court.gov.et', email_verified: true, courtRole: 'legal_expert', firebase: { sign_in_provider: 'password' } }).firestore();
++  const ctxMissingFirebaseMap = () => testEnv.authenticatedContext('missing_fb_1', { email: 'nofb@example.org', email_verified: true }).firestore();
+ 
+   const results: TestResult[] = [];
+   const check = async (id: number, name: string, fn: () => Promise<void>) => {
+@@ -200,6 +206,14 @@
+           isPublic: false,
+         })
+       );
++      await assertSucceeds(
++        ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_a2`).set({
++          id: 'cd_a2',
++          institutionId: INST_A,
++          createdBy: 'judge_a1',
++          title: 'Sealed Order A2',
++        })
++      );
+     });
+ 
+     await check(8, 'Authorized registrar reads/writes institution A cases & schedules; denied institution B', async () => {
+@@ -216,9 +230,12 @@
+       await assertFails(ctxAssistantA().doc('admin_activity_logs/adm_log_1').delete());
+     });
+ 
+-    await check(10, 'Authorized legal_expert reads institution A legal docs & manages legal repository', async () => {
++    await check(10, 'Authorized legal_expert reads institution A legal docs, creates/updates legal repository, and is denied delete', async () => {
+       await assertSucceeds(ctxExpertA().doc(`institutions/${INST_A}/courtDocuments/cd_a1`).get());
+       await assertSucceeds(ctxExpertA().doc('legislation_repository/proc_new').set({ title: 'New Regulation' }));
++      await assertSucceeds(ctxExpertA().doc('legislation_repository/proc_new').update({ title: 'Updated Regulation' }));
++      await assertFails(ctxExpertA().doc('legislation_repository/proc_new').delete());
++      await assertFails(ctxExpertA().doc('legislation_repository/proc_1156').delete());
+       await assertFails(ctxExpertA().doc(`institutions/${INST_A}/courtDocuments/cd_a1`).delete());
+     });
+ 
+@@ -284,6 +301,105 @@
+         })
+       );
+     });
++
++    await check(18, 'Option C: legislation_repository authorization enforces role, verification, institutionId, legalContentManager claim, and admin-only delete', async () => {
++      // Admin retains full create, update, and delete
++      await assertSucceeds(ctxAdmin().doc('legislation_repository/proc_adm_1').set({ title: 'Federal Code Amendment' }));
++      await assertSucceeds(ctxAdmin().doc('legislation_repository/proc_adm_1').update({ title: 'Federal Code Amendment v2' }));
++      await assertSucceeds(ctxAdmin().doc('legislation_repository/proc_adm_1').delete());
++
++      // Explicit legalContentManager claim allows create/update regardless of courtRole, but denies delete
++      await assertSucceeds(ctxLegalContentMgr().doc('legislation_repository/proc_lcm_1').set({ title: 'Oromia Proclamation 248' }));
++      await assertSucceeds(ctxLegalContentMgr().doc('legislation_repository/proc_lcm_1').update({ title: 'Oromia Proclamation 248 Rev' }));
++      await assertFails(ctxLegalContentMgr().doc('legislation_repository/proc_lcm_1').delete());
++
++      // Existing backend server-app.ts provisions legalContentManager=true for judge/court_admin: allowed via explicit claim branch, delete denied
++      await assertSucceeds(ctxJudgeAWithLcm().doc('legislation_repository/proc_jlcm_1').set({ title: 'Judge LCM Draft' }));
++      await assertFails(ctxJudgeAWithLcm().doc('legislation_repository/proc_jlcm_1').delete());
++      await assertSucceeds(ctxCourtAdminAWithLcm().doc('legislation_repository/proc_calcm_1').set({ title: 'CourtAdmin LCM Draft' }));
++      await assertFails(ctxCourtAdminAWithLcm().doc('legislation_repository/proc_calcm_1').delete());
++
++      // Judge & court_admin WITHOUT legalContentManager claim are denied under Option C
++      await assertFails(ctxJudgeA().doc('legislation_repository/proc_judge_denied').set({ title: 'Denied Judge Write' }));
++      await assertFails(ctxCourtAdminA().doc('legislation_repository/proc_cadmin_denied').set({ title: 'Denied CourtAdmin Write' }));
++
++      // Unverified or missing-institution legal_expert denied
++      await assertFails(ctxExpertUnverified().doc('legislation_repository/proc_unver_exp').set({ title: 'Blocked Unverified' }));
++      await assertFails(ctxExpertNoInst().doc('legislation_repository/proc_noinst_exp').set({ title: 'Blocked No Inst' }));
++
++      // Ordinary, guest, phone, verified-no-role, unauth, and missing-firebase-provider denied writes
++      await assertFails(ctxOrdinary().doc('legislation_repository/proc_ord').set({ title: 'Blocked' }));
++      await assertFails(ctxVerifiedNoRole().doc('legislation_repository/proc_ver').set({ title: 'Blocked' }));
++      await assertFails(ctxPhone().doc('legislation_repository/proc_phone').set({ title: 'Blocked' }));
++      await assertFails(ctxAnon().doc('legislation_repository/proc_anon').set({ title: 'Blocked' }));
++      await assertFails(ctxUnauth().doc('legislation_repository/proc_unauth').set({ title: 'Blocked' }));
++      await assertFails(ctxMissingFirebaseMap().doc('legislation_repository/proc_nofb').set({ title: 'Blocked' }));
++      await assertFails(ctxMissingFirebaseMap().doc('user_documents/ud_nofb').set({ userId: 'missing_fb_1', ownerId: 'missing_fb_1', title: 'Blocked' }));
++    });
++
++    await check(19, 'Option C: legal_expert strict containment against privilege escalation, admin collections, and cross-institution/court writes', async () => {
++      await assertFails(ctxExpertA().doc('users/exp_a1').set({ uid: 'exp_a1', role: 'superadmin', admin: true }));
++      await assertFails(ctxExpertA().doc('users/exp_a1').set({ uid: 'exp_a1', courtRole: 'court_admin', institutionId: INST_B }));
++      await assertFails(ctxVerifiedNoRole().doc('users/verified_norole').update({ role: 'legal_expert', courtRole: 'legal_expert', institutionId: INST_A }));
++
++      await assertFails(ctxExpertA().doc('admin_activity_logs/adm_log_1').get());
++      await assertFails(ctxExpertA().doc('admin_activity_logs/adm_log_exp').set({ actionType: 'tamper' }));
++      await assertFails(ctxExpertA().doc('legalAuditLogs/la_1').set({ action: 'tamper' }));
++      await assertFails(ctxExpertA().doc('court_users/cu_exp').set({ institutionId: INST_A, role: 'judge' }));
++      await assertFails(ctxExpertA().doc('system_config/cfg_1').set({ maintenance: true }));
++
++      await assertFails(ctxExpertA().doc(`institutions/${INST_B}/courtDocuments/cd_b1`).get());
++      await assertFails(ctxExpertA().doc('court_documents/doc_b1').get());
++      await assertFails(ctxExpertA().doc('cases/case_b1').get());
++      await assertFails(
++        ctxExpertA().doc('court_documents/doc_exp_write').set({
++          id: 'doc_exp_write',
++          institutionId: INST_A,
++          createdBy: 'exp_a1',
++          title: 'Unauthorized Court Doc Write',
++        })
++      );
++      await assertFails(
++        ctxExpertA().doc(`institutions/${INST_A}/courtDocuments/cd_exp_write`).set({
++          id: 'cd_exp_write',
++          institutionId: INST_A,
++          createdBy: 'exp_a1',
++          title: 'Unauthorized Inst Doc Write',
++        })
++      );
++    });
++
++    await check(20, 'Optional dataUrl UTF-8 65,536-byte enforcement and type validation across court_documents and institutions/*/courtDocuments', async () => {
++      const asciiExact64K = 'A'.repeat(65536);
++      const asciiOver64K = 'A'.repeat(65537);
++      const multibyteExact64K = 'ሀ'.repeat(21845) + 'A'; // 21845 * 3 + 1 = 65536 UTF-8 bytes
++      const multibyteOver64K = 'ሀ'.repeat(21846); // 21846 * 3 = 65538 UTF-8 bytes (< 65536 chars!)
++
++      // Root court_documents positive cases
++      await assertSucceeds(ctxJudgeA().doc('court_documents/doc_null_url').set({ id: 'doc_null_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: null }));
++      await assertSucceeds(ctxJudgeA().doc('court_documents/doc_65536').set({ id: 'doc_65536', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: asciiExact64K }));
++      await assertSucceeds(ctxJudgeA().doc('court_documents/doc_utf8_65536').set({ id: 'doc_utf8_65536', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: multibyteExact64K }));
++
++      // Institution subcollection courtDocuments positive cases
++      await assertSucceeds(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_null_url`).set({ id: 'cd_null_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: null }));
++      await assertSucceeds(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_65536`).set({ id: 'cd_65536', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: asciiExact64K }));
++      await assertSucceeds(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_utf8_65536`).set({ id: 'cd_utf8_65536', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: multibyteExact64K }));
++
++      // Root court_documents negative cases (over byte cap, invalid types, missing institutionId)
++      await assertFails(ctxJudgeA().doc('court_documents/doc_65537').set({ id: 'doc_65537', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: asciiOver64K }));
++      await assertFails(ctxJudgeA().doc('court_documents/doc_utf8_over').set({ id: 'doc_utf8_over', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: multibyteOver64K }));
++      await assertFails(ctxJudgeA().doc('court_documents/doc_num_url').set({ id: 'doc_num_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: 12345 }));
++      await assertFails(ctxJudgeA().doc('court_documents/doc_obj_url').set({ id: 'doc_obj_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: { uri: 'https://example.org' } }));
++      await assertFails(ctxJudgeA().doc('court_documents/doc_arr_url').set({ id: 'doc_arr_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: ['bad'] }));
++      await assertFails(ctxJudgeA().doc('court_documents/doc_no_inst').set({ id: 'doc_no_inst', createdBy: 'judge_a1', title: 'Missing Inst' }));
++
++      // Institution subcollection courtDocuments negative cases
++      await assertFails(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_65537`).set({ id: 'cd_65537', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: asciiOver64K }));
++      await assertFails(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_utf8_over`).set({ id: 'cd_utf8_over', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: multibyteOver64K }));
++      await assertFails(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_num_url`).set({ id: 'cd_num_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: 12345 }));
++      await assertFails(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_obj_url`).set({ id: 'cd_obj_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: { uri: 'https://example.org' } }));
++      await assertFails(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_arr_url`).set({ id: 'cd_arr_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: ['bad'] }));
++    });
+   } finally {
+     await testEnv.cleanup();
+   }
+--- /tmp/optionc_before/tests/storage.rules.test.ts	2026-11-17 15:17:33.493148785 +0000
++++ tests/storage.rules.test.ts	2026-11-17 15:18:30.784090235 +0000
+@@ -80,6 +80,8 @@
+   const judgeAStorage = () => testEnv.authenticatedContext('judge_a1', { email: 'judge.a1@court.gov.et', email_verified: true, courtRole: 'judge', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).storage();
+   const courtAdminAStorage = () => testEnv.authenticatedContext('cadmin_a1', { email: 'admin.a1@court.gov.et', email_verified: true, courtRole: 'court_admin', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).storage();
+   const auditorAStorage = () => testEnv.authenticatedContext('aud_a1', { email: 'aud.a1@court.gov.et', email_verified: true, courtRole: 'auditor', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).storage();
++  const legalContentMgrStorage = () => testEnv.authenticatedContext('lcm_1', { email: 'lcm@seeraai.et', email_verified: true, legalContentManager: true, firebase: { sign_in_provider: 'password' } }).storage();
++  const missingFirebaseMapStorage = () => testEnv.authenticatedContext('missing_fb_1', { email: 'nofb@example.org', email_verified: true }).storage();
+ 
+   const results: StorageTestResult[] = [];
+   const check = async (id: number, name: string, fn: () => Promise<void>) => {
+@@ -266,6 +268,24 @@
+       await assertFails(verifiedNoRoleStorage().ref('public_legal_repository/proc_1156/fake.pdf').put(samplePdf, { contentType: 'application/pdf' }));
+       await assertFails(judgeAStorage().ref('arbitrary_unprotected/secret.pdf').put(samplePdf, { contentType: 'application/pdf' }));
+     });
++
++    await check(11, 'Missing optional custom claims & missing firebase provider fail closed safely; legalContentManager allowed on public_legal_repository', async () => {
++      await assertSucceeds(
++        legalContentMgrStorage()
++          .ref('public_legal_repository/proc_lcm_1/enactment.pdf')
++          .put(samplePdf, { contentType: 'application/pdf' })
++      );
++      await assertFails(
++        missingFirebaseMapStorage()
++          .ref('legal_docs/personal_missing_fb_1/missing_fb_1/note.pdf')
++          .put(samplePdf, { contentType: 'application/pdf' })
++      );
++      await assertFails(
++        missingFirebaseMapStorage()
++          .ref(`institutions/${INST_A}/courtDocuments/doc_a1/order.pdf`)
++          .getDownloadURL()
++      );
++    });
+   } finally {
+     await testEnv.cleanup();
+   }
+--- /tmp/optionc_before/package.json	2026-11-17 15:17:33.493204677 +0000
++++ package.json	2026-11-17 15:18:39.994446620 +0000
+@@ -8,7 +8,9 @@
+     "build": "vite build && node scripts/prepare-build.js",
+     "start": "tsx server.ts",
+     "lint": "tsc --noEmit",
+-    "test": "npx tsx tests/firestore.rules.test.ts && npx tsx tests/storage.rules.test.ts"
++    "test:firestore": "npx tsx tests/firestore.rules.test.ts",
++    "test:storage": "npx tsx tests/storage.rules.test.ts",
++    "test": "node scripts/run-rules-tests.mjs"
+   },
+   "dependencies": {
+     "@google/genai": "^2.32.0",
+--- /tmp/optionc_before/.github/workflows/rules-test.yml	2026-11-17 15:17:33.493319601 +0000
++++ .github/workflows/rules-test.yml	2026-11-17 15:18:40.748217483 +0000
+@@ -41,15 +41,18 @@
+           cache: npm
+ 
+       - name: Install dependencies from lockfile
++        id: install
+         run: npm ci
+ 
+       - name: Ensure Firebase CLI is available
++        id: cli
+         run: |
+           if ! command -v firebase >/dev/null 2>&1; then
+             npm install -g firebase-tools@13
+           fi
+ 
+       - name: Guard - isolated config and candidate integrity check
++        id: guard
+         run: |
+           set -euo pipefail
+           test -f "$FIRESTORE_CANDIDATE"
+@@ -62,6 +65,8 @@
+           fi
+ 
+       - name: Prepare evidence folder and hashes (before)
++        id: prep_evidence
++        if: ${{ steps.guard.outcome == 'success' }}
+         run: |
+           mkdir -p evidence
+           sha256sum "$FIRESTORE_CANDIDATE" "$STORAGE_CANDIDATE" | tee evidence/hashes_before.txt
+@@ -71,24 +76,62 @@
+           npm -v >> evidence/tool_versions.txt
+ 
+       - name: Run TypeScript & Production Build Check
++        id: build_check
++        if: ${{ steps.install.outcome == 'success' && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' }}
+         run: |
++          set -o pipefail
+           npx tsc --noEmit 2>&1 | tee evidence/tsc_output.txt
+           npm run build 2>&1 | tee evidence/build_output.txt
+ 
+-      - name: Run Firestore + Storage rules tests in emulators
++      - name: Run Firestore rules tests in emulator
++        id: firestore_tests
++        if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.cli.outcome == 'success' && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' && steps.build_check.outcome == 'success' }}
+         run: |
+           set +e
++          set -o pipefail
+           firebase emulators:exec \
+             --config firebase.emulator.test.json \
+             --project demo-seeraai-test \
+             --only firestore,storage \
+-            "npm test" 2>&1 | tee evidence/test_output.txt
+-          code=${PIPESTATUS[0]}
+-          echo "$code" > evidence/exit_code.txt
++            "npm run test:firestore" 2>&1 | tee evidence/firestore_output.txt
++          statuses=("${PIPESTATUS[@]}")
++          em_code="${statuses[0]:-1}"
++          tee_code="${statuses[1]:-0}"
++          if [ "$em_code" -ne 0 ]; then
++            echo "$em_code" > evidence/firestore_exit_code.txt
++          elif [ "$tee_code" -ne 0 ]; then
++            echo "$tee_code" > evidence/firestore_exit_code.txt
++          else
++            echo "0" > evidence/firestore_exit_code.txt
++          fi
++          exit 0
++
++      - name: Run Storage rules tests in emulator
++        id: storage_tests
++        if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.cli.outcome == 'success' && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' && steps.build_check.outcome == 'success' }}
++        run: |
++          set +e
++          set -o pipefail
++          firebase emulators:exec \
++            --config firebase.emulator.test.json \
++            --project demo-seeraai-test \
++            --only firestore,storage \
++            "npm run test:storage" 2>&1 | tee evidence/storage_output.txt
++          statuses=("${PIPESTATUS[@]}")
++          em_code="${statuses[0]:-1}"
++          tee_code="${statuses[1]:-0}"
++          if [ "$em_code" -ne 0 ]; then
++            echo "$em_code" > evidence/storage_exit_code.txt
++          elif [ "$tee_code" -ne 0 ]; then
++            echo "$tee_code" > evidence/storage_exit_code.txt
++          else
++            echo "0" > evidence/storage_exit_code.txt
++          fi
+           exit 0
+ 
+       - name: Hashes (after) and unchanged check
+-        if: always()
++        id: hash_check
++        if: ${{ !cancelled() && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' }}
+         run: |
+           sha256sum "$FIRESTORE_CANDIDATE" "$STORAGE_CANDIDATE" | tee evidence/hashes_after.txt
+           diff evidence/hashes_before.txt evidence/hashes_after.txt \
+@@ -97,15 +140,20 @@
+           cp -f firebase-debug.log firestore-debug.log storage-debug.log ui-debug.log evidence/ 2>/dev/null || true
+ 
+       - name: Upload evidence
+-        if: always()
++        if: ${{ !cancelled() && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' }}
+         uses: actions/upload-artifact@v4
+         with:
+           name: rules-test-evidence
+           path: evidence/
+           if-no-files-found: error
+ 
+-      - name: Fail job if tests failed
++      - name: Fail job if either test suite failed
++        if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.cli.outcome == 'success' && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' && steps.build_check.outcome == 'success' }}
+         run: |
+-          code=$(cat evidence/exit_code.txt)
+-          echo "Test exit code: $code"
+-          test "$code" = "0"
++          test -s evidence/firestore_exit_code.txt
++          test -s evidence/storage_exit_code.txt
++          fs_code="$(tr -d '[:space:]' < evidence/firestore_exit_code.txt)"
++          st_code="$(tr -d '[:space:]' < evidence/storage_exit_code.txt)"
++          echo "Firestore exit code: $fs_code"
++          echo "Storage exit code: $st_code"
++          test "$fs_code" = "0" && test "$st_code" = "0"
+--- /dev/null	2026-11-17 14:41:02.838019433 +0000
++++ scripts/run-rules-tests.mjs	2026-11-17 15:18:31.757405336 +0000
+@@ -0,0 +1,39 @@
++import { spawnSync } from 'node:child_process';
++
++const suites = [
++  {
++    name: 'Firestore Rules Emulator Suite',
++    cmd: 'npx',
++    args: ['tsx', 'tests/firestore.rules.test.ts'],
++  },
++  {
++    name: 'Storage Rules Emulator Suite',
++    cmd: 'npx',
++    args: ['tsx', 'tests/storage.rules.test.ts'],
++  },
++];
++
++let hasFailure = false;
++
++for (const suite of suites) {
++  console.log(`\n=== Running ${suite.name} ===`);
++  const result = spawnSync(suite.cmd, suite.args, {
++    stdio: 'inherit',
++    shell: process.platform === 'win32',
++  });
++
++  if (result.error) {
++    console.error(`[FAIL] ${suite.name} failed to spawn: ${result.error.message}`);
++    hasFailure = true;
++  } else if (result.signal) {
++    console.error(`[FAIL] ${suite.name} terminated by signal: ${result.signal}`);
++    hasFailure = true;
++  } else if (result.status === null || result.status !== 0) {
++    console.error(`[FAIL] ${suite.name} exited with status: ${String(result.status)}`);
++    hasFailure = true;
++  } else {
++    console.log(`[PASS] ${suite.name} exited with status: 0`);
++  }
++}
++
++process.exit(hasFailure ? 1 : 0);

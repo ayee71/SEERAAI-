@@ -1,0 +1,152 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    function signInProvider() {
+      return request.auth.token.get(['firebase', 'sign_in_provider'], '');
+    }
+
+    function isSignedIn() {
+      return request.auth != null &&
+        signInProvider() is string &&
+        signInProvider() != '' &&
+        signInProvider() != 'anonymous';
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() &&
+        request.auth.token.get('email_verified', false) == true &&
+        signInProvider() != 'phone';
+    }
+    
+    function isAdmin() {
+      return isEmailVerified() && (
+        request.auth.token.get('admin', false) == true ||
+        request.auth.token.get('role', '') == 'superadmin'
+      );
+    }
+
+    function effectiveCourtRole() {
+      return request.auth.token.get('courtRole', '') is string &&
+        request.auth.token.get('courtRole', '') != ''
+        ? request.auth.token.get('courtRole', '')
+        : (request.auth.token.get('role', '') is string ? request.auth.token.get('role', '') : '');
+    }
+
+    function belongsToInstitution(institutionId) {
+      return isEmailVerified() &&
+        request.auth.token.get('institutionId', '') is string &&
+        request.auth.token.get('institutionId', '').size() > 0 &&
+        request.auth.token.get('institutionId', '').size() <= 128 &&
+        request.auth.token.get('institutionId', '') == institutionId;
+    }
+
+    function isAllowedCourtDocMime() {
+      return request.resource.contentType != null && (
+        request.resource.contentType.matches('application/pdf') ||
+        request.resource.contentType.matches('application/msword') ||
+        request.resource.contentType.matches('application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document') ||
+        request.resource.contentType.matches('application/vnd\\.ms-excel') ||
+        request.resource.contentType.matches('application/vnd\\.openxmlformats-officedocument\\.spreadsheetml\\.sheet') ||
+        request.resource.contentType.matches('image/(jpeg|png|webp)') ||
+        request.resource.contentType.matches('audio/(mpeg|wav|mp4|webm|ogg)') ||
+        request.resource.contentType.matches('video/(mp4|webm)')
+      );
+    }
+
+    function isValidDocumentUpload() {
+      return request.resource != null &&
+        request.resource.size > 0 &&
+        request.resource.size <= 50 * 1024 * 1024 &&
+        isAllowedCourtDocMime();
+    }
+
+    function isValidLogoUpload() {
+      return request.resource != null &&
+        request.resource.size > 0 &&
+        request.resource.size <= 5 * 1024 * 1024 &&
+        request.resource.contentType != null &&
+        request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+
+    // 1. Institutional Court Documents (matches src/services/courtDocuments.ts)
+    match /institutions/{institutionId}/courtDocuments/{documentId}/{fileName} {
+      allow read: if isAdmin() || (
+        belongsToInstitution(institutionId) &&
+        effectiveCourtRole() in ['court_admin', 'judge', 'assistant_judge', 'registrar', 'auditor', 'legal_expert']
+      );
+
+      allow create, update: if isValidDocumentUpload() && (
+        isAdmin() || (
+          belongsToInstitution(institutionId) &&
+          effectiveCourtRole() in ['court_admin', 'judge', 'assistant_judge', 'registrar', 'legal_expert'] &&
+          request.resource.metadata != null &&
+          request.resource.metadata.institutionId == institutionId &&
+          request.resource.metadata.documentId == documentId &&
+          request.resource.metadata.uploadedBy == request.auth.uid
+        )
+      );
+
+      allow delete: if isAdmin() || (
+        belongsToInstitution(institutionId) &&
+        effectiveCourtRole() == 'court_admin'
+      );
+    }
+
+    // 2. Scoped User & Staff Documents (matches src/services/storage.ts, preserving personal and public fallbacks)
+    match /legal_docs/{institutionId}/{userId}/{allPaths=**} {
+      allow read: if isAdmin() ||
+        (isEmailVerified() && request.auth.uid == userId && (
+          institutionId in ['public', 'personal_' + request.auth.uid] ||
+          belongsToInstitution(institutionId)
+        )) ||
+        (belongsToInstitution(institutionId) &&
+          effectiveCourtRole() in ['court_admin', 'judge', 'registrar']
+        );
+
+      allow write: if isValidDocumentUpload() && (
+        isAdmin() ||
+        (isEmailVerified() && request.auth.uid == userId && (
+          institutionId in ['public', 'personal_' + request.auth.uid] ||
+          belongsToInstitution(institutionId)
+        ))
+      );
+    }
+
+    // 3. Court Branding Logos
+    match /court_logos/{institutionId}/{fileName} {
+      allow read: if true;
+      allow write: if isValidLogoUpload() && (
+        isAdmin() || (
+          belongsToInstitution(institutionId) &&
+          effectiveCourtRole() == 'court_admin'
+        )
+      );
+    }
+
+    // 4. Court Audio Recordings
+    match /court_audio/{allPaths=**} {
+      allow read, write: if isAdmin() || (
+        isEmailVerified() &&
+        effectiveCourtRole() in ['judge', 'assistant_judge', 'registrar', 'court_admin']
+      );
+    }
+
+    // 5. Public Legal Repository
+    match /public_legal_repository/{allPaths=**} {
+      allow read: if true;
+      allow write: if isValidDocumentUpload() && (
+        isAdmin() ||
+        (isEmailVerified() && (
+          request.auth.token.get('legalContentManager', false) == true ||
+          effectiveCourtRole() in ['judge', 'legal_expert', 'court_admin']
+        ))
+      );
+    }
+
+    // Default Deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
