@@ -41,15 +41,18 @@ jobs:
           cache: npm
 
       - name: Install dependencies from lockfile
+        id: install
         run: npm ci
 
       - name: Ensure Firebase CLI is available
+        id: cli
         run: |
           if ! command -v firebase >/dev/null 2>&1; then
             npm install -g firebase-tools@13
           fi
 
       - name: Guard - isolated config and candidate integrity check
+        id: guard
         run: |
           set -euo pipefail
           test -f "$FIRESTORE_CANDIDATE"
@@ -62,6 +65,8 @@ jobs:
           fi
 
       - name: Prepare evidence folder and hashes (before)
+        id: prep_evidence
+        if: ${{ steps.guard.outcome == 'success' }}
         run: |
           mkdir -p evidence
           sha256sum "$FIRESTORE_CANDIDATE" "$STORAGE_CANDIDATE" | tee evidence/hashes_before.txt
@@ -71,24 +76,62 @@ jobs:
           npm -v >> evidence/tool_versions.txt
 
       - name: Run TypeScript & Production Build Check
+        id: build_check
+        if: ${{ steps.install.outcome == 'success' && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' }}
         run: |
+          set -o pipefail
           npx tsc --noEmit 2>&1 | tee evidence/tsc_output.txt
           npm run build 2>&1 | tee evidence/build_output.txt
 
-      - name: Run Firestore + Storage rules tests in emulators
+      - name: Run Firestore rules tests in emulator
+        id: firestore_tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.cli.outcome == 'success' && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' && steps.build_check.outcome == 'success' }}
         run: |
           set +e
+          set -o pipefail
           firebase emulators:exec \
             --config firebase.emulator.test.json \
             --project demo-seeraai-test \
             --only firestore,storage \
-            "npm test" 2>&1 | tee evidence/test_output.txt
-          code=${PIPESTATUS[0]}
-          echo "$code" > evidence/exit_code.txt
+            "npm run test:firestore" 2>&1 | tee evidence/firestore_output.txt
+          statuses=("${PIPESTATUS[@]}")
+          em_code="${statuses[0]:-1}"
+          tee_code="${statuses[1]:-0}"
+          if [ "$em_code" -ne 0 ]; then
+            echo "$em_code" > evidence/firestore_exit_code.txt
+          elif [ "$tee_code" -ne 0 ]; then
+            echo "$tee_code" > evidence/firestore_exit_code.txt
+          else
+            echo "0" > evidence/firestore_exit_code.txt
+          fi
+          exit 0
+
+      - name: Run Storage rules tests in emulator
+        id: storage_tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.cli.outcome == 'success' && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' && steps.build_check.outcome == 'success' }}
+        run: |
+          set +e
+          set -o pipefail
+          firebase emulators:exec \
+            --config firebase.emulator.test.json \
+            --project demo-seeraai-test \
+            --only firestore,storage \
+            "npm run test:storage" 2>&1 | tee evidence/storage_output.txt
+          statuses=("${PIPESTATUS[@]}")
+          em_code="${statuses[0]:-1}"
+          tee_code="${statuses[1]:-0}"
+          if [ "$em_code" -ne 0 ]; then
+            echo "$em_code" > evidence/storage_exit_code.txt
+          elif [ "$tee_code" -ne 0 ]; then
+            echo "$tee_code" > evidence/storage_exit_code.txt
+          else
+            echo "0" > evidence/storage_exit_code.txt
+          fi
           exit 0
 
       - name: Hashes (after) and unchanged check
-        if: always()
+        id: hash_check
+        if: ${{ !cancelled() && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' }}
         run: |
           sha256sum "$FIRESTORE_CANDIDATE" "$STORAGE_CANDIDATE" | tee evidence/hashes_after.txt
           diff evidence/hashes_before.txt evidence/hashes_after.txt \
@@ -97,15 +140,20 @@ jobs:
           cp -f firebase-debug.log firestore-debug.log storage-debug.log ui-debug.log evidence/ 2>/dev/null || true
 
       - name: Upload evidence
-        if: always()
+        if: ${{ !cancelled() && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: rules-test-evidence
           path: evidence/
           if-no-files-found: error
 
-      - name: Fail job if tests failed
+      - name: Fail job if either test suite failed
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.cli.outcome == 'success' && steps.guard.outcome == 'success' && steps.prep_evidence.outcome == 'success' && steps.build_check.outcome == 'success' }}
         run: |
-          code=$(cat evidence/exit_code.txt)
-          echo "Test exit code: $code"
-          test "$code" = "0"
+          test -s evidence/firestore_exit_code.txt
+          test -s evidence/storage_exit_code.txt
+          fs_code="$(tr -d '[:space:]' < evidence/firestore_exit_code.txt)"
+          st_code="$(tr -d '[:space:]' < evidence/storage_exit_code.txt)"
+          echo "Firestore exit code: $fs_code"
+          echo "Storage exit code: $st_code"
+          test "$fs_code" = "0" && test "$st_code" = "0"

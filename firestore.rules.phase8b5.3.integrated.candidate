@@ -10,16 +10,22 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function signInProvider() {
+      return request.auth.token.get(['firebase', 'sign_in_provider'], '');
+    }
+
     function isNonAnonymous() {
       return isSignedIn() &&
-        request.auth.token.firebase.sign_in_provider != 'anonymous';
+        signInProvider() is string &&
+        signInProvider() != '' &&
+        signInProvider() != 'anonymous';
     }
 
     // Strict email verification check: never treats phone or anonymous auth as verified email
     function isEmailVerified() {
       return isNonAnonymous() &&
-        request.auth.token.email_verified == true &&
-        request.auth.token.firebase.sign_in_provider != 'phone';
+        request.auth.token.get('email_verified', false) == true &&
+        signInProvider() != 'phone';
     }
 
     function isOwner(userId) {
@@ -29,34 +35,46 @@ service cloud.firestore {
     // Strict claim-based global administrator check (no hardcoded unverified emails)
     function isAdmin() {
       return isEmailVerified() && (
-        request.auth.token.admin == true ||
-        request.auth.token.role == 'superadmin'
+        request.auth.token.get('admin', false) == true ||
+        request.auth.token.get('role', '') == 'superadmin'
       );
     }
 
     function effectiveCourtRole() {
-      return request.auth.token.courtRole is string
-        ? request.auth.token.courtRole
-        : (request.auth.token.role is string ? request.auth.token.role : '');
+      return request.auth.token.get('courtRole', '') is string &&
+        request.auth.token.get('courtRole', '') != ''
+        ? request.auth.token.get('courtRole', '')
+        : (request.auth.token.get('role', '') is string ? request.auth.token.get('role', '') : '');
     }
 
     function isLegalRepositoryManager() {
       return isEmailVerified() && (
         isAdmin() ||
-        request.auth.token.legalContentManager == true ||
+        request.auth.token.get('legalContentManager', false) == true ||
         effectiveCourtRole() in ['judge', 'legal_expert', 'court_admin']
+      );
+    }
+
+    // Option C narrow policy: legislation_repository create/update restricted to verified admins,
+    // explicit legalContentManager claim holders, or verified institutional legal_expert staff.
+    function canManageLegislationRepository() {
+      return isAdmin() || (
+        isEmailVerified() && (
+          request.auth.token.get('legalContentManager', false) == true ||
+          (hasInstitution() && effectiveCourtRole() == 'legal_expert')
+        )
       );
     }
 
     function hasInstitution() {
       return isEmailVerified() &&
-        request.auth.token.institutionId is string &&
-        request.auth.token.institutionId.size() > 0 &&
-        request.auth.token.institutionId.size() <= 128;
+        request.auth.token.get('institutionId', '') is string &&
+        request.auth.token.get('institutionId', '').size() > 0 &&
+        request.auth.token.get('institutionId', '').size() <= 128;
     }
 
     function belongsToInstitution(institutionId) {
-      return hasInstitution() && request.auth.token.institutionId == institutionId;
+      return hasInstitution() && request.auth.token.get('institutionId', '') == institutionId;
     }
 
     function hasCourtRole() {
@@ -101,6 +119,13 @@ service cloud.firestore {
 
     function existing() {
       return resource.data;
+    }
+
+    function hasValidOptionalDataUrl(data) {
+      return data.get('dataUrl', null) == null || (
+        data.get('dataUrl', null) is string &&
+        data.get('dataUrl', '').toUtf8().size() <= 65536
+      );
     }
 
     function isValidId(id) {
@@ -148,7 +173,8 @@ service cloud.firestore {
 
     match /legislation_repository/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, update: if canManageLegislationRepository();
+      allow delete: if isAdmin();
     }
 
     match /legalEnactments/{id} {
@@ -579,9 +605,7 @@ service cloud.firestore {
       
       match /courtDocuments/{docId} {
         allow read: if isInstitutionStaff(institutionId);
-        allow create, update: if canEditCasesIn(institutionId) && (
-          incoming().dataUrl == null || (incoming().dataUrl is string && incoming().dataUrl.size() <= 65536)
-        );
+        allow create, update: if canEditCasesIn(institutionId) && hasValidOptionalDataUrl(incoming());
         allow delete: if isCourtAdminOf(institutionId);
       }
 
@@ -593,15 +617,23 @@ service cloud.firestore {
     }
 
     match /court_documents/{docId} {
-      allow read: if resource.data.isPublic == true ||
-                     isInstitutionStaff(resource.data.institutionId);
-      allow create: if canEditCasesIn(incoming().institutionId) &&
-                       incoming().institutionId is string && incoming().institutionId.size() > 0 &&
-                       (incoming().dataUrl == null || (incoming().dataUrl is string && incoming().dataUrl.size() <= 65536));
-      allow update: if canEditCasesIn(existing().institutionId) &&
-                       incoming().institutionId == existing().institutionId &&
-                       (incoming().dataUrl == null || (incoming().dataUrl is string && incoming().dataUrl.size() <= 65536));
-      allow delete: if isCourtAdminOf(existing().institutionId);
+      allow read: if resource.data.get('isPublic', false) == true ||
+                     (resource.data.get('institutionId', '') is string &&
+                      resource.data.get('institutionId', '').size() > 0 &&
+                      isInstitutionStaff(resource.data.get('institutionId', '')));
+      allow create: if incoming().get('institutionId', '') is string &&
+                       incoming().get('institutionId', '').size() > 0 &&
+                       incoming().get('institutionId', '').size() <= 128 &&
+                       canEditCasesIn(incoming().get('institutionId', '')) &&
+                       hasValidOptionalDataUrl(incoming());
+      allow update: if existing().get('institutionId', '') is string &&
+                       existing().get('institutionId', '').size() > 0 &&
+                       canEditCasesIn(existing().get('institutionId', '')) &&
+                       incoming().get('institutionId', '') == existing().get('institutionId', '') &&
+                       hasValidOptionalDataUrl(incoming());
+      allow delete: if existing().get('institutionId', '') is string &&
+                       existing().get('institutionId', '').size() > 0 &&
+                       isCourtAdminOf(existing().get('institutionId', ''));
     }
 
     match /{document=**} {

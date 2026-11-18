@@ -104,6 +104,12 @@ async function runFirestoreRulesSuite(): Promise<void> {
   const ctxAuditorA = () => testEnv.authenticatedContext('aud_a1', { email: 'aud.a1@court.gov.et', email_verified: true, courtRole: 'auditor', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).firestore();
   const ctxCourtAdminA = () => testEnv.authenticatedContext('cadmin_a1', { email: 'cadmin.a1@court.gov.et', email_verified: true, courtRole: 'court_admin', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).firestore();
   const ctxAdmin = () => testEnv.authenticatedContext('super_admin_1', { email: 'admin@seeraai.et', email_verified: true, admin: true, role: 'superadmin', firebase: { sign_in_provider: 'password' } }).firestore();
+  const ctxLegalContentMgr = () => testEnv.authenticatedContext('lcm_1', { email: 'lcm@seeraai.et', email_verified: true, legalContentManager: true, firebase: { sign_in_provider: 'password' } }).firestore();
+  const ctxJudgeAWithLcm = () => testEnv.authenticatedContext('judge_lcm_a1', { email: 'judge.lcm@court.gov.et', email_verified: true, courtRole: 'judge', institutionId: INST_A, legalContentManager: true, firebase: { sign_in_provider: 'password' } }).firestore();
+  const ctxCourtAdminAWithLcm = () => testEnv.authenticatedContext('cadmin_lcm_a1', { email: 'cadmin.lcm@court.gov.et', email_verified: true, courtRole: 'court_admin', institutionId: INST_A, legalContentManager: true, firebase: { sign_in_provider: 'password' } }).firestore();
+  const ctxExpertUnverified = () => testEnv.authenticatedContext('exp_unver_1', { email: 'exp.unver@court.gov.et', email_verified: false, courtRole: 'legal_expert', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).firestore();
+  const ctxExpertNoInst = () => testEnv.authenticatedContext('exp_noinst_1', { email: 'exp.noinst@court.gov.et', email_verified: true, courtRole: 'legal_expert', firebase: { sign_in_provider: 'password' } }).firestore();
+  const ctxMissingFirebaseMap = () => testEnv.authenticatedContext('missing_fb_1', { email: 'nofb@example.org', email_verified: true }).firestore();
 
   const results: TestResult[] = [];
   const check = async (id: number, name: string, fn: () => Promise<void>) => {
@@ -200,6 +206,14 @@ async function runFirestoreRulesSuite(): Promise<void> {
           isPublic: false,
         })
       );
+      await assertSucceeds(
+        ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_a2`).set({
+          id: 'cd_a2',
+          institutionId: INST_A,
+          createdBy: 'judge_a1',
+          title: 'Sealed Order A2',
+        })
+      );
     });
 
     await check(8, 'Authorized registrar reads/writes institution A cases & schedules; denied institution B', async () => {
@@ -216,9 +230,12 @@ async function runFirestoreRulesSuite(): Promise<void> {
       await assertFails(ctxAssistantA().doc('admin_activity_logs/adm_log_1').delete());
     });
 
-    await check(10, 'Authorized legal_expert reads institution A legal docs & manages legal repository', async () => {
+    await check(10, 'Authorized legal_expert reads institution A legal docs, creates/updates legal repository, and is denied delete', async () => {
       await assertSucceeds(ctxExpertA().doc(`institutions/${INST_A}/courtDocuments/cd_a1`).get());
       await assertSucceeds(ctxExpertA().doc('legislation_repository/proc_new').set({ title: 'New Regulation' }));
+      await assertSucceeds(ctxExpertA().doc('legislation_repository/proc_new').update({ title: 'Updated Regulation' }));
+      await assertFails(ctxExpertA().doc('legislation_repository/proc_new').delete());
+      await assertFails(ctxExpertA().doc('legislation_repository/proc_1156').delete());
       await assertFails(ctxExpertA().doc(`institutions/${INST_A}/courtDocuments/cd_a1`).delete());
     });
 
@@ -283,6 +300,105 @@ async function runFirestoreRulesSuite(): Promise<void> {
           action: 'DOWNLOAD_RECORD',
         })
       );
+    });
+
+    await check(18, 'Option C: legislation_repository authorization enforces role, verification, institutionId, legalContentManager claim, and admin-only delete', async () => {
+      // Admin retains full create, update, and delete
+      await assertSucceeds(ctxAdmin().doc('legislation_repository/proc_adm_1').set({ title: 'Federal Code Amendment' }));
+      await assertSucceeds(ctxAdmin().doc('legislation_repository/proc_adm_1').update({ title: 'Federal Code Amendment v2' }));
+      await assertSucceeds(ctxAdmin().doc('legislation_repository/proc_adm_1').delete());
+
+      // Explicit legalContentManager claim allows create/update regardless of courtRole, but denies delete
+      await assertSucceeds(ctxLegalContentMgr().doc('legislation_repository/proc_lcm_1').set({ title: 'Oromia Proclamation 248' }));
+      await assertSucceeds(ctxLegalContentMgr().doc('legislation_repository/proc_lcm_1').update({ title: 'Oromia Proclamation 248 Rev' }));
+      await assertFails(ctxLegalContentMgr().doc('legislation_repository/proc_lcm_1').delete());
+
+      // Existing backend server-app.ts provisions legalContentManager=true for judge/court_admin: allowed via explicit claim branch, delete denied
+      await assertSucceeds(ctxJudgeAWithLcm().doc('legislation_repository/proc_jlcm_1').set({ title: 'Judge LCM Draft' }));
+      await assertFails(ctxJudgeAWithLcm().doc('legislation_repository/proc_jlcm_1').delete());
+      await assertSucceeds(ctxCourtAdminAWithLcm().doc('legislation_repository/proc_calcm_1').set({ title: 'CourtAdmin LCM Draft' }));
+      await assertFails(ctxCourtAdminAWithLcm().doc('legislation_repository/proc_calcm_1').delete());
+
+      // Judge & court_admin WITHOUT legalContentManager claim are denied under Option C
+      await assertFails(ctxJudgeA().doc('legislation_repository/proc_judge_denied').set({ title: 'Denied Judge Write' }));
+      await assertFails(ctxCourtAdminA().doc('legislation_repository/proc_cadmin_denied').set({ title: 'Denied CourtAdmin Write' }));
+
+      // Unverified or missing-institution legal_expert denied
+      await assertFails(ctxExpertUnverified().doc('legislation_repository/proc_unver_exp').set({ title: 'Blocked Unverified' }));
+      await assertFails(ctxExpertNoInst().doc('legislation_repository/proc_noinst_exp').set({ title: 'Blocked No Inst' }));
+
+      // Ordinary, guest, phone, verified-no-role, unauth, and missing-firebase-provider denied writes
+      await assertFails(ctxOrdinary().doc('legislation_repository/proc_ord').set({ title: 'Blocked' }));
+      await assertFails(ctxVerifiedNoRole().doc('legislation_repository/proc_ver').set({ title: 'Blocked' }));
+      await assertFails(ctxPhone().doc('legislation_repository/proc_phone').set({ title: 'Blocked' }));
+      await assertFails(ctxAnon().doc('legislation_repository/proc_anon').set({ title: 'Blocked' }));
+      await assertFails(ctxUnauth().doc('legislation_repository/proc_unauth').set({ title: 'Blocked' }));
+      await assertFails(ctxMissingFirebaseMap().doc('legislation_repository/proc_nofb').set({ title: 'Blocked' }));
+      await assertFails(ctxMissingFirebaseMap().doc('user_documents/ud_nofb').set({ userId: 'missing_fb_1', ownerId: 'missing_fb_1', title: 'Blocked' }));
+    });
+
+    await check(19, 'Option C: legal_expert strict containment against privilege escalation, admin collections, and cross-institution/court writes', async () => {
+      await assertFails(ctxExpertA().doc('users/exp_a1').set({ uid: 'exp_a1', role: 'superadmin', admin: true }));
+      await assertFails(ctxExpertA().doc('users/exp_a1').set({ uid: 'exp_a1', courtRole: 'court_admin', institutionId: INST_B }));
+      await assertFails(ctxVerifiedNoRole().doc('users/verified_norole').update({ role: 'legal_expert', courtRole: 'legal_expert', institutionId: INST_A }));
+
+      await assertFails(ctxExpertA().doc('admin_activity_logs/adm_log_1').get());
+      await assertFails(ctxExpertA().doc('admin_activity_logs/adm_log_exp').set({ actionType: 'tamper' }));
+      await assertFails(ctxExpertA().doc('legalAuditLogs/la_1').set({ action: 'tamper' }));
+      await assertFails(ctxExpertA().doc('court_users/cu_exp').set({ institutionId: INST_A, role: 'judge' }));
+      await assertFails(ctxExpertA().doc('system_config/cfg_1').set({ maintenance: true }));
+
+      await assertFails(ctxExpertA().doc(`institutions/${INST_B}/courtDocuments/cd_b1`).get());
+      await assertFails(ctxExpertA().doc('court_documents/doc_b1').get());
+      await assertFails(ctxExpertA().doc('cases/case_b1').get());
+      await assertFails(
+        ctxExpertA().doc('court_documents/doc_exp_write').set({
+          id: 'doc_exp_write',
+          institutionId: INST_A,
+          createdBy: 'exp_a1',
+          title: 'Unauthorized Court Doc Write',
+        })
+      );
+      await assertFails(
+        ctxExpertA().doc(`institutions/${INST_A}/courtDocuments/cd_exp_write`).set({
+          id: 'cd_exp_write',
+          institutionId: INST_A,
+          createdBy: 'exp_a1',
+          title: 'Unauthorized Inst Doc Write',
+        })
+      );
+    });
+
+    await check(20, 'Optional dataUrl UTF-8 65,536-byte enforcement and type validation across court_documents and institutions/*/courtDocuments', async () => {
+      const asciiExact64K = 'A'.repeat(65536);
+      const asciiOver64K = 'A'.repeat(65537);
+      const multibyteExact64K = 'ሀ'.repeat(21845) + 'A'; // 21845 * 3 + 1 = 65536 UTF-8 bytes
+      const multibyteOver64K = 'ሀ'.repeat(21846); // 21846 * 3 = 65538 UTF-8 bytes (< 65536 chars!)
+
+      // Root court_documents positive cases
+      await assertSucceeds(ctxJudgeA().doc('court_documents/doc_null_url').set({ id: 'doc_null_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: null }));
+      await assertSucceeds(ctxJudgeA().doc('court_documents/doc_65536').set({ id: 'doc_65536', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: asciiExact64K }));
+      await assertSucceeds(ctxJudgeA().doc('court_documents/doc_utf8_65536').set({ id: 'doc_utf8_65536', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: multibyteExact64K }));
+
+      // Institution subcollection courtDocuments positive cases
+      await assertSucceeds(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_null_url`).set({ id: 'cd_null_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: null }));
+      await assertSucceeds(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_65536`).set({ id: 'cd_65536', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: asciiExact64K }));
+      await assertSucceeds(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_utf8_65536`).set({ id: 'cd_utf8_65536', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: multibyteExact64K }));
+
+      // Root court_documents negative cases (over byte cap, invalid types, missing institutionId)
+      await assertFails(ctxJudgeA().doc('court_documents/doc_65537').set({ id: 'doc_65537', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: asciiOver64K }));
+      await assertFails(ctxJudgeA().doc('court_documents/doc_utf8_over').set({ id: 'doc_utf8_over', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: multibyteOver64K }));
+      await assertFails(ctxJudgeA().doc('court_documents/doc_num_url').set({ id: 'doc_num_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: 12345 }));
+      await assertFails(ctxJudgeA().doc('court_documents/doc_obj_url').set({ id: 'doc_obj_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: { uri: 'https://example.org' } }));
+      await assertFails(ctxJudgeA().doc('court_documents/doc_arr_url').set({ id: 'doc_arr_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: ['bad'] }));
+      await assertFails(ctxJudgeA().doc('court_documents/doc_no_inst').set({ id: 'doc_no_inst', createdBy: 'judge_a1', title: 'Missing Inst' }));
+
+      // Institution subcollection courtDocuments negative cases
+      await assertFails(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_65537`).set({ id: 'cd_65537', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: asciiOver64K }));
+      await assertFails(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_utf8_over`).set({ id: 'cd_utf8_over', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: multibyteOver64K }));
+      await assertFails(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_num_url`).set({ id: 'cd_num_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: 12345 }));
+      await assertFails(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_obj_url`).set({ id: 'cd_obj_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: { uri: 'https://example.org' } }));
+      await assertFails(ctxJudgeA().doc(`institutions/${INST_A}/courtDocuments/cd_arr_url`).set({ id: 'cd_arr_url', institutionId: INST_A, createdBy: 'judge_a1', dataUrl: ['bad'] }));
     });
   } finally {
     await testEnv.cleanup();

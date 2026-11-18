@@ -80,6 +80,8 @@ async function runStorageRulesSuite(): Promise<void> {
   const judgeAStorage = () => testEnv.authenticatedContext('judge_a1', { email: 'judge.a1@court.gov.et', email_verified: true, courtRole: 'judge', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).storage();
   const courtAdminAStorage = () => testEnv.authenticatedContext('cadmin_a1', { email: 'admin.a1@court.gov.et', email_verified: true, courtRole: 'court_admin', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).storage();
   const auditorAStorage = () => testEnv.authenticatedContext('aud_a1', { email: 'aud.a1@court.gov.et', email_verified: true, courtRole: 'auditor', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).storage();
+  const legalContentMgrStorage = () => testEnv.authenticatedContext('lcm_1', { email: 'lcm@seeraai.et', email_verified: true, legalContentManager: true, firebase: { sign_in_provider: 'password' } }).storage();
+  const missingFirebaseMapStorage = () => testEnv.authenticatedContext('missing_fb_1', { email: 'nofb@example.org', email_verified: true }).storage();
 
   const results: StorageTestResult[] = [];
   const check = async (id: number, name: string, fn: () => Promise<void>) => {
@@ -265,6 +267,24 @@ async function runStorageRulesSuite(): Promise<void> {
       await assertFails(anonStorage().ref('public_legal_repository/proc_1156/fake.pdf').put(samplePdf, { contentType: 'application/pdf' }));
       await assertFails(verifiedNoRoleStorage().ref('public_legal_repository/proc_1156/fake.pdf').put(samplePdf, { contentType: 'application/pdf' }));
       await assertFails(judgeAStorage().ref('arbitrary_unprotected/secret.pdf').put(samplePdf, { contentType: 'application/pdf' }));
+    });
+
+    await check(11, 'Missing optional custom claims & missing firebase provider fail closed safely; legalContentManager allowed on public_legal_repository', async () => {
+      await assertSucceeds(
+        legalContentMgrStorage()
+          .ref('public_legal_repository/proc_lcm_1/enactment.pdf')
+          .put(samplePdf, { contentType: 'application/pdf' })
+      );
+      await assertFails(
+        missingFirebaseMapStorage()
+          .ref('legal_docs/personal_missing_fb_1/missing_fb_1/note.pdf')
+          .put(samplePdf, { contentType: 'application/pdf' })
+      );
+      await assertFails(
+        missingFirebaseMapStorage()
+          .ref(`institutions/${INST_A}/courtDocuments/doc_a1/order.pdf`)
+          .getDownloadURL()
+      );
     });
   } finally {
     await testEnv.cleanup();

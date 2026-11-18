@@ -8,7 +8,9 @@
     "build": "vite build && node scripts/prepare-build.js",
     "start": "tsx server.ts",
     "lint": "tsc --noEmit",
-    "test": "npx tsx tests/firestore.rules.test.ts && npx tsx tests/storage.rules.test.ts"
+    "test:firestore": "npx tsx tests/firestore.rules.test.ts",
+    "test:storage": "npx tsx tests/storage.rules.test.ts",
+    "test": "node scripts/run-rules-tests.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",

@@ -2,35 +2,43 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     
+    function signInProvider() {
+      return request.auth.token.get(['firebase', 'sign_in_provider'], '');
+    }
+
     function isSignedIn() {
       return request.auth != null &&
-        request.auth.token.firebase.sign_in_provider != 'anonymous';
+        signInProvider() is string &&
+        signInProvider() != '' &&
+        signInProvider() != 'anonymous';
     }
 
     function isEmailVerified() {
       return isSignedIn() &&
-        request.auth.token.email_verified == true &&
-        request.auth.token.firebase.sign_in_provider != 'phone';
+        request.auth.token.get('email_verified', false) == true &&
+        signInProvider() != 'phone';
     }
     
     function isAdmin() {
       return isEmailVerified() && (
-        request.auth.token.admin == true ||
-        request.auth.token.role == 'superadmin'
+        request.auth.token.get('admin', false) == true ||
+        request.auth.token.get('role', '') == 'superadmin'
       );
     }
 
     function effectiveCourtRole() {
-      return request.auth.token.courtRole is string
-        ? request.auth.token.courtRole
-        : (request.auth.token.role is string ? request.auth.token.role : '');
+      return request.auth.token.get('courtRole', '') is string &&
+        request.auth.token.get('courtRole', '') != ''
+        ? request.auth.token.get('courtRole', '')
+        : (request.auth.token.get('role', '') is string ? request.auth.token.get('role', '') : '');
     }
 
     function belongsToInstitution(institutionId) {
       return isEmailVerified() &&
-        request.auth.token.institutionId is string &&
-        request.auth.token.institutionId.size() > 0 &&
-        request.auth.token.institutionId == institutionId;
+        request.auth.token.get('institutionId', '') is string &&
+        request.auth.token.get('institutionId', '').size() > 0 &&
+        request.auth.token.get('institutionId', '').size() <= 128 &&
+        request.auth.token.get('institutionId', '') == institutionId;
     }
 
     function isAllowedCourtDocMime() {
@@ -130,7 +138,7 @@ service firebase.storage {
       allow write: if isValidDocumentUpload() && (
         isAdmin() ||
         (isEmailVerified() && (
-          request.auth.token.legalContentManager == true ||
+          request.auth.token.get('legalContentManager', false) == true ||
           effectiveCourtRole() in ['judge', 'legal_expert', 'court_admin']
         ))
       );
