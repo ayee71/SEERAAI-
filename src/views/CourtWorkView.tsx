@@ -33,6 +33,9 @@ import { CourtAdminPanel } from '../components/CourtAdminPanel';
 import { CourtDocumentList } from '../components/CourtDocumentList';
 import { ConfidentialityQuickBar } from '../components/ConfidentialityQuickBar';
 import { ConfidentialityShieldModal } from '../components/ConfidentialityShieldModal';
+import { CourtroomAuditLogs } from '../components/CourtroomAuditLogs';
+import { WitnessSchedulingModule } from '../components/WitnessSchedulingModule';
+import { AudioStreamVisualizer } from '../components/AudioStreamVisualizer';
 
 interface CourtWorkViewProps {
   currentLang: Language;
@@ -90,6 +93,7 @@ export const CourtWorkView: React.FC<CourtWorkViewProps> = ({ currentLang, initi
   const [oromiaCourtSearch, setOromiaCourtSearch] = useState('');
   const [oromiaZoneFilter, setOromiaZoneFilter] = useState('all');
   const [showCourtConfidentialityModal, setShowCourtConfidentialityModal] = useState(false);
+  const [selectedCaseForAudit, setSelectedCaseForAudit] = useState<string | null>(null);
 
   const [courtDocuments, setCourtDocuments] = useState<any[]>([
     { 
@@ -121,6 +125,9 @@ export const CourtWorkView: React.FC<CourtWorkViewProps> = ({ currentLang, initi
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [docStatusFilter, setDocStatusFilter] = useState('all');
   const [docSearchQuery, setDocSearchQuery] = useState('');
+  const [workSubTab, setWorkSubTab] = useState<'documents' | 'witness_scheduling' | 'analytics' | 'live_stream'>('documents');
+  const [isLiveStreaming, setIsLiveStreaming] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
 
   const analyticsDataByStatus = React.useMemo(() => {
     const counts = courtDocuments.reduce((acc, doc) => {
@@ -350,44 +357,166 @@ export const CourtWorkView: React.FC<CourtWorkViewProps> = ({ currentLang, initi
         />
       ) : (
         <div className="space-y-6">
-          <PersonnelAnalyticsDashboard 
-            analyticsDataByStatus={analyticsDataByStatus.map((d: any) => ({ name: d.name, value: Number(d.value) || 0 }))}
-            analyticsDataByPriority={[
-              { name: 'High', value: 12 },
-              { name: 'Medium', value: 24 },
-              { name: 'Low', value: 8 }
-            ]}
-            outcomeTrends={outcomeTrends}
-            durationStats={durationStats}
-            activeSession={activeSession}
-          />
-          <CourtDocumentList 
-            currentLang={currentLang}
-            documents={courtDocuments}
-            selectedIds={selectedDocumentIds}
-            onToggleSelect={(id) => setSelectedDocumentIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])}
-            onToggleSelectAll={() => setSelectedDocumentIds(prev => prev.length === courtDocuments.length ? [] : courtDocuments.map(d => d.id))}
-            onAction={(doc, action) => {
-              if (action === 'download') {
-                downloadCaseSummaryPDF(doc as any, currentLang, {
-                  courtName: activeSession?.courtName,
-                  userName: activeSession?.user.fullName,
-                  role: activeSession?.user.role,
-                });
-              }
-            }}
-            filters={{
-              status: docStatusFilter,
-              sortBy: 'newest',
-              search: docSearchQuery,
-              judge: 'all',
-              payment: 'all'
-            }}
-            onFilterChange={(key, val) => {
-              if (key === 'status') setDocStatusFilter(val);
-              if (key === 'search') setDocSearchQuery(val);
-            }}
-          />
+          {/* 6 Modules Navigation Strip inside Court Work */}
+          <div className="bg-slate-900/90 border border-amber-500/30 rounded-3xl p-4 sm:p-5 shadow-xl">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🏛️</span>
+                <div>
+                  <h3 className="font-bold text-white text-sm sm:text-base font-serif-legal">
+                    {currentLang === 'om' ? 'Moduloota Mana Murtii (6)' : currentLang === 'am' ? 'የፍርድ ቤት ሞጁሎች (6)' : 'Court Work Modules (6)'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    {currentLang === 'om' ? 'Bulchiinsa ➔ Galmee ➔ Sanadoota ➔ Nageenya ➔ Xiinxala ➔ Walqunnamtii' : 'Administration & Setting ➔ Communication'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('seera_navigate_tab', { detail: { tab: 'personnelFolder' } }))}
+                className="text-xs px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-bold border border-amber-500/30 cursor-pointer transition-all"
+              >
+                {currentLang === 'om' ? 'Fooldara Guutuu ➔' : 'Full Folder ➔'}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              {[
+                { id: 'control', label: '1. Admin & Setting', icon: '🏢', tab: 'control' },
+                { id: 'litigation', label: '2. Case Mgmt (Core)', icon: '⚖️', tab: 'courtWork' },
+                { id: 'dms', label: '3. DMS & Evidence', icon: '📂', tab: 'library' },
+                { id: 'security', label: '4. Security & Auth', icon: '🛡️', tab: 'settings' },
+                { id: 'analytics', label: '5. Analysis & Report', icon: '📊', tab: 'analyticsFeedback' },
+                { id: 'communication', label: '6. Communication', icon: '💬', tab: 'meeting' },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => window.dispatchEvent(new CustomEvent('seera_navigate_tab', { detail: { tab: m.tab } }))}
+                  className="p-2.5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-amber-400/50 hover:bg-slate-850 text-left transition-all cursor-pointer flex flex-col justify-between group"
+                >
+                  <span className="text-lg mb-1 group-hover:scale-110 transition-transform">{m.icon}</span>
+                  <span className="text-[11px] font-semibold text-slate-200 group-hover:text-amber-300 truncate">
+                    {m.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Sub-Tab Navigation Strip */}
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
+            <button
+              onClick={() => setWorkSubTab('documents')}
+              className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                workSubTab === 'documents'
+                  ? 'bg-amber-500 text-slate-950 shadow-lg'
+                  : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              <span>📄</span>
+              <span>{currentLang === 'om' ? 'Sanadoota Galmee' : currentLang === 'am' ? 'የመዝገብ ሰነዶች' : 'Court Documents'}</span>
+            </button>
+
+            <button
+              onClick={() => setWorkSubTab('witness_scheduling')}
+              className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                workSubTab === 'witness_scheduling'
+                  ? 'bg-amber-500 text-slate-950 shadow-lg'
+                  : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              <span>👥</span>
+              <span>{currentLang === 'om' ? 'Beellama Ragaalee (Witness Scheduling)' : currentLang === 'am' ? 'የምስክሮች ቀጠሮ' : 'Witness Scheduling'}</span>
+            </button>
+
+            <button
+              onClick={() => setWorkSubTab('analytics')}
+              className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                workSubTab === 'analytics'
+                  ? 'bg-amber-500 text-slate-950 shadow-lg'
+                  : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              <span>📊</span>
+              <span>{currentLang === 'om' ? 'Xiinxala & Gabaasa' : currentLang === 'am' ? 'ትንታኔ እና ሪፖርት' : 'Analytics & Dashboard'}</span>
+            </button>
+
+            <button
+              onClick={() => setWorkSubTab('live_stream')}
+              className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                workSubTab === 'live_stream'
+                  ? 'bg-emerald-600 text-white shadow-lg'
+                  : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              <span className="relative flex h-2 w-2">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isLiveStreaming ? 'bg-emerald-400' : 'bg-slate-500'}`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${isLiveStreaming ? 'bg-emerald-500' : 'bg-slate-500'}`}></span>
+              </span>
+              <span>{currentLang === 'om' ? 'Tiraansikriptii Laayiv' : currentLang === 'am' ? 'ቀጥታ ትርጓሜ' : 'Live Transcript'}</span>
+            </button>
+          </div>
+
+          {workSubTab === 'live_stream' && (
+            <div className="space-y-4">
+              <button
+                onClick={() => setIsLiveStreaming(!isLiveStreaming)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                  isLiveStreaming ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'
+                }`}
+              >
+                {isLiveStreaming ? 'Stop Stream' : 'Start Stream'}
+              </button>
+              <AudioStreamVisualizer isStreaming={isLiveStreaming} transcript={liveTranscript} />
+            </div>
+          )}
+
+          {workSubTab === 'witness_scheduling' && (
+            <WitnessSchedulingModule currentLang={currentLang} />
+          )}
+
+          {workSubTab === 'analytics' && (
+            <PersonnelAnalyticsDashboard 
+              analyticsDataByStatus={analyticsDataByStatus.map((d: any) => ({ name: d.name, value: Number(d.value) || 0 }))}
+              analyticsDataByPriority={[
+                { name: 'High', value: 12 },
+                { name: 'Medium', value: 24 },
+                { name: 'Low', value: 8 }
+              ]}
+              outcomeTrends={outcomeTrends}
+              durationStats={durationStats}
+              activeSession={activeSession}
+            />
+          )}
+
+          {workSubTab === 'documents' && (
+            <CourtDocumentList 
+              currentLang={currentLang}
+              documents={courtDocuments}
+              selectedIds={selectedDocumentIds}
+              onToggleSelect={(id) => setSelectedDocumentIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])}
+              onToggleSelectAll={() => setSelectedDocumentIds(prev => prev.length === courtDocuments.length ? [] : courtDocuments.map(d => d.id))}
+              onAction={(doc, action) => {
+                if (action === 'download') {
+                  downloadCaseSummaryPDF(doc as any, currentLang, {
+                    courtName: activeSession?.courtName,
+                    userName: activeSession?.user.fullName,
+                    role: activeSession?.user.role,
+                  });
+                }
+              }}
+              filters={{
+                status: docStatusFilter,
+                sortBy: 'newest',
+                search: docSearchQuery,
+                judge: 'all',
+                payment: 'all'
+              }}
+              onFilterChange={(key, val) => {
+                if (key === 'status') setDocStatusFilter(val);
+                if (key === 'search') setDocSearchQuery(val);
+              }}
+              onViewAuditLogs={(caseNum) => setSelectedCaseForAudit(caseNum)}
+            />
+          )}
         </div>
       )}
 
@@ -396,6 +525,18 @@ export const CourtWorkView: React.FC<CourtWorkViewProps> = ({ currentLang, initi
         onClose={() => setShowCourtConfidentialityModal(false)}
         currentLang={currentLang}
       />
+
+      {selectedCaseForAudit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <CourtroomAuditLogs
+              currentLang={currentLang}
+              caseNumber={selectedCaseForAudit}
+              onClose={() => setSelectedCaseForAudit(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

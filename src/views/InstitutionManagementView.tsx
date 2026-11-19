@@ -1706,7 +1706,8 @@ export const InstitutionManagementView: React.FC<InstitutionManagementViewProps>
                     if (file) {
                       try {
                         const downloadURL = await uploadCourtLogo(currentInstitution.id, file);
-                        setStaffActionMsg({ type: 'success', text: 'Loogoon milkaa\'inaan haaromfameera!' });
+                        setSelectedInstitutionId(currentInstitution.id);
+                        setStaffActionMsg({ type: 'success', text: 'Loogoon milkaa\'inaan haaromfamee kuufameera!' });
                       } catch (error) {
                         console.error('Upload failed:', error);
                         setStaffActionMsg({ type: 'error', text: 'Upload failed. Please check your connection.' });

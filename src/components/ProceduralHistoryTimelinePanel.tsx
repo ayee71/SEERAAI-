@@ -284,7 +284,7 @@ STRICT INSTRUCTIONS:
           prompt: `${extractionPrompt}\n\nCOURT DOCUMENT CONTENT:\n${pastedText}`,
           outputLanguages: [currentLang],
           taskType: 'summarize',
-          modelTier: 'gemini-flash-lite-latest',
+          modelTier: 'gemini-4-hydrogen',
         });
         rawResponseText = res.content || res.separatedVersions?.[currentLang] || '';
       } else {

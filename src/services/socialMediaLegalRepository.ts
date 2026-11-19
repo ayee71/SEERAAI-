@@ -5,8 +5,8 @@ import { collection, getDocs, setDoc, doc } from 'firebase/firestore';
 export interface SocialMediaLegalPost {
   id: string;
   sourcePlatform: 'telegram' | 'facebook' | 'linkedin' | 'certified_stamp' | 'gazette';
-  author: string; // e.g., "@wakoyeb (Wako Yeb Channel)", "Abukaattoo Ayele Be Dha", "Oromia Supreme Court Channel"
-  channelHandle?: string; // e.g., "@wakoyeb"
+  author: string; // e.g., "@seeraai_ethio (SeeraAI Legal Channel)", "Legal Specialist", "Oromia Supreme Court Channel"
+  channelHandle?: string; // e.g., "@seeraai_ethio"
   title: {
     om: string;
     am: string;
@@ -32,12 +32,12 @@ export interface SocialMediaLegalPost {
 const LOCAL_SOCIAL_LEGAL_KEY = 'seera_social_media_legal_posts_v2';
 
 export const INITIAL_SOCIAL_LEGAL_POSTS: SocialMediaLegalPost[] = [
-  // 1. Posts from Telegram Channel @wakoyeb (https://t.me/wakoyeb)
+  // 1. Posts from Official Telegram Channel @seeraai_ethio (https://t.me/seeraai_ethio)
   {
-    id: 'post_tg_wakoyeb_001',
+    id: 'post_tg_seeraai_001',
     sourcePlatform: 'telegram',
-    author: 'Telegram Channel @wakoyeb (Wako Yeb)',
-    channelHandle: '@wakoyeb',
+    author: 'Telegram Channel @seeraai_ethio (SeeraAI Official)',
+    channelHandle: '@seeraai_ethio',
     title: {
       om: 'Labsii Lafa Baadiyyaa Oromiyaa 130/1999 fi Dambii 210/2013: Mirga Dhaala Qabiyyee Lafa Qonnaan Bulaa',
       am: 'የኦሮሚያ ገጠር መሬት አዋጅ 130/1999 እና ደንብ 210/2013፡ የአርሶ አደሩ የመሬት ውርስ መብት',
@@ -51,19 +51,19 @@ export const INITIAL_SOCIAL_LEGAL_POSTS: SocialMediaLegalPost[] = [
     statutoryCitations: ['Labsii Lafa Baadiyyaa Oromiyaa 130/1999 K. 6', 'Dambii 210/2013', 'Murtii Ijibbaataa Oromiyaa Vol 18 #21049'],
     hasOfficialStamp: true,
     stampSealDetails: {
-      issuingOffice: 'Oromia Legal Digest & Telegram @wakoyeb',
-      licenseNumber: 'ETH/TG/WAKOYEB/2026',
+      issuingOffice: 'Oromia Legal Digest & Telegram @seeraai_ethio',
+      licenseNumber: 'ETH/TG/SEERAAI/2026',
       dateStamped: '2026-03-05',
     },
     publishedDate: '2026-03-05',
-    externalLink: 'https://t.me/wakoyeb',
+    externalLink: 'https://t.me/seeraai_ethio',
     category: 'property',
   },
   {
-    id: 'post_tg_wakoyeb_002',
+    id: 'post_tg_seeraai_002',
     sourcePlatform: 'telegram',
-    author: 'Telegram Channel @wakoyeb (Wako Yeb)',
-    channelHandle: '@wakoyeb',
+    author: 'Telegram Channel @seeraai_ethio (SeeraAI Official)',
+    channelHandle: '@seeraai_ethio',
     title: {
       om: 'Koodii Siiviilii Keeyyata 2472: Waliigaltee Liqii Birrii 500 Ol Ta\'e Barreeffamaan Malee Ragaa Namaan Mirkaneessuu Dhorkamuu',
       am: 'የፍትሐብሔር ሕግ አንቀጽ 2472፡ ከ500 ብር በላይ የሆነ የገንዘብ ብድር ውል በሰው ምስክር ብቻ አለመፈቀዱ',
@@ -77,19 +77,19 @@ export const INITIAL_SOCIAL_LEGAL_POSTS: SocialMediaLegalPost[] = [
     statutoryCitations: ['Koodii Siiviilii K. 2472', 'Koodii Siiviilii K. 2003', 'Murtii Ijibbaataa Galmee 18274 (Jildii 1)'],
     hasOfficialStamp: true,
     stampSealDetails: {
-      issuingOffice: 'Telegram @wakoyeb Legal Precedent Digest',
-      licenseNumber: 'ETH/TG/WAKOYEB/2026',
+      issuingOffice: 'Telegram @seeraai_ethio Legal Precedent Digest',
+      licenseNumber: 'ETH/TG/SEERAAI/2026',
       dateStamped: '2026-02-22',
     },
     publishedDate: '2026-02-22',
-    externalLink: 'https://t.me/wakoyeb',
+    externalLink: 'https://t.me/seeraai_ethio',
     category: 'contract',
   },
   {
-    id: 'post_tg_wakoyeb_003',
+    id: 'post_tg_seeraai_003',
     sourcePlatform: 'telegram',
-    author: 'Telegram Channel @wakoyeb (Wako Yeb)',
-    channelHandle: '@wakoyeb',
+    author: 'Telegram Channel @seeraai_ethio (SeeraAI Official)',
+    channelHandle: '@seeraai_ethio',
     title: {
       om: 'Labsii Hojjetaa 1156/2011: Mirga Beenyaa fi Severance Pay Hojjetaa Seeraan Alaa Ari\'ameef',
       am: 'የአሰሪና ሰራተኛ አዋጅ 1156/2011፡ ያለአግባብ ለተሰናበተ ሰራተኛ የሚከፈል ካሳና ስንብት ክፍያ',
@@ -103,21 +103,20 @@ export const INITIAL_SOCIAL_LEGAL_POSTS: SocialMediaLegalPost[] = [
     statutoryCitations: ['Labsii Hojjetaa 1156/2011 K. 39', 'Labsii Hojjetaa 1156/2011 K. 40', 'Murtii Ijibbaataa Vol 25 #198421'],
     hasOfficialStamp: true,
     stampSealDetails: {
-      issuingOffice: 'Certified Stamp - @wakoyeb Legal Desk',
-      licenseNumber: 'ETH/TG/WAKOYEB/2026',
+      issuingOffice: 'Certified Stamp - @seeraai_ethio Legal Desk',
+      licenseNumber: 'ETH/TG/SEERAAI/2026',
       dateStamped: '2026-03-01',
     },
     publishedDate: '2026-03-01',
-    externalLink: 'https://t.me/wakoyeb',
+    externalLink: 'https://t.me/seeraai_ethio',
     category: 'labor',
   },
 
-  // 2. Posts from Advocate Ayele Be Dha Channel (@ayelebeharmee)
   {
-    id: 'post_tg_ayele_001',
+    id: 'post_tg_legal_001',
     sourcePlatform: 'telegram',
-    author: 'Advocate Ayele Be Dha (@ayelebeharmee)',
-    channelHandle: '@ayelebeharmee',
+    author: 'SeeraAI Legal Analysis',
+    channelHandle: '@seeraai_ethio',
     title: {
       om: 'Mirga Kireeffataa Manaa fi Seera Koodii Siiviilii Keeyyata 2896',
       am: 'የተከራይ መብት እና የፍትሐብሔር ሕግ አንቀጽ 2896',
@@ -131,19 +130,19 @@ export const INITIAL_SOCIAL_LEGAL_POSTS: SocialMediaLegalPost[] = [
     statutoryCitations: ['Koodii Siiviilii K. 2896', 'Civil Code Art. 2940'],
     hasOfficialStamp: true,
     stampSealDetails: {
-      issuingOffice: 'Biiroo Seeraa fi Abukaattummaa Ayele Be Dha',
+      issuingOffice: 'SeeraAI Legal Desk',
       licenseNumber: 'OR/AB/1042/2015',
       dateStamped: '2026-02-10',
     },
     publishedDate: '2026-02-10',
-    externalLink: 'https://t.me/ayelebeharmee',
+    externalLink: 'https://t.me/seeraai_ethio',
     category: 'contract',
   },
   {
-    id: 'post_fb_ayele_002',
+    id: 'post_fb_legal_002',
     sourcePlatform: 'facebook',
-    author: 'SeeraAI Legal Channel (www.saorethio1.com)',
-    channelHandle: 'facebook.com/ayelebeharmee',
+    author: 'SeeraAI Legal Channel',
+    channelHandle: '@seeraai_ethio',
     title: {
       om: 'Akeekkachiisa Malee Hojjetaa Ari\'uu fi Labsii 1156/2019 Keeyyata 27',
       am: 'ያለማስጠንቀቂያ ሰራተኛን ማሰናበት እና አዋጅ 1156 አንቀጽ 27',
@@ -162,7 +161,7 @@ export const INITIAL_SOCIAL_LEGAL_POSTS: SocialMediaLegalPost[] = [
       dateStamped: '2026-03-01',
     },
     publishedDate: '2026-03-01',
-    externalLink: 'https://www.facebook.com/ayelebeharmee',
+    externalLink: 'https://t.me/seeraai_ethio',
     category: 'labor',
   },
   {
@@ -241,10 +240,10 @@ export function addSocialMediaLegalPost(post: Omit<SocialMediaLegalPost, 'id' | 
 }
 
 /**
- * Syncs and indexes public legal posts from public Telegram channels (e.g. https://t.me/wakoyeb, https://t.me/ayelebeharmee)
+ * Syncs and indexes public legal posts from public Telegram channels (e.g. https://t.me/seeraai_ethio, https://t.me/wakolegalstudio)
  */
 export async function syncTelegramPublicChannel(
-  channelUrlOrHandle: string = 'https://t.me/wakoyeb',
+  channelUrlOrHandle: string = 'https://t.me/seeraai_ethio',
   onProgress?: (msg: string, pct: number) => void
 ): Promise<{ success: boolean; addedCount: number; allPosts: SocialMediaLegalPost[] }> {
   try {

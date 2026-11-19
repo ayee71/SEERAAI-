@@ -90,6 +90,51 @@ export const CourtWorkflowAndCredentialsCard: React.FC<CourtWorkflowAndCredentia
 
   const workflowRoles = [
     {
+      stage: '✨ Practice Admin (mmurtii.com)',
+      roleKey: 'court_admin',
+      titleOm: 'Bulchaa Shaakalaa (mmurtii.com Practice Admin)',
+      username: 'admin@mmurtii.com',
+      passcode: 'mmurtii2026',
+      email: 'admin@mmurtii.com',
+      desc: 'Hojii bulchiinsa mana murtii shaakalaaf kan qophaa\'e. Bulchaa mana murtii ta\'uun hojjattoota galmeessuu fi to\'achuu dandeessu.'
+    },
+    {
+      stage: '✨ Practice Judge (mmurtii.com)',
+      roleKey: 'judge',
+      titleOm: 'Abbaa Seeraa Shaakalaa (mmurtii.com Practice Judge)',
+      username: 'judge@mmurtii.com',
+      passcode: 'mmurtii2026',
+      email: 'judge@mmurtii.com',
+      desc: 'Shaakala abbaa seeraa: dhaddacha gaggeessuu, ragaalee qorachuu, sagalee dhaddachaa waraabuu fi murtii kennuudhaaf.'
+    },
+    {
+      stage: '✨ Practice Registrar (mmurtii.com)',
+      roleKey: 'registrar',
+      titleOm: 'Galmeessaa Shaakalaa (mmurtii.com Practice Registrar)',
+      username: 'registrar@mmurtii.com',
+      passcode: 'mmurtii2026',
+      email: 'registrar@mmurtii.com',
+      desc: 'Shaakala galmeessaa: galmee haaraa banuu, sanadoota kaffaltii mirkaneessuu fi galmee qindeessitootaatti dabarsuu.'
+    },
+    {
+      stage: '✨ Practice Clerk (mmurtii.com)',
+      roleKey: 'registrar',
+      titleOm: 'Calaaqqisaa Shaakalaa (mmurtii.com Practice Clerk)',
+      username: 'clerk@mmurtii.com',
+      passcode: 'mmurtii2026',
+      email: 'clerk@mmurtii.com',
+      desc: 'Shaakala calaaqqisaa / clerk: galmee dhaddachaa seeraan qindeessuu fi beellama qabuu.'
+    },
+    {
+      stage: '✨ Practice Legal Expert (mmurtii.com)',
+      roleKey: 'legal_expert',
+      titleOm: 'Ogeessa Seeraa Shaakalaa (mmurtii.com Legal Expert)',
+      username: 'expert@mmurtii.com',
+      passcode: 'mmurtii2026',
+      email: 'expert@mmurtii.com',
+      desc: 'Shaakala ogeessa seeraa: iyyata ol\'iyyaannoo, mormii fi xiinxala seeraa gaggeessuu.'
+    },
+    {
       stage: '1. Ofisara Seeraa (Intake Desk / Registrar)',
       roleKey: 'registrar',
       titleOm: 'Ofisara Seeraa - Galmee Banuu & Kaffaltii Mirkaneessuu',
@@ -115,15 +160,6 @@ export const CourtWorkflowAndCredentialsCard: React.FC<CourtWorkflowAndCredentia
       passcode: 'JUDGE-2026',
       email: 'caalaa.judge@court.oromia.et',
       desc: 'Galmee ramadameef banee sakatta\'uu, kora dhaddachaa gaggeessuu, ragaalee dhagahuu, seera hiikuun murtii qopheessuu fi mallatteessuu.'
-    },
-    {
-      stage: '4. Abbaa Dhimma / Oliyyannoo (Appellant / Pro-Se Litigant)',
-      roleKey: 'legal_expert',
-      titleOm: 'Oliyyannoo - Iyyata Mormii fi Ol-iyyata Dhiyeeffata',
-      username: 'appellant.client@oromia.et',
-      passcode: 'APPEAL-2026',
-      email: 'appellant.client@oromia.et',
-      desc: 'Murtii kenneetti yoo hin quuphane, ragaa fi xalayaa ol\'iyyaannoo dhiyeessuun akkaataa seeraatiin hanga dhaddacha ijibbaataatti hordofuu.'
     }
   ];
 
@@ -229,7 +265,7 @@ export const CourtWorkflowAndCredentialsCard: React.FC<CourtWorkflowAndCredentia
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400">Passcode / Secret:</span>
-                      <span className="text-emerald-400 font-bold select-all bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-800/50">{item.passcode}</span>
+                      <span className="text-slate-400 font-bold select-all bg-slate-950 px-2 py-0.5 rounded border border-slate-800">•••••••• (Protected)</span>
                     </div>
                   </div>
 

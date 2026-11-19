@@ -43,9 +43,12 @@ import {
   FileSpreadsheet,
   Workflow,
   Volume2,
-  Share2
+  Share2,
+  Bell,
+  Database
 } from 'lucide-react';
 import { db, auth } from '../services/firebase';
+import { signOut } from 'firebase/auth';
 import { InstitutionManagementView } from './InstitutionManagementView';
 import { isOwnerAccount, isOwnerEmail } from '../services/ownerAuth';
 import { 
@@ -56,6 +59,8 @@ import {
   setDoc, 
   updateDoc, 
   query, 
+  where,
+  onSnapshot,
   orderBy, 
   limit, 
   serverTimestamp 
@@ -81,6 +86,11 @@ import {
 } from '../services/adminActivityLogService';
 import { getStoredLexiconSuggestions, LexiconSuggestion } from '../services/ttsLexicon';
 import { VectorSearchStats } from '../components/VectorSearchStats';
+import { CourtActivityD3Heatmap } from '../components/admin/CourtActivityD3Heatmap';
+import { CourtPersonnelAccessPanel } from '../components/admin/CourtPersonnelAccessPanel';
+import { StorageStatistics } from '../components/StorageStatistics';
+import QualityAuditDashboard from '../components/quality_audit/QualityAuditDashboard';
+import type { QualityAuditReport, ExpertReview } from '../server/quality_audit/quality-audit.types';
 
 interface AdminDashboardViewProps {
   currentLang: Language;
@@ -116,7 +126,30 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onNavigateTab
 }) => {
   const t = translations[currentLang];
-  const { user, profile } = useAuth();
+  const { user, profile, requestLogout } = useAuth();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  // Secure guarded sign-out routed through central AuthContext coordinator
+  const handleAdminLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      try {
+        await logAdminAction({
+          actionType: 'admin_logout',
+          target: user?.email || (profile as any)?.email || 'Admin User',
+          details: 'Admin user initiated guarded sign-out from Admin Dashboard header',
+          metadata: { timestamp: new Date().toISOString() }
+        });
+      } catch (logErr) {
+        console.warn('Admin logout audit log deferred:', logErr);
+      }
+
+      requestLogout();
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   // Verification of Owner status: Ayele Be Dha
   const isOwner = 
@@ -132,7 +165,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [unlockError, setUnlockError] = useState<string | null>(null);
 
   // Active Sub-Tab
-  const [activeTab, setActiveTab] = useState<'users' | 'activityLogs' | 'courtWorkflows' | 'analytics' | 'config' | 'pronunciation'>('users');
+  // Active Sub-Tab
+  const [activeTab, setActiveTab] = useState<'users' | 'personnelAccess' | 'activityLogs' | 'courtWorkflows' | 'analytics' | 'config' | 'pronunciation' | 'storage' | 'qualityAudit'>('users');
   const [lexiconSuggestions, setLexiconSuggestions] = useState<LexiconSuggestion[]>(getStoredLexiconSuggestions());
 
   const handleApproveSuggestion = (id: string) => {
@@ -151,6 +185,26 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     setTimeout(() => setUserActionToast(null), 3000);
   };
 
+  // --- NOTIFICATION STATE ---
+  const [pendingNotifCount, setPendingNotifCount] = useState(0);
+
+  useEffect(() => {
+    if (!isOwner || !user) return;
+
+    const q = query(
+      collection(db, 'court_notifications'),
+      where('isRead', '==', false)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setPendingNotifCount(snapshot.size);
+    }, (error) => {
+      console.error("Error listening to notifications:", error);
+    });
+
+    return () => unsubscribe();
+  }, [isOwner, user]);
+
   // --- USER VERIFICATION STATE ---
   const [usersList, setUsersList] = useState<ManagedUser[]>([]);
   const [userSearch, setUserSearch] = useState('');
@@ -165,6 +219,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   // --- ANALYTICS STATE ---
   const [analyticsEvents, setAnalyticsEvents] = useState<AnalyticsEventItem[]>([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [serverStats, setServerStats] = useState<{ global: { totalVisits: number }, daily: any[] } | null>(null);
+
+  const fetchServerStats = async () => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/stats', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setServerStats(data);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch server stats:', err);
+    }
+  };
 
   // --- REFERRAL & SHARE STATISTICS STATE ---
   const [adminShareEvents, setAdminShareEvents] = useState<any[]>([]);
@@ -198,17 +269,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
 
   // --- SYSTEM CONFIGURATION STATE ---
-  const [defaultAiModel, setDefaultAiModel] = useState<string>('gemini-2.5-pro');
+  const [defaultAiModel, setDefaultAiModel] = useState<string>('gemini-4-hydrogen');
   const [antiCloningEnforced, setAntiCloningEnforced] = useState<boolean>(true);
   const [rightClickProtection, setRightClickProtection] = useState<boolean>(true);
   const [watermarkProtection, setWatermarkProtection] = useState<boolean>(true);
   const [courtGateEnforced, setCourtGateEnforced] = useState<boolean>(true);
   const [systemBroadcastMsg, setSystemBroadcastMsg] = useState<string>(
-    localStorage.getItem('seera_system_broadcast') || 'Kuusaa Dhaddacha Ijoo Mana Murtii Waliigalaa Fooyya\'eera (Cassation Volume 25 Indexed)'
+    localStorage.getItem('seera_system_broadcast') || 'SEERAAI PRO v5.0 (Elite Edition) Haaromfameera - Sirna Xiinxala Galmee Fooyya\'aa fi Madda Telegram Caqasuu dabalate.'
   );
   const [isBroadcastActive, setIsBroadcastActive] = useState<boolean>(
     localStorage.getItem('seera_system_broadcast_active') !== 'false'
   );
+  const [qualityAuditReport, setQualityAuditReport] = useState<QualityAuditReport | null>(null);
+  const [loadingAudit, setLoadingAudit] = useState(false);
   const [configSavedToast, setConfigSavedToast] = useState<string | null>(null);
 
   // Check and unlock owner key manually
@@ -401,7 +474,68 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
     setAnalyticsEvents(mockEvents);
     setAnalyticsLoading(false);
-  }, [isOwner, activeTab]);
+    fetchServerStats();
+  }, [isOwner, activeTab, user]);
+
+  // Load Quality Audit Report
+  useEffect(() => {
+    if (!isOwner || !user || activeTab !== 'qualityAudit') return;
+
+    const fetchAudit = async () => {
+      setLoadingAudit(true);
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/quality-audit/latest', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setQualityAuditReport(data);
+        } else {
+          // Fallback or handle error
+          console.warn('Failed to fetch latest quality audit');
+        }
+      } catch (err) {
+        console.error('Audit fetch error:', err);
+      } finally {
+        setLoadingAudit(false);
+      }
+    };
+
+    fetchAudit();
+  }, [isOwner, activeTab, user]);
+
+  const handleSaveExpertReview = async (review: ExpertReview) => {
+    if (!user || !qualityAuditReport) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/quality-audit/review', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          auditId: qualityAuditReport.id,
+          review
+        })
+      });
+      if (res.ok) {
+        // Refresh report
+        const refreshRes = await fetch('/api/quality-audit/latest', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (refreshRes.ok) {
+          const newData = await refreshRes.json();
+          setQualityAuditReport(newData);
+        }
+        setUserActionToast('Madaalliin ogeessaa milkaa\'inaan kuufameera!');
+        setTimeout(() => setUserActionToast(null), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to save expert review:', err);
+    }
+  };
 
   // Toggle Legal Professional Verification & Account Approval Status
   const handleToggleVerification = async (targetUser: ManagedUser) => {
@@ -776,6 +910,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <Key className="w-4 h-4" />
             <span>Abbaa Qabeenyaa Ta\'ii Bani (Unlock Admin Dashboard)</span>
           </button>
+
+          <button
+            type="button"
+            onClick={handleAdminLogout}
+            disabled={isLoggingOut}
+            className="w-full py-2.5 rounded-xl bg-slate-800/80 hover:bg-rose-950 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-800/50 text-xs font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5 text-rose-400" />
+            <span>{currentLang === 'om' ? "Gara Fuula Duraatti Deebi'i (Logout / Exit)" : "ወደ መጀመሪያ ገጽ ተመለስ (Logout)"}</span>
+          </button>
         </form>
 
         <div className="pt-4 border-t border-slate-800 text-[11px] text-slate-500">
@@ -852,6 +996,28 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
         {/* Top Controls */}
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* Notification Indicator */}
+          <div className="relative group mr-2">
+            <div className={`p-2.5 rounded-xl border transition-all flex items-center justify-center ${
+              pendingNotifCount > 0 
+                ? 'bg-rose-500/10 border-rose-500/40 text-rose-400 animate-pulse' 
+                : 'bg-slate-800 border-slate-700 text-slate-400'
+            }`}>
+              <Bell className="w-5 h-5" />
+              {pendingNotifCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border-2 border-slate-900 min-w-[20px] text-center">
+                  {pendingNotifCount > 99 ? '99+' : pendingNotifCount}
+                </span>
+              )}
+            </div>
+            {/* Tooltip */}
+            <div className="absolute top-full right-0 mt-2 w-48 p-2 bg-slate-900 border border-slate-800 rounded-lg shadow-xl text-[10px] text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+              {pendingNotifCount > 0 
+                ? `${pendingNotifCount} unread court notifications require attention.` 
+                : 'No unread notifications.'}
+            </div>
+          </div>
+
           <a
             href="https://t.me/seeraai_ethio"
             target="_blank"
@@ -882,6 +1048,27 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <ChevronRight className="w-4 h-4" />
             </button>
           )}
+
+          {/* Secure Firebase Auth Logout Button */}
+          <button
+            type="button"
+            onClick={handleAdminLogout}
+            disabled={isLoggingOut}
+            aria-label="Secure Logout"
+            className="px-4 py-2.5 rounded-xl bg-rose-600/25 hover:bg-rose-600 text-rose-200 hover:text-white border border-rose-500/50 hover:border-rose-400 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-lg active:scale-95 disabled:opacity-50"
+            title={currentLang === 'om' ? "Sirna Keessaa Ba'i (Firebase Auth Sign Out)" : currentLang === 'am' ? "ደህንነቱ የተጠበቀ መውጫ (Sign Out)" : "Secure Logout"}
+          >
+            {isLoggingOut ? (
+              <RefreshCw className="w-4 h-4 animate-spin text-rose-300" />
+            ) : (
+              <LogOut className="w-4 h-4" />
+            )}
+            <span>
+              {isLoggingOut
+                ? (currentLang === 'om' ? "Bahaa jira..." : currentLang === 'am' ? "በመውጣት ላይ..." : "Signing Out...")
+                : (currentLang === 'om' ? "Ba'i (Logout)" : currentLang === 'am' ? "ውጣ (Logout)" : "Logout")}
+            </span>
+          </button>
         </div>
       </div>
 
@@ -925,14 +1112,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
         <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl space-y-2">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-mono uppercase tracking-wider">AI Reasoning Engine</span>
-            <Cpu className="w-5 h-5 text-purple-400" />
+            <span className="text-xs font-mono uppercase tracking-wider">Hirmannaa Platformii</span>
+            <Eye className="w-5 h-5 text-purple-400" />
           </div>
-          <div className="text-2xl font-black text-white font-mono text-base truncate">
-            {defaultAiModel}
-          </div>
-          <div className="text-[11px] text-emerald-400 font-medium">
-            <span>X20 Legal Thinking Ready</span>
+          <div className="text-2xl font-black text-white">{serverStats?.global?.totalVisits || '...'}</div>
+          <div className="text-[11px] text-purple-400 font-medium">
+            <span>Yeroo {serverStats?.global?.totalVisits || 0} banameera (Total Visits)</span>
           </div>
         </div>
       </div>
@@ -952,6 +1137,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         >
           <UserCheck className="w-4 h-4" />
           <span>1. Mirkaneessa (User Verification)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('personnelAccess')}
+          className={`flex-1 min-w-[170px] py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            activeTab === 'personnelAccess'
+              ? 'bg-amber-500 text-slate-950 shadow-lg'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>2. Hayyama Hojjattootaa (Court Personnel Access)</span>
         </button>
 
         <button
@@ -1017,6 +1215,32 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         >
           <Volume2 className="w-4 h-4" />
           <span>6. Sagaleessuu (Pronunciation Queue)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('storage')}
+          className={`flex-1 min-w-[170px] py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            activeTab === 'storage'
+              ? 'bg-amber-500 text-slate-950 shadow-lg'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+          }`}
+        >
+          <Database className="w-4 h-4" />
+          <span>7. Kuusaa (Storage Control)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('qualityAudit')}
+          className={`flex-1 min-w-[170px] py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            activeTab === 'qualityAudit'
+              ? 'bg-amber-500 text-slate-950 shadow-lg'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+          }`}
+        >
+          <Award className="w-4 h-4" />
+          <span>8. Qulqullina (Quality Audit)</span>
         </button>
       </div>
 
@@ -1239,10 +1463,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       )}
 
       {/* =========================================================================
+          TAB 2: COURT PERSONNEL ACCESS & ROLE/FOLDER PERMISSIONS
+          ========================================================================= */}
+      {activeTab === 'personnelAccess' && (
+        <CourtPersonnelAccessPanel currentLang={currentLang} />
+      )}
+
+      {/* =========================================================================
           TAB 2: SYSTEM ACTIVITY LOG (NEW DEDICATED AUDIT SECTION)
           ========================================================================= */}
       {activeTab === 'activityLogs' && (
         <div className="space-y-6 animate-in fade-in duration-300">
+          {/* D3 Activity Heatmap for Court Personnel and Document Management */}
+          <CourtActivityD3Heatmap currentLang={currentLang} />
+
           <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
             {/* Header & Controls */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
@@ -1470,6 +1704,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           ========================================================================= */}
       {activeTab === 'analytics' && (
         <div className="space-y-8 animate-in fade-in duration-300">
+          {/* D3-Based 30-Day Court Personnel & Document Activity Heatmap */}
+          <CourtActivityD3Heatmap currentLang={currentLang} />
+
           {/* Referral & Share Tracking Statistics Widget */}
           {(() => {
             const totalSharesCount = adminShareEvents.length || 1;
@@ -1775,14 +2012,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                 <button
                   type="button"
-                  onClick={() => setDefaultAiModel('gemini-flash-lite-latest')}
+                  onClick={() => setDefaultAiModel('gemini-3.1-flash-lite')}
                   className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
-                    defaultAiModel === 'gemini-flash-lite-latest'
+                    defaultAiModel === 'gemini-3.1-flash-lite'
                       ? 'bg-amber-500/10 border-amber-500 text-white'
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
                   }`}
                 >
-                  <div className="font-bold text-sm mb-1">⚡ Flash Lite Tier</div>
+                  <div className="font-bold text-sm mb-1">⚡ Gemini 3.1 Flash Lite</div>
                   <div className="text-[11px] leading-relaxed">
                     Saffisa olaanaa, tajaajila salphaa fi deebii daqiiqaa muraasa keessatti.
                   </div>
@@ -1790,14 +2027,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setDefaultAiModel('gemini-2.5-pro')}
+                  onClick={() => setDefaultAiModel('gemini-4-hydrogen')}
                   className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
-                    defaultAiModel === 'gemini-2.5-pro'
+                    defaultAiModel === 'gemini-4-hydrogen'
                       ? 'bg-amber-500/10 border-amber-500 text-white'
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
                   }`}
                 >
-                  <div className="font-bold text-sm mb-1">⚖️ Gemini 2.5 Pro (Recommended)</div>
+                  <div className="font-bold text-sm mb-1">⚖️ Gemini 4 Hydrogen (Recommended)</div>
                   <div className="text-[11px] leading-relaxed">
                     Xiinxala dhimmoota falmii, madaallii precedents, fi qophii waliigaltee gadi fageenyaan.
                   </div>
@@ -1805,9 +2042,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setDefaultAiModel('gemini-2.5-deep-thinking')}
+                  onClick={() => setDefaultAiModel('deep_thinking')}
                   className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
-                    defaultAiModel === 'gemini-2.5-deep-thinking'
+                    defaultAiModel === 'deep_thinking'
                       ? 'bg-amber-500/10 border-amber-500 text-white'
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
                   }`}
@@ -1989,6 +2226,107 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB 7: STORAGE MANAGEMENT & GLOBAL STATISTICS
+          ========================================================================= */}
+      {activeTab === 'storage' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-5">
+              <div className="p-3 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <Database className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">To'annoo Kuusaa Waliigalaa (Global Storage Control)</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Xiinxala kuusaa Firebase Cloud Storage fi Telegram Archive dhaabbilee hundaaf.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-1">
+                <StorageStatistics />
+              </div>
+              
+              <div className="lg:col-span-2 space-y-6">
+                <div className="p-6 rounded-3xl bg-slate-950 border border-slate-800 space-y-4">
+                  <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span>Nageenya Kuusaa (Storage Security Status)</span>
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                      <div className="text-[10px] text-slate-500 uppercase font-black mb-1">Access Rules</div>
+                      <div className="text-xs text-emerald-400 font-bold">Scoped Isolation Active</div>
+                      <div className="text-[10px] text-slate-400 mt-1">Rules: storage.rules v2</div>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                      <div className="text-[10px] text-slate-500 uppercase font-black mb-1">Encryption</div>
+                      <div className="text-xs text-emerald-400 font-bold">AES-256 Enabled</div>
+                      <div className="text-[10px] text-slate-400 mt-1">Provider: Google Cloud KMS</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 rounded-3xl bg-slate-950 border border-slate-800 space-y-4">
+                  <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-blue-400" />
+                    <span>Recent Storage Events</span>
+                  </h4>
+                  <div className="space-y-2">
+                    {activityLogs.filter(l => l.details.toLowerCase().includes('storage') || l.details.toLowerCase().includes('upload')).slice(0, 5).map(log => (
+                      <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-900/50 border border-slate-800 text-[11px]">
+                        <div className="flex items-center gap-3">
+                          <div className="w-2 h-2 rounded-full bg-blue-500" />
+                          <span className="text-slate-300 font-medium">{log.details}</span>
+                        </div>
+                        <span className="text-slate-500 font-mono text-[10px]">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                    ))}
+                    {activityLogs.filter(l => l.details.toLowerCase().includes('storage') || l.details.toLowerCase().includes('upload')).length === 0 && (
+                      <div className="text-center py-6 text-slate-600 text-xs italic">
+                        No recent storage-related audit logs found.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB 8: QUALITY AUDIT DASHBOARD
+          ========================================================================= */}
+      {activeTab === 'qualityAudit' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {loadingAudit ? (
+            <div className="flex flex-col items-center justify-center py-20 bg-slate-900/50 rounded-3xl border border-slate-800">
+              <RefreshCw className="w-8 h-8 text-amber-500 animate-spin mb-4" />
+              <p className="text-slate-400 font-medium">Gabaasa qulqullinaa fidaa jira...</p>
+            </div>
+          ) : qualityAuditReport ? (
+            <QualityAuditDashboard 
+              report={qualityAuditReport}
+              currentUser={{ uid: user?.uid || '', role: (profile as any)?.role || 'admin' }}
+              onSaveReview={handleSaveExpertReview}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-20 bg-slate-900/50 rounded-3xl border border-slate-800 text-center px-4">
+              <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center mx-auto mb-4">
+                <ShieldAlert className="w-8 h-8 text-slate-600" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Gabaasni Qulqullinaa Hin Argamne</h3>
+              <p className="text-slate-400 max-w-md">
+                Gabaasni qulqullinaa (Quality Audit) dhiyoo kanaan hin uumamne. Maaloo server irraa audit haaraa uumuuf yaali.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { isWriteLocked } from '../services/signOutSafetyService';
 
 export interface BookmarkItem {
   id: string;
@@ -28,6 +29,13 @@ export const BookmarkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   });
 
   useEffect(() => {
+    const handleCleared = () => setBookmarks([]);
+    window.addEventListener('seera_privacy_cleared', handleCleared);
+    return () => window.removeEventListener('seera_privacy_cleared', handleCleared);
+  }, []);
+
+  useEffect(() => {
+    if (isWriteLocked()) return;
     try {
       localStorage.setItem('seera_ai_user_bookmarks', JSON.stringify(bookmarks));
     } catch (e) {
@@ -38,6 +46,7 @@ export const BookmarkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const isBookmarked = (id: string) => bookmarks.some((b) => b.id === id);
 
   const toggleBookmark = (item: BookmarkItem) => {
+    if (isWriteLocked()) return;
     setBookmarks((prev) => {
       if (prev.some((b) => b.id === item.id)) {
         return prev.filter((b) => b.id !== item.id);
@@ -48,6 +57,7 @@ export const BookmarkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const removeBookmark = (id: string) => {
+    if (isWriteLocked()) return;
     setBookmarks((prev) => prev.filter((b) => b.id !== id));
   };
 

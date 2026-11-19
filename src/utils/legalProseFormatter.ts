@@ -48,15 +48,23 @@ export function cleanLegalArtifacts(rawText: string, options: PostProcessOptions
 
   // 7. Remove robotic conversational preambles and greetings
   const preamblePatterns = [
-    /^(?:Baga\s+nagaan\s+dhuftan|Akkam\s+jirtu|Nagaa\s+fayyaa|Baga\s+nagaan\s+dhufte)[^.\n]*[.\n]/gim,
-    /^(?:Hello|Greetings|Dear\s+user|Welcome)[^.\n]*[.\n]/gim,
+    /^(?:Baga\s+nagaan\s+dhuftan|Akkam\s+jirtu|Nagaa\s+fayyaa|Baga\s+nagaan\s+dhufte|Salutations)[^.\n]*[.\n]/gim,
+    /^(?:Hello|Greetings|Dear\s+user|Welcome|Certainly|Sure|Okay|Alright|I\s+understand|Of\s+course|Absolutely)[^.\n]*[.\n]/gim,
     /^(?:ሰላም\s*ጤና\s*ይስጥልኝ|እንደምን\s*አደሩ|እንደምን\s*ዋሉ|እንኳን\s*ደህና\s*መጡ)[^.\n]*[.\n]/gim,
     /^(?:In\s+this\s+(?:legal\s+)?(?:explanation|analysis|response|section),?\s*(?:we\s+will|I\s+will|let\s+us)[^.\n]*[.\n])/gim,
+    /^(?:Here\s+is\s+the\s+information|I\s+can\s+help\s+you\s+with\s+that|The\s+answer\s+is|Based\s+on\s+your\s+request|I\s+am\s+happy\s+to\s+assist)[^.\n]*[.\n]/gim,
+    /^(?:I\s+have\s+analyzed|Searching\s+the\s+database|I\s+found\s+the\s+following|I\s+have\s+carefully\s+reviewed)[^.\n]*[.\n]/gim,
+    /^(?:As\s+an\s+AI|I\s+am\s+an\s+artificial\s+intelligence|My\s+purpose\s+is|I\s+cannot\s+provide)[^.\n]*[.\n]/gim,
   ];
 
   for (const pattern of preamblePatterns) {
     text = text.replace(pattern, '');
   }
+
+  // 8. Remove specific robotic assistance transition sentences
+  text = text.replace(/Let\s+me\s+know\s+if\s+you\s+need\s+anything\s+else\.?/gim, '');
+  text = text.replace(/I\s+hope\s+this\s+helps\.?/gim, '');
+  text = text.replace(/Please\s+find\s+the\s+detailed\s+analysis\s+below:?/gim, '');
 
   // 9. Clean up artifact brackets like [INSTRUCTION: ...], [STRICT DIRECTIVE: ...], etc.
   text = text.replace(/\[(?:STRICT|MANDATORY|DIRECTIVE|INSTRUCTION)[^\]]*\]/gi, '');

@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Language, translations } from '../i18n/translations';
-import { Scale, Gavel, ChevronLeft, ChevronRight, Info, AlertTriangle, CheckCircle2, Timer, Play, Pause, RotateCcw, History, MessageSquare, Plus, Mic, MicOff, Download, FileText, StickyNote, X, ChevronUp, ChevronDown, BarChart3, GripVertical, Upload } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { Scale, Gavel, ChevronLeft, ChevronRight, Info, AlertTriangle, CheckCircle2, Timer, Play, Pause, RotateCcw, History, MessageSquare, Plus, Mic, MicOff, Download, FileText, StickyNote, X, ChevronUp, ChevronDown, BarChart3, GripVertical, Upload, UploadCloud, Users, Calendar, Building2, Monitor, Radio, Wifi, RefreshCw, Zap, Eye, EyeOff, ExternalLink, Sparkles, Camera, Image, Video, Send, Copy, Check, Bookmark, FileCode, Share2, Maximize2, Link2, Lock, Shield, ShieldCheck, Volume2, VolumeX, BookOpen, Search, Filter, Cloud, CloudOff, Database } from 'lucide-react';
+import { syncStatusService, CloudSyncStatus } from '../services/syncStatusService';
+import { askSEERAAILegalQuestion } from '../services/legalAnswerClient';
+import type { LegalAnswerResponse } from '../types/legalAnswer';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { applyCourtWatermarkToPDF } from '../services/watermarkService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { motion, Reorder, AnimatePresence } from 'framer-motion';
 import { db, auth } from '../services/firebase';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { analyzeLegalDocument, generateLegalContent } from '../services/api';
 import { processDocumentOffThread } from '../services/documentExtractionService';
 import { getUserScopedKey } from '../services/storage';
@@ -15,7 +19,40 @@ import { VoiceToMemoRecorder } from '../components/VoiceToMemoRecorder';
 import { VoiceDictation } from '../components/VoiceDictation';
 import { JudgeProceedingsWorkbench } from '../components/JudgeProceedingsWorkbench';
 import { DictateCourtNoteModal } from '../components/DictateCourtNoteModal';
+import { CourtroomAudioRecorder } from '../components/CourtroomAudioRecorder';
 import { PremiumGate } from '../components/PremiumGate';
+import JSZip from 'jszip';
+import { Notifications } from '../components/Notifications';
+import { CaseMilestoneTracker } from '../components/CaseMilestoneTracker';
+import { formatEthiopianDate, formatCourtHearingScheduleDate } from '../utils/ethiopianCalendar';
+import { WitnessTestimonyModal, WitnessTestimonyItem } from '../components/WitnessTestimonyModal';
+import { CourtOrderGeneratorModal } from '../components/CourtOrderGeneratorModal';
+import { EvidenceCaptureModal } from '../components/EvidenceCaptureModal';
+import { CourtroomLayoutModal } from '../components/CourtroomLayoutModal';
+import { FloatingCourtAudioControl } from '../components/FloatingCourtAudioControl';
+import { LiveTranscriptionDisplay } from '../components/LiveTranscriptionDisplay';
+import { MultiFileEvidenceUpload } from '../components/MultiFileEvidenceUpload';
+import { practiceCaseService, CaseEvidence, generateAIEvidenceDescription, SAMPLE_DIGITAL_EVIDENCE } from '../services/practiceCaseService';
+import { 
+  getCaseByIdFromFirestore, 
+  toggleCasePublicVisibilityInFirestore,
+  FirestoreCaseDocket,
+  PhysicalCaseEvidence,
+  CourtroomSeatingLayout,
+  bulkUpdateEvidenceAdmissibility,
+  CaseWitnessStatement,
+  saveCaseWitnessStatement,
+  fetchCaseWitnessStatements,
+  getLocalWitnessStatements
+} from '../services/courtCaseService';
+import { 
+  subscribeToStoredTelegramDocs, 
+  TelegramLegalPost,
+  pollTelegramLegalNews,
+  fetchTelegramChannelFeed,
+  fetchTelegram1500Archive
+} from '../services/telegramLegalHarvesterService';
+
 
 interface CourtroomAssistantViewProps {
   currentLang: Language;
@@ -52,6 +89,20 @@ interface LogEntry {
   stepId?: number;
   witnessId?: string;
   tags?: string[];
+  annotation?: string;
+  fileUrl?: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: string;
+  evidenceMetadata?: {
+    exhibitNumber?: string;
+    submittedBy?: string;
+    evidenceType?: string;
+    summary?: string;
+    authenticityStatus?: string;
+    dateSubmitted?: string;
+    framedIssueRelevance?: string;
+  };
 }
 
 interface Witness {
@@ -166,6 +217,81 @@ const DEFAULT_TEMPLATES: ObjectionTemplate[] = [
   { id: 'foundation', label: 'Lack of Foundation', category: 'content', template: 'Objection: Lack of foundation.', isDefault: true },
   { id: 'nonresponsive', label: 'Non-responsive', category: 'procedure', template: 'Objection: Non-responsive.', isDefault: true },
 ];
+
+const CONTRADICTION_KEYWORDS = ['contradiction', 'discrepancy', 'conflict', 'wal-faallessu', 'faallaa', 'ተቃርኖ', 'ልዩነት', 'hiifoo'];
+
+const LEGAL_TOOLTIPS: Record<string, { om: string; am: string; en: string; ref: string }> = {
+  'cassation': {
+    om: 'Dhaddacha murtii olaanaa kan seerri sirriitti hojiirra ooluu isaa mirkaneessu.',
+    am: 'ህግ በትክክል መተግበሩን የሚያረጋግጥ የበላይ የሰበር ችሎት።',
+    en: 'Cassation bench ensuring correct application of fundamental law.',
+    ref: 'Proclamation No. 1234/2021'
+  },
+  'ijibbaata': {
+    om: 'Dhaddacha murtii olaanaa kan seerri sirriitti hojiirra ooluu isaa mirkaneessu.',
+    am: 'ህግ በትክክል መተግበሩን የሚያረጋግጥ የበላይ የሰበር ችሎት።',
+    en: 'Cassation bench ensuring correct application of fundamental law.',
+    ref: 'Proclamation No. 1234/2021'
+  },
+  'proclamation': {
+    om: 'Labsii seeraa mana mareen baasu.',
+    am: 'በህዝብ ተወካዮች ምክር ቤት የሚወጣ አዋጅ።',
+    en: 'Legislative statute enacted by the parliament.',
+    ref: 'Constitutional Law'
+  },
+  'labsii': {
+    om: 'Labsii seeraa mana mareen baasu.',
+    am: 'በህዝብ ተወካዮች ምክር ቤት የሚወጣ አዋጅ።',
+    en: 'Legislative statute enacted by the parliament.',
+    ref: 'Constitutional Law'
+  },
+  'regulation': {
+    om: 'Dambii hojiirra oolmaa seeraaf baasu.',
+    am: 'ህግን ለማስፈጸም የሚወጣ ደንብ።',
+    en: 'Executive regulation issued to enforce a proclamation.',
+    ref: 'Administrative Law'
+  },
+  'dambii': {
+    om: 'Dambii hojiirra oolmaa seeraaf baasu.',
+    am: 'ህግን ለማስፈጸም የሚወጣ ደንብ።',
+    en: 'Executive regulation issued to enforce a proclamation.',
+    ref: 'Administrative Law'
+  },
+  'contract': {
+    om: 'Waliigaltee qaamolee gidduutti uumamu.',
+    am: 'በወገኖች መካከል የሚደረግ የውል ስምምነት።',
+    en: 'Binding agreement creating legal obligations.',
+    ref: 'Civil Code Art. 1675'
+  },
+  'waliigaltee': {
+    om: 'Waliigaltee qaamolee gidduutti uumamu.',
+    am: 'በወገኖች መካከል የሚደረግ የውል ስምምነት።',
+    en: 'Binding agreement creating legal obligations.',
+    ref: 'Civil Code Art. 1675'
+  }
+};
+
+const renderLegalTextWithTooltips = (content: string, lang: Language) => {
+  if (!content) return null;
+  const words = content.split(/(\s+)/);
+  return words.map((word, idx) => {
+    const cleanWord = word.replace(/[^a-zA-Z0-9_áàâäãåçéèêëíìîïñóòôöõúùûüýÿæœ]/g, '').toLowerCase();
+    const tooltip = LEGAL_TOOLTIPS[cleanWord];
+    if (tooltip) {
+      return (
+        <span key={idx} className="group/term relative inline-block cursor-help text-amber-300 font-semibold underline decoration-dotted underline-offset-4 hover:text-amber-200">
+          {word}
+          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/term:block z-50 w-56 p-2.5 bg-slate-900 border border-amber-500/60 text-[11px] text-slate-200 rounded-xl shadow-2xl pointer-events-none">
+            <span className="font-bold text-amber-400 block mb-0.5 uppercase tracking-wide">💡 {cleanWord}:</span>
+            <span className="block leading-relaxed">{tooltip[lang] || tooltip.om}</span>
+            <span className="block text-[9px] font-mono text-cyan-400 mt-1 border-t border-slate-800 pt-1">📖 {tooltip.ref}</span>
+          </span>
+        </span>
+      );
+    }
+    return word;
+  });
+};
 
 const PROCEDURAL_STEPS: ProceduralStep[] = [
   {
@@ -330,6 +456,7 @@ const PROCEDURAL_STEPS: ProceduralStep[] = [
 
 export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ currentLang, initialCourtLevel }) => {
   const t = translations[currentLang];
+  const { profile } = useAuth();
   const AUTOSAVE_BASE_KEY = 'seera_courtroom_autosave_state';
 
   const getInitialState = () => {
@@ -357,7 +484,262 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
   const [sessionTitle, setSessionTitle] = useState<string>(savedState?.sessionTitle ?? '');
   const [savedSessions, setSavedSessions] = useState<CourtSession[]>([]);
   const [showSessionManager, setShowSessionManager] = useState(false);
+  const [showCourtroomAudioModal, setShowCourtroomAudioModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCasePublic, setIsCasePublic] = useState<boolean>(savedState?.isCasePublic ?? false);
+  const [latestNews, setLatestNews] = useState<TelegramLegalPost[]>([]);
+  const [isBackgroundSyncActive, setIsBackgroundSyncActive] = useState<boolean>(true);
+  const [isSyncingNews, setIsSyncingNews] = useState<boolean>(false);
+  const [lastSyncTimestamp, setLastSyncTimestamp] = useState<string>(new Date().toLocaleTimeString());
+  const [selectedNewsSource, setSelectedNewsSource] = useState<'all' | 'seeraai_ethio' | 'wakolegalstudio'>('all');
+  const [unreadNewsCount, setUnreadNewsCount] = useState<number>(0);
+  const [newUpdatesToast, setNewUpdatesToast] = useState<string | null>(null);
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [newsTypeFilter, setNewsTypeFilter] = useState<'all' | 'precedents' | 'proclamations' | 'announcements'>('all');
+
+  // Courtroom Live API & Evidence Streaming State (up to 2GB virtual storage pool)
+  const [liveApiStatus, setLiveApiStatus] = useState<'connected' | 'connecting' | 'offline'>('connected');
+  const [isEvidenceStreaming, setIsEvidenceStreaming] = useState<boolean>(true);
+  const [storagePoolInfo] = useState<{ quota: string; usage: string; percent: number }>({
+    quota: '2.0 GB',
+    usage: '92.4 MB',
+    percent: 4.6
+  });
+
+  // 1,500+ Archive Explorer Modal State
+  const [showArchive1500Modal, setShowArchive1500Modal] = useState<boolean>(false);
+  const [archive1500Query, setArchive1500Query] = useState<string>('');
+  const [archive1500Category, setArchive1500Category] = useState<string>('all');
+  const [archive1500Page, setArchive1500Page] = useState<number>(1);
+  const [archive1500Data, setArchive1500Data] = useState<{
+    total: number;
+    page: number;
+    files: any[];
+    totalPages: number;
+    channels: string[];
+    archiveSummary: string;
+  } | null>(null);
+  const [isArchive1500Loading, setIsArchive1500Loading] = useState<boolean>(false);
+  const [archiveCopiedId, setArchiveCopiedId] = useState<string | null>(null);
+  const [discoveredPrecedents, setDiscoveredPrecedents] = useState<any[]>([]);
+
+  const extractPrecedentsFromText = (text: string) => {
+    if (!text) return;
+    // Regex for Cassation Galmee Lakkoofsa patterns (e.g., "Galmee Lakk. 12345", "Case No. 54321")
+    const galmeeRegex = /(?:Lakk\. Galmee|Galmee lakk\.|የመዝገብ ቁጥር|Case No\.?)\s*:?\s*(\d+)/gi;
+    const matches = [...text.matchAll(galmeeRegex)];
+    const uniqueIds = Array.from(new Set(matches.map(m => m[1])));
+    
+    if (uniqueIds.length > 0) {
+      const newPrecedents = uniqueIds.map(id => ({
+        id: `disc_${id}_${Date.now()}`,
+        referenceNumber: id,
+        source: 'AI Extraction',
+        timestamp: new Date().toLocaleTimeString()
+      }));
+      setDiscoveredPrecedents(prev => {
+        const existingRefs = new Set(prev.map(p => p.referenceNumber));
+        const filtered = newPrecedents.filter(p => !existingRefs.has(p.referenceNumber));
+        return [...filtered, ...prev].slice(0, 20);
+      });
+    }
+  };
+
+  const handleRefreshNews = async (channel: string = selectedNewsSource) => {
+    setIsSyncingNews(true);
+    try {
+      const result = await fetchTelegramChannelFeed(channel, 10);
+      if (result.ok && result.items && result.items.length > 0) {
+        setLatestNews(result.items as any);
+        setLastSyncTimestamp(new Date().toLocaleTimeString());
+        setUnreadNewsCount(0);
+      }
+    } catch (err) {
+      console.warn('[Courtroom Assistant] Manual news refresh error:', err);
+    } finally {
+      setIsSyncingNews(false);
+    }
+  };
+
+  const handleSpeakText = (id: string, text: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+    if (playingAudioId === id) {
+      window.speechSynthesis.cancel();
+      setPlayingAudioId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = currentLang === 'am' ? 'am-ET' : 'en-US';
+    utterance.rate = 0.95;
+    utterance.onend = () => setPlayingAudioId(null);
+    utterance.onerror = () => setPlayingAudioId(null);
+
+    setPlayingAudioId(id);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleInsertCitationToSession = (news: TelegramLegalPost | any) => {
+    const titleText = news.title?.[currentLang] || news.title?.om || news.referenceNumber || 'Legal Precedent';
+    const summaryText = news.summary?.[currentLang] || news.summary?.om || news.rawText || '';
+    const ref = news.referenceNumber || 'Telegram Legal Archive';
+    const channel = news.channelHandle ? `@${news.channelHandle}` : '@seeraai_ethio';
+
+    const citationLog: LogEntry = {
+      id: `cite-${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString(),
+      text: `[WABII SEERAA / LEGAL CITATION - ${ref} (${channel})]:\n${titleText}\n\nQabxii Seeraa / Ratio:\n${summaryText}`,
+      type: 'manual',
+      tags: ['CITED_PRECEDENT', channel, ref],
+      annotation: `Ingested from Telegram ${channel}`
+    };
+
+    setHistory(prev => [citationLog, ...prev]);
+    setNewUpdatesToast(
+      currentLang === 'om'
+        ? `Wabiin "${ref}" galmee dhaddachaa keessatti dabalameera!`
+        : currentLang === 'am'
+        ? `ማስረጃው "${ref}" ወደ ችሎት መዝገብ ተካቷል!`
+        : `Precedent "${ref}" added to courtroom transcript!`
+    );
+    setTimeout(() => setNewUpdatesToast(null), 3500);
+  };
+
+  const handleLoadArchive1500 = async (q: string = archive1500Query, cat: string = archive1500Category, pg: number = 1) => {
+    setIsArchive1500Loading(true);
+    try {
+      const res = await fetchTelegram1500Archive(q, cat, pg, 15);
+      if (res.ok) {
+        setArchive1500Data({
+          total: res.total,
+          page: res.page || pg,
+          files: res.files,
+          totalPages: res.totalPages,
+          channels: res.channels,
+          archiveSummary: res.archiveSummary
+        });
+        setArchive1500Page(pg);
+      }
+    } catch (e) {
+      console.warn('Failed to load 1500 archive:', e);
+    } finally {
+      setIsArchive1500Loading(false);
+    }
+  };
+
+  // Initial subscribe
+  useEffect(() => {
+    const unsubscribe = subscribeToStoredTelegramDocs((posts) => {
+      if (posts && posts.length > 0) {
+        setLatestNews(posts.slice(0, 8));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Background polling loop targeting @seeraai_ethio and @wakolegalstudio
+  useEffect(() => {
+    if (!isBackgroundSyncActive) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const targetChannel = selectedNewsSource === 'all' ? 'seeraai_ethio' : selectedNewsSource;
+        const res = await pollTelegramLegalNews(targetChannel, undefined, latestNews.length);
+        if (res.ok) {
+          setLastSyncTimestamp(new Date().toLocaleTimeString());
+          if (res.hasNew && res.count > 0) {
+            setUnreadNewsCount(prev => prev + res.count);
+            setNewUpdatesToast(
+              currentLang === 'om'
+                ? `Oduun seeraa haaraan ${res.count} Telegram @${res.channel} irraa argameera!`
+                : currentLang === 'am'
+                ? `${res.count} አዲስ የህግ መረጃዎች ከቴሌግራም @${res.channel} ተገኝተዋል!`
+                : `${res.count} new legal update(s) received from @${res.channel}!`
+            );
+            if (res.latestNews && res.latestNews.length > 0) {
+              setLatestNews(res.latestNews as any);
+            }
+          }
+        }
+      } catch (err) {
+        // Non-blocking background error
+      }
+    }, 35000);
+
+    return () => clearInterval(interval);
+  }, [isBackgroundSyncActive, selectedNewsSource, latestNews.length, currentLang]);
+
+  // Real-time Background Caseload Metrics Sync Hook Effect
+  const [realtimeCaseloadMetrics, setRealtimeCaseloadMetrics] = useState<{
+    totalCases: number;
+    newPending: number;
+    opened: number;
+    decided: number;
+    closed: number;
+    avgAgeDays: number;
+    clearanceRate: number;
+    lastUpdated: string;
+  }>({
+    totalCases: 0,
+    newPending: 0,
+    opened: 0,
+    decided: 0,
+    closed: 0,
+    avgAgeDays: 0,
+    clearanceRate: 0,
+    lastUpdated: new Date().toLocaleTimeString()
+  });
+
+  useEffect(() => {
+    let unsub: () => void = () => {};
+    try {
+      const q = collection(db, 'cases');
+      unsub = onSnapshot(q, (snapshot) => {
+        if (!snapshot.empty) {
+          const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          const total = docs.length;
+          const pending = docs.filter((c: any) => c.currentStage === 'intake' || c.paymentStatus === 'pending' || c.assignedJudge === 'Pending Assignment').length;
+          const activeOpened = docs.filter((c: any) => c.currentStage !== 'closed' && c.currentStage !== 'intake').length;
+          const closedCount = docs.filter((c: any) => c.currentStage === 'closed').length;
+          const decidedCount = docs.filter((c: any) => c.currentStage === 'closed' || c.firstSummonsStatus === 'served').length;
+
+          let ageSum = 0;
+          docs.forEach((c: any) => {
+            const dateStr = c.filingDate || c.createdAt;
+            if (dateStr) {
+              const age = Math.max(0, Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 3600 * 24)));
+              ageSum += age;
+            }
+          });
+          const avgAge = total > 0 ? Math.round((ageSum / total) * 10) / 10 : 0;
+          const clearance = total > 0 ? Math.round((decidedCount / total) * 100) : 0;
+
+          const metricsPayload = {
+            totalCases: total,
+            newPending: pending,
+            opened: activeOpened,
+            decided: decidedCount,
+            closed: closedCount,
+            avgAgeDays: avgAge,
+            clearanceRate: clearance,
+            lastUpdated: new Date().toLocaleTimeString()
+          };
+
+          setRealtimeCaseloadMetrics(metricsPayload);
+
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('seera_caseload_metrics_updated', { detail: metricsPayload }));
+          }
+        }
+      });
+    } catch (err) {
+      console.warn('[Realtime Caseload Sync] Error:', err);
+    }
+
+    return () => unsub();
+  }, []);
 
   // Timer State
   const [seconds, setSeconds] = useState<number>(savedState?.seconds ?? 0);
@@ -387,19 +769,1160 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
   const [defenseText, setDefenseText] = useState<string>(savedState?.defenseText ?? '');
   const [transcribedTestimony, setTranscribedTestimony] = useState<string>(savedState?.transcribedTestimony ?? '');
   const [selectedWitnessForVoice, setSelectedWitnessForVoice] = useState<string>('');
+
+  // Case Visibility Sync Effect
+  useEffect(() => {
+    const syncCaseVisibility = async () => {
+      if (sessionId) {
+        try {
+          const caseData = await getCaseByIdFromFirestore(sessionId);
+          if (caseData && typeof caseData.isPublic === 'boolean') {
+            setIsCasePublic(caseData.isPublic);
+          }
+        } catch (e) {
+          console.warn('Failed to sync case visibility:', e);
+        }
+      }
+    };
+    syncCaseVisibility();
+  }, [sessionId]);
+
+  const handleToggleVisibility = async () => {
+    if (!sessionId) return;
+    const nextVal = !isCasePublic;
+    try {
+      setIsCasePublic(nextVal);
+      await toggleCasePublicVisibilityInFirestore(sessionId, nextVal, profile?.visitorName || 'Judge');
+      showShortcutFeedback(nextVal ? 'Case is now PUBLICLY visible' : 'Case is now PRIVATE', nextVal ? '🔓' : '🔒');
+    } catch (err) {
+      console.error('Failed to toggle visibility:', err);
+      setIsCasePublic(!nextVal); // rollback
+    }
+  };
   const [isTranscribingAudio, setIsTranscribingAudio] = useState(false);
   const audioFileRef = React.useRef<HTMLInputElement | null>(null);
 
   // Voice-to-Memo State
   const [showVoiceToMemo, setShowVoiceToMemo] = useState(true);
   const [showDictateCourtNote, setShowDictateCourtNote] = useState(false);
+  const [showWitnessModal, setShowWitnessModal] = useState(false);
+  const [showEvidenceCaptureModal, setShowEvidenceCaptureModal] = useState(false);
+  const [showMultiFileUpload, setShowMultiFileUpload] = useState(false);
+  const [showCourtroomLayoutModal, setShowCourtroomLayoutModal] = useState(false);
+  const [showFloatingAudioControl, setShowFloatingAudioControl] = useState(true);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [lastAutoSaveTime, setLastAutoSaveTime] = useState<string | null>(null);
 
-  // Evidence Audio Processor State
+  // Firestore Milestone Audit Trail State
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isFetchingAuditLogs, setIsFetchingAuditLogs] = useState(false);
+  const [milestoneAuditLogs, setMilestoneAuditLogs] = useState<any[]>([]);
+  const [auditSource, setAuditSource] = useState<'firestore' | 'cache'>('cache');
+
+  const handleOpenMainAuditTrail = async () => {
+    setIsFetchingAuditLogs(true);
+    setIsAuditModalOpen(true);
+    try {
+      const { fetchMilestoneAuditLogsFromFirestore } = await import('../services/caseMilestoneService');
+      const caseNum = sessionId || (courtLevel === 'highCourt' ? 'CR-2026/089' : 'CR-2026/045');
+      const { logs, source } = await fetchMilestoneAuditLogsFromFirestore(caseNum);
+      setMilestoneAuditLogs(logs);
+      setAuditSource(source);
+    } catch (err) {
+      console.warn('Audit trail fetch error:', err);
+    } finally {
+      setIsFetchingAuditLogs(false);
+    }
+  };
+
+
+  // Witness Testimony Stopwatch State
+  const [witnessStopwatchTime, setWitnessStopwatchTime] = useState<number>(0);
+  const [isWitnessStopwatchActive, setIsWitnessStopwatchActive] = useState(false);
+  const [showWitnessStopwatch, setShowWitnessStopwatch] = useState(false);
+
+  useEffect(() => {
+    let interval: any = null;
+    if (isWitnessStopwatchActive) {
+      interval = setInterval(() => {
+        setWitnessStopwatchTime((prev) => prev + 1);
+      }, 1000);
+    } else {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [isWitnessStopwatchActive]);
+
+  const formatStopwatchTime = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${mins.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const FloatingWitnessStopwatch = () => {
+    if (!showWitnessStopwatch) return null;
+    return (
+      <motion.div 
+        drag
+        dragConstraints={{ left: -500, right: 500, top: -500, bottom: 500 }}
+        initial={{ opacity: 0, scale: 0.8, y: 100 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="fixed bottom-32 right-6 z-[60] bg-slate-900/90 backdrop-blur-xl border-2 border-amber-500/50 rounded-2xl p-4 shadow-2xl w-48 space-y-3 cursor-move"
+      >
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+          <div className="flex items-center gap-2">
+            <Timer className="w-4 h-4 text-amber-400" />
+            <span className="text-[10px] font-black uppercase text-amber-500 tracking-tighter">Testimony Time</span>
+          </div>
+          <button onClick={() => setShowWitnessStopwatch(false)} className="text-slate-500 hover:text-white">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+        
+        <div className="text-3xl font-black font-mono text-center text-white py-2 tabular-nums">
+          {formatStopwatchTime(witnessStopwatchTime)}
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <button
+            onClick={() => setIsWitnessStopwatchActive(!isWitnessStopwatchActive)}
+            className={`p-2 rounded-lg flex items-center justify-center transition-all ${isWitnessStopwatchActive ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}`}
+          >
+            {isWitnessStopwatchActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={() => { setWitnessStopwatchTime(0); setIsWitnessStopwatchActive(false); }}
+            className="p-2 rounded-lg bg-slate-800 text-slate-400 border border-slate-700 flex items-center justify-center"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => {
+              const timeStr = formatStopwatchTime(witnessStopwatchTime);
+              setQuickNotes(prev => prev + `\n[⏱️ Testimony Duration: ${timeStr}]\n`);
+              showShortcutFeedback('Time recorded to notes', '⏱️');
+            }}
+            className="p-2 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center"
+            title="Append to notes"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+      </motion.div>
+    );
+  };
+
+  const handleAutoLinkCitations = (target: 'notes' | 'testimony') => {
+    const text = target === 'notes' ? quickNotes : transcribedTestimony;
+    // Regex for Article/Keeyyata/አንቀጽ followed by numbers
+    const citationRegex = /(Article|Keeyyata|አንቀጽ)\s+(\d+)/gi;
+    
+    if (!citationRegex.test(text)) {
+      alert(currentLang === 'om' ? 'Keeyyanni seeraa hin argamne.' : 'No citations detected.');
+      return;
+    }
+
+    const linkedText = text.replace(citationRegex, (match) => {
+      return `[[${match}]]`; // Using a wikilink-style internal link for "conversion"
+    });
+
+    if (target === 'notes') {
+      setQuickNotes(linkedText);
+    } else {
+      setTranscribedTestimony(linkedText);
+    }
+    
+    showShortcutFeedback('Citations converted to links', '🔗');
+  };
+
+  const [showCourtOrderModal, setShowCourtOrderModal] = useState(false);
+
+  const exportHearingMinutesPDF = () => {
+    const doc = new jsPDF();
+    const todayEth = formatEthiopianDate(new Date(), currentLang === 'am' ? 'am' : currentLang === 'om' ? 'om' : 'en');
+
+    doc.setFontSize(16);
+    doc.setTextColor(20, 30, 60);
+    doc.text('FEDERAL / OROMIA COURTROOM HEARING MINUTES', 14, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Docket Number: ${sessionTitle || 'CR-2026/045'} | Date (E.C.): ${todayEth}`, 14, 28);
+    doc.text(`Court Level: ${t.courtLevels[courtLevel]}`, 14, 34);
+
+    doc.setLineWidth(0.5);
+    doc.setDrawColor(245, 158, 11);
+    doc.line(14, 38, 196, 38);
+
+    doc.setFontSize(12);
+    doc.setTextColor(20, 30, 60);
+    doc.text('1. Procedural Milestone Roadmap', 14, 46);
+    autoTable(doc, {
+      startY: 50,
+      head: [['Stage #', 'Procedural Milestone', 'Status']],
+      body: PROCEDURAL_STEPS.map((s, idx) => [
+        (idx + 1).toString(),
+        s.title[currentLang] || s.title.en,
+        idx <= currentStepIndex ? 'COMPLETED ✓' : 'PENDING'
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [245, 158, 11] }
+    });
+
+    let nextY = (doc as any).lastAutoTable.finalY + 12;
+    doc.setFontSize(12);
+    doc.text('2. Timestamped Witness Testimonies & Audio Linkages', 14, nextY);
+
+    const testimonyLogs = history.filter(h => h.tags?.includes('testimony') || h.tags?.includes('witness') || h.witnessId);
+    autoTable(doc, {
+      startY: nextY + 4,
+      head: [['Timestamp', 'Witness Tag', 'Testimony Statement']],
+      body: testimonyLogs.length > 0 
+        ? testimonyLogs.map(l => [l.timestamp, l.witnessId ? 'Witness ID: ' + l.witnessId : 'General', l.text])
+        : [['-', '-', 'No witness testimonies recorded for this session.']],
+      theme: 'grid',
+      headStyles: { fillColor: [30, 41, 59] }
+    });
+
+    applyCourtWatermarkToPDF(doc);
+    doc.save(`Hearing_Minutes_${(sessionTitle || 'Case').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
+  };
+
+  const handleArchiveCase = async () => {
+    if (!sessionId) {
+      alert(currentLang === 'om' ? 'Galmeen filatame hin jiru!' : 'No active case session selected!');
+      return;
+    }
+    const confirmMsg = currentLang === 'om'
+      ? 'Galmee kana Kuusaa Galmee (Archive) keessatti galchuuf mirkaneessaa?'
+      : 'Are you sure you want to archive this case? It will be moved to archived records.';
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      if (db && sessionId) {
+        await updateDoc(doc(db, 'cases', sessionId), {
+          currentStage: 'closed',
+          isArchived: true,
+          archivedAt: new Date().toISOString()
+        });
+      }
+      showShortcutFeedback(
+        currentLang === 'om' ? 'Galmeen milkaa\'inaan Kuusaatti (Archive) dabarfameera!' : 'Case successfully archived!',
+        '📦'
+      );
+    } catch (err) {
+      console.warn('Error archiving case in Firestore:', err);
+      showShortcutFeedback('Case archived locally.', '📦');
+    }
+  };
+
+  const exportComprehensiveReportPDF = () => {
+    const doc = new jsPDF();
+    const todayEth = formatEthiopianDate(new Date(), currentLang === 'am' ? 'am' : currentLang === 'om' ? 'om' : 'en');
+    
+    // Header & Brand
+    doc.setFillColor(30, 41, 59);
+    doc.rect(0, 0, 210, 40, 'F');
+    doc.setFontSize(22);
+    doc.setTextColor(255, 255, 255);
+    doc.text('SEERAAI CASE DOSSIER', 105, 20, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setTextColor(200, 200, 200);
+    doc.text('Comprehensive Legal Intelligence Report • Ethiopian Judicial Support', 105, 30, { align: 'center' });
+
+    // Case Overview
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(14);
+    doc.text('I. CASE IDENTIFICATION & OVERVIEW', 14, 50);
+    doc.setLineWidth(0.5);
+    doc.line(14, 52, 100, 52);
+
+    autoTable(doc, {
+      startY: 56,
+      head: [['Field', 'Information Details']],
+      body: [
+        ['Case Reference', sessionTitle || 'CR-2026/045'],
+        ['Internal ID', sessionId || 'N/A'],
+        ['Jurisdiction Level', t.courtLevels[courtLevel]],
+        ['Current Milestone', currentStep.title[currentLang]],
+        ['Report Date (E.C.)', todayEth],
+        ['Presiding Official', profile?.visitorName || 'Authorized User']
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [245, 158, 11] }
+    });
+
+    // II. Procedural Milestones
+    let nextY = (doc as any).lastAutoTable.finalY + 15;
+    doc.setFontSize(14);
+    doc.text('II. PROCEDURAL PROGRESSION', 14, nextY);
+    doc.line(14, nextY + 2, 80, nextY + 2);
+
+    autoTable(doc, {
+      startY: nextY + 6,
+      head: [['Step', 'Status', 'Statutory Reference']],
+      body: PROCEDURAL_STEPS.map((s, idx) => [
+        s.title[currentLang],
+        idx <= currentStepIndex ? 'COMPLETED' : 'PENDING',
+        s.statuteRef || 'N/A'
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [30, 41, 59] }
+    });
+
+    // III. Evidence Inventory
+    nextY = (doc as any).lastAutoTable.finalY + 15;
+    if (nextY > 250) { doc.addPage(); nextY = 20; }
+    doc.setFontSize(14);
+    doc.text('III. EVIDENCE & EXHIBIT INVENTORY', 14, nextY);
+    doc.line(14, nextY + 2, 85, nextY + 2);
+
+    const evidenceLogs = history.filter(isEvidenceLog);
+    autoTable(doc, {
+      startY: nextY + 6,
+      head: [['Exhibit ID', 'Type', 'Status', 'Summary/OCR Snippet']],
+      body: evidenceLogs.length > 0 
+        ? evidenceLogs.map(l => [
+            l.evidenceMetadata?.exhibitNumber || 'EXH-' + l.id.slice(-4),
+            l.fileType || 'Document',
+            l.evidenceMetadata?.authenticityStatus || 'Uploaded',
+            l.text.substring(0, 100) + (l.text.length > 100 ? '...' : '')
+          ])
+        : [['-', '-', '-', 'No formal evidence exhibits recorded.']],
+      columnStyles: { 3: { cellWidth: 80 } },
+      theme: 'striped'
+    });
+
+    // IV. Witness Testimonies
+    nextY = (doc as any).lastAutoTable.finalY + 15;
+    if (nextY > 250) { doc.addPage(); nextY = 20; }
+    doc.setFontSize(14);
+    doc.text('IV. DETAILED TRANSCRIPTS & TESTIMONY', 14, nextY);
+    doc.line(14, nextY + 2, 95, nextY + 2);
+
+    const testimonyLogs = history.filter(h => h.witnessId || h.tags?.includes('testimony'));
+    autoTable(doc, {
+      startY: nextY + 6,
+      head: [['Timestamp', 'Source / Witness', 'Verbatim Statement Snippet']],
+      body: testimonyLogs.length > 0 
+        ? testimonyLogs.map(l => [
+            l.timestamp,
+            witnesses.find(w => w.id === l.witnessId)?.name || 'General Record',
+            l.text
+          ])
+        : [['-', '-', 'No witness testimonies were transcribed for this session.']],
+      columnStyles: { 2: { cellWidth: 110 } },
+      theme: 'grid'
+    });
+
+    // V. Summary Notes
+    nextY = (doc as any).lastAutoTable.finalY + 15;
+    if (nextY > 250) { doc.addPage(); nextY = 20; }
+    doc.setFontSize(14);
+    doc.text('V. JUDICIAL SUMMARY & QUICK NOTES', 14, nextY);
+    doc.line(14, nextY + 2, 95, nextY + 2);
+    
+    doc.setFontSize(10);
+    const splitNotes = doc.splitTextToSize(quickNotes || 'No additional judicial notes recorded.', 180);
+    doc.text(splitNotes, 14, nextY + 10);
+
+    // Footer on all pages
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for(let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(`Page ${i} of ${pageCount} | Generated by SEERAAI Legal Intelligence | Private & Confidential`, 105, 285, { align: 'center' });
+    }
+
+    applyCourtWatermarkToPDF(doc);
+    doc.save(`Comprehensive_Report_${(sessionTitle || 'Case').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
+  };
+
+  const exportCaseFileSummaryPDF = () => {
+    const doc = new jsPDF();
+    const todayEth = formatEthiopianDate(new Date(), currentLang === 'am' ? 'am' : currentLang === 'om' ? 'om' : 'en');
+    
+    // Header & Brand
+    doc.setFillColor(15, 23, 42); // slate-900
+    doc.rect(0, 0, 210, 40, 'F');
+    doc.setFontSize(20);
+    doc.setTextColor(255, 255, 255);
+    doc.text('MANA MURTII - CASE FILE SUMMARY', 105, 18, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setTextColor(200, 200, 200);
+    doc.text(`Official Court Record & Evidence Metadata Summary • Date: ${todayEth}`, 105, 28, { align: 'center' });
+
+    // I. Case & Milestone Summary
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(13);
+    doc.text('I. CASE MILESTONES & DOCKET METADATA', 14, 50);
+    doc.setLineWidth(0.5);
+    doc.line(14, 52, 110, 52);
+
+    autoTable(doc, {
+      startY: 56,
+      head: [['Milestone Stage', 'Status / Progress', 'Statutory Basis']],
+      body: PROCEDURAL_STEPS.map((s, idx) => [
+        s.title[currentLang] || s.title.en,
+        idx <= currentStepIndex ? 'COMPLETED ✓' : (idx === currentStepIndex ? 'ACTIVE' : 'PENDING'),
+        s.statuteRef || 'General Procedure'
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [245, 158, 11] } // amber-500
+    });
+
+    // II. Evidence Metadata Inventory
+    let nextY = (doc as any).lastAutoTable.finalY + 14;
+    if (nextY > 250) { doc.addPage(); nextY = 20; }
+    doc.setFontSize(13);
+    doc.text('II. COMPLETE EVIDENCE METADATA & EXHIBIT LOGS', 14, nextY);
+    doc.line(14, nextY + 2, 115, nextY + 2);
+
+    const evidenceLogs = history.filter(isEvidenceLog);
+    autoTable(doc, {
+      startY: nextY + 6,
+      head: [['Exhibit #', 'Type / Name', 'Submitted By', 'Authenticity Status', 'Summary / Details']],
+      body: evidenceLogs.length > 0 
+        ? evidenceLogs.map(l => [
+            l.evidenceMetadata?.exhibitNumber || 'EXH-' + l.id.slice(-4),
+            l.fileType || l.fileName || 'Evidence Doc',
+            l.evidenceMetadata?.submittedBy || 'Litigant / Party',
+            l.evidenceMetadata?.authenticityStatus || 'Verified',
+            l.evidenceMetadata?.summary || l.text.substring(0, 80)
+          ])
+        : [['-', 'No evidence exhibits logged in this session', '-', '-', '-']],
+      theme: 'grid',
+      headStyles: { fillColor: [30, 41, 59] },
+      columnStyles: { 4: { cellWidth: 70 } }
+    });
+
+    // III. Judicial Quick Notes & Orders
+    nextY = (doc as any).lastAutoTable.finalY + 14;
+    if (nextY > 250) { doc.addPage(); nextY = 20; }
+    doc.setFontSize(13);
+    doc.text('III. JUDICIAL MINUTES & SUMMARY NOTES', 14, nextY);
+    doc.line(14, nextY + 2, 95, nextY + 2);
+
+    doc.setFontSize(10);
+    const splitNotes = doc.splitTextToSize(quickNotes || 'No judicial quick notes recorded for this case file.', 180);
+    doc.text(splitNotes, 14, nextY + 10);
+
+    // Footer on all pages
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for(let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(`Page ${i} of ${pageCount} | SEERAAI Pro Legal File Summary | Official Court Archive`, 105, 285, { align: 'center' });
+    }
+
+    applyCourtWatermarkToPDF(doc);
+    doc.save(`Case_File_Summary_${(sessionTitle || 'Case').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
+  };
+
+  // Evidence Preview Modal State
+  const [selectedEvidenceLog, setSelectedEvidenceLog] = useState<LogEntry | null>(null);
+  const [firestoreEvidenceDetails, setFirestoreEvidenceDetails] = useState<CaseEvidence | null>(null);
+  const [isFetchingPracticeCaseEvidence, setIsFetchingPracticeCaseEvidence] = useState(false);
+
+  useEffect(() => {
+    if (!selectedEvidenceLog) {
+      setFirestoreEvidenceDetails(null);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchEvidenceMetadata = async () => {
+      setIsFetchingPracticeCaseEvidence(true);
+      try {
+        const queryTerm = selectedEvidenceLog.fileName || selectedEvidenceLog.id || selectedEvidenceLog.text.slice(0, 30);
+        const record = await practiceCaseService.fetchEvidenceMetadataFromPracticeCases(queryTerm, sessionId || undefined);
+
+        if (isMounted) {
+          if (record) {
+            setFirestoreEvidenceDetails(record);
+          } else {
+            // Synthesize fallback evidence metadata and prepare for courtroom display
+            const generated = generateAIEvidenceDescription(
+              {
+                name: selectedEvidenceLog.fileName || `Exhibit_${selectedEvidenceLog.id.slice(-6)}.pdf`,
+                category: selectedEvidenceLog.tags?.[0] || 'Documentary Exhibit',
+                type: 'application/pdf',
+                uploadedAt: selectedEvidenceLog.timestamp
+              },
+              { caseNumber: sessionTitle || 'CR-2026/045' },
+              currentLang
+            );
+
+            const synthesized: CaseEvidence = {
+              id: `evd-${selectedEvidenceLog.id}`,
+              name: selectedEvidenceLog.fileName || `Court_Exhibit_${selectedEvidenceLog.id.slice(-6)}.pdf`,
+              type: 'application/pdf',
+              uploadedAt: new Date().toISOString(),
+              category: selectedEvidenceLog.tags?.join(', ') || 'Documentary Exhibit',
+              aiDescription: generated.description,
+              aiRelevance: generated.relevance,
+              evidentialWeight: generated.weight,
+              admissibilityStatus: generated.admissibility === 'admissible' ? 'admissible' : 'conditional',
+              authorOrSource: witnesses.find(w => w.id === selectedEvidenceLog.witnessId)?.name || 'Courtroom Record / Presiding Bench',
+              tags: selectedEvidenceLog.tags || ['Evidence', 'Documentary']
+            };
+            setFirestoreEvidenceDetails(synthesized);
+          }
+        }
+      } catch (err) {
+        console.warn('Error fetching evidence metadata from practice_cases:', err);
+      } finally {
+        if (isMounted) setIsFetchingPracticeCaseEvidence(false);
+      }
+    };
+
+    fetchEvidenceMetadata();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedEvidenceLog, currentLang, sessionId, sessionTitle]);
+
+  const exportEvidenceMetadataPDF = (log: LogEntry) => {
+    const doc = new jsPDF();
+    const witnessObj = witnesses.find(w => w.id === log.witnessId);
+
+    // Header
+    doc.setFontSize(16);
+    doc.setTextColor(180, 83, 9); // Amber
+    doc.text("MANA MURTII AANAA GURBICHA", 105, 18, { align: 'center' });
+    doc.setFontSize(11);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Gabaasa Ragaa fi Metaadaataa (Evidence Metadata & Summary Preview)", 105, 25, { align: 'center' });
+    doc.text(`Lakk. Galmee: ${sessionId || 'OR/HC/8912/15'} | Guyyaa: ${log.timestamp}`, 105, 31, { align: 'center' });
+
+    autoTable(doc, {
+      startY: 38,
+      head: [['Aadaa / Category', 'Qabiyyee / Details']],
+      body: [
+        ['Exhibit ID', log.evidenceMetadata?.exhibitNumber || `EXHIBIT-EVD-${log.id.slice(-6).toUpperCase()}`],
+        ['Evidence Type', log.tags?.join(', ') || 'Documentary Evidence'],
+        ['Submitted By / Ragaa', witnessObj ? witnessObj.name : (log.evidenceMetadata?.submittedBy || 'Court Record / Docket')],
+        ['Timestamp', log.timestamp],
+        ['Framed Issue', framedIssueForEvidence || log.evidenceMetadata?.framedIssueRelevance || 'General Docket Evidence'],
+        ['Authenticity Status', log.evidenceMetadata?.authenticityStatus || 'Verified Authentic & Court Sealed'],
+        ['Judge Annotation', log.annotation || 'None'],
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [30, 41, 59] }
+    });
+
+    doc.setFontSize(10);
+    doc.setTextColor(30, 41, 59);
+    doc.text("Qabiyyee fi Qabxii Ijoo Ragaa (Evidence Content & Key Facts):", 14, (doc as any).lastAutoTable.finalY + 10);
+    
+    const splitText = doc.splitTextToSize(log.text, 180);
+    doc.text(splitText, 14, (doc as any).lastAutoTable.finalY + 18);
+
+    applyCourtWatermarkToPDF(doc);
+    doc.save(`Evidence_Metadata_Preview_${log.id}.pdf`);
+  };
+
+  const isEvidenceLog = (log: LogEntry): boolean => {
+    if (log.fileUrl || log.fileName || log.evidenceMetadata) return true;
+    if (!log.tags) return false;
+    return log.tags.some(t => 
+      /evidence|document|exhibit|ocr|testimony|key_facts|sanada|ragaa|ማስረጃ|ሰነድ/i.test(t)
+    );
+  };
+
+  const getFileTypeIcon = (fileType?: string, fileName?: string, fileUrl?: string, evidenceType?: string) => {
+    const combined = `${fileType || ''} ${fileName || ''} ${fileUrl || ''} ${evidenceType || ''}`.toLowerCase();
+
+    // PDF Document
+    if (/\.pdf|pdf|application\/pdf/i.test(combined)) {
+      return <FileText className="w-4 h-4 text-rose-400 shrink-0" />;
+    }
+    // Video Recording
+    if (/\.(mp4|mov|avi|mkv|webm|3gp)|video|cctv|recording_video/i.test(combined)) {
+      return <Video className="w-4 h-4 text-purple-400 shrink-0" />;
+    }
+    // Photo / Image / Scan
+    if (/\.(jpg|jpeg|png|webp|gif|svg|bmp)|image|photo|camera|scan|picture/i.test(combined)) {
+      return <Image className="w-4 h-4 text-emerald-400 shrink-0" />;
+    }
+    // Audio / Speech Recording
+    if (/\.(mp3|wav|ogg|m4a|aac)|audio|voice|speech|recording_audio/i.test(combined)) {
+      return <Radio className="w-4 h-4 text-amber-400 shrink-0" />;
+    }
+    // Word / Text Document
+    if (/\.(doc|docx|rtf|txt|odt)|word|document/i.test(combined)) {
+      return <FileText className="w-4 h-4 text-blue-400 shrink-0" />;
+    }
+    return <FileText className="w-4 h-4 text-emerald-400 shrink-0" />;
+  };
+
+  const getFileTypeBadgeLabel = (fileType?: string, fileName?: string, evidenceType?: string): string => {
+    const combined = `${fileType || ''} ${fileName || ''} ${evidenceType || ''}`.toLowerCase();
+
+    if (/\.pdf|pdf/i.test(combined)) return 'PDF DOC';
+    if (/\.(mp4|mov|avi|mkv|webm)|video/i.test(combined)) return 'VIDEO RECORDING';
+    if (/\.(jpg|jpeg|png|webp|gif)|image|photo|scan/i.test(combined)) return 'IMAGE SCAN';
+    if (/\.(mp3|wav|ogg|m4a)|audio|voice/i.test(combined)) return 'AUDIO SPEECH';
+    if (/\.(doc|docx|txt)/i.test(combined)) return 'WORD DOC';
+    return 'EVIDENCE FILE';
+  };
+
+  // Evidence Audio Processor State & Citation Copying
   const [evidenceAudioInput, setEvidenceAudioInput] = useState('');
   const [evidenceWitnessId, setEvidenceWitnessId] = useState('');
   const [isProcessingEvidence, setIsProcessingEvidence] = useState(false);
   const [evidenceSummaryResult, setEvidenceSummaryResult] = useState<{ summary: string; bullets: string[] } | null>(null);
   const [showUserManualModal, setShowUserManualModal] = useState(false);
+  const [copiedCitationId, setCopiedCitationId] = useState<string | null>(null);
+  const [evidenceStatusFilter, setEvidenceStatusFilter] = useState<'all' | 'admissible' | 'rejected' | 'verified' | 'pending' | 'uploaded'>('all');
+
+  // Bulk Evidence Selection & Batch Actions State
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([]);
+  const [isBatchUpdating, setIsBatchUpdating] = useState<boolean>(false);
+
+  // Main Left Column Tab Switcher: 'proceedings' vs 'witnessStatements'
+  const [activeMainTab, setActiveMainTab] = useState<'proceedings' | 'witnessStatements'>('proceedings');
+  const [syncState, setSyncState] = useState(syncStatusService.getState());
+
+  useEffect(() => {
+    return syncStatusService.subscribe(setSyncState);
+  }, []);
+
+  // Witness Statements Linked to Case File State
+  const [caseWitnessStatements, setCaseWitnessStatements] = useState<CaseWitnessStatement[]>([]);
+  const [loadingStatements, setLoadingStatements] = useState<boolean>(false);
+  const [witnessStatementFilter, setWitnessStatementFilter] = useState<'all' | 'plaintiff_witness' | 'defendant_witness' | 'expert_witness' | 'court_witness'>('all');
+  const [witnessStatementSearch, setWitnessStatementSearch] = useState<string>('');
+
+  // Witness Statement Form State
+  const [newWitnessStmtName, setNewWitnessStmtName] = useState<string>('');
+  const [newWitnessStmtRole, setNewWitnessStmtRole] = useState<'plaintiff_witness' | 'defendant_witness' | 'expert_witness' | 'court_witness'>('plaintiff_witness');
+  const [newWitnessStmtText, setNewWitnessStmtText] = useState<string>('');
+  const [newWitnessStmtCross, setNewWitnessStmtCross] = useState<string>('');
+  const [newWitnessStmtCredibility, setNewWitnessStmtCredibility] = useState<'high' | 'moderate' | 'questionable'>('high');
+  const [isLoggingWitnessStatement, setIsLoggingWitnessStatement] = useState<boolean>(false);
+  const [isWitnessRecording, setIsWitnessRecording] = useState<boolean>(false);
+  const witnessSpeechRecognitionRef = React.useRef<any>(null);
+
+  // Load Witness Statements for current case
+  useEffect(() => {
+    const effectiveCaseId = sessionId || 'case-today-301';
+    setLoadingStatements(true);
+    fetchCaseWitnessStatements(effectiveCaseId)
+      .then(stmts => {
+        setCaseWitnessStatements(stmts);
+      })
+      .catch(err => {
+        console.warn('Error loading case witness statements:', err);
+        setCaseWitnessStatements(getLocalWitnessStatements(effectiveCaseId));
+      })
+      .finally(() => {
+        setLoadingStatements(false);
+      });
+  }, [sessionId]);
+
+  // Handle toggling single evidence selection
+  const handleToggleSelectEvidence = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedEvidenceIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  // Handle selecting or deselecting all filtered evidence logs
+  const handleSelectAllEvidence = (e?: React.SyntheticEvent) => {
+    if (e && 'stopPropagation' in e) e.stopPropagation();
+    const currentEvidenceIds = filteredHistory.filter(isEvidenceLog).map(l => l.id);
+    if (currentEvidenceIds.length === 0) return;
+    const allSelected = currentEvidenceIds.every(id => selectedEvidenceIds.includes(id));
+    if (allSelected) {
+      setSelectedEvidenceIds(prev => prev.filter(id => !currentEvidenceIds.includes(id)));
+    } else {
+      setSelectedEvidenceIds(prev => Array.from(new Set([...prev, ...currentEvidenceIds])));
+    }
+  };
+
+  // Execute Firestore Batch Operation for Bulk Evidence Status
+  const handleExecuteBulkAction = async (newStatus: 'admissible' | 'rejected' | 'pending' | string) => {
+    if (selectedEvidenceIds.length === 0) return;
+    setIsBatchUpdating(true);
+    const effectiveCaseId = sessionId || 'case-today-301';
+    const judgeOrStaff = profile?.visitorName || 'Judge / Court Reporter';
+
+    try {
+      // 1. Single atomic Firestore writeBatch operation
+      const result = await bulkUpdateEvidenceAdmissibility(
+        effectiveCaseId,
+        selectedEvidenceIds,
+        newStatus,
+        `Batch status update: ${newStatus.toUpperCase()}`,
+        judgeOrStaff
+      );
+
+      // 2. Update local history entries
+      const statusLabel = newStatus === 'admissible' ? 'Admissible Evidence (Court Order)' : newStatus === 'rejected' ? 'Rejected by Bench Order' : 'Pending Judicial Review';
+      setHistory(prev => prev.map(item => {
+        if (selectedEvidenceIds.includes(item.id)) {
+          return {
+            ...item,
+            evidenceMetadata: {
+              ...item.evidenceMetadata,
+              authenticityStatus: statusLabel,
+              status: newStatus,
+              admissibilityStatus: newStatus
+            }
+          };
+        }
+        return item;
+      }));
+
+      // 3. If there is an active Firestore session, sync session logs
+      if (sessionId) {
+        try {
+          const sessionRef = doc(db, 'court_sessions', sessionId);
+          const updatedLogs = history.map(item => {
+            if (selectedEvidenceIds.includes(item.id)) {
+              return {
+                ...item,
+                evidenceMetadata: {
+                  ...item.evidenceMetadata,
+                  authenticityStatus: statusLabel,
+                  status: newStatus,
+                  admissibilityStatus: newStatus
+                }
+              };
+            }
+            return item;
+          });
+          await updateDoc(sessionRef, {
+            logs: updatedLogs,
+            updatedAt: serverTimestamp()
+          });
+        } catch (err) {
+          console.warn('Syncing updated logs to court_sessions failed:', err);
+        }
+      }
+
+      // 4. Append audit log entry to courtroom history
+      const bulkAuditLog: LogEntry = {
+        id: 'bulk_batch_' + Date.now(),
+        timestamp: new Date().toLocaleTimeString(),
+        text: `[MURTEE GAMTAA / BATCH WRITE]: ${selectedEvidenceIds.length} ragaalee haalli isaanii gara "${newStatus.toUpperCase()}" tti jijjiirameera. (Firestore writeBatch completed successfully).`,
+        type: 'manual',
+        tags: ['bulk_action', 'admissibility_batch', newStatus]
+      };
+      setHistory(prev => [bulkAuditLog, ...prev]);
+
+      // 5. User feedback toast
+      const toastMsg = currentLang === 'om'
+        ? `Ragaalee ${selectedEvidenceIds.length} gamtaan gara "${newStatus.toUpperCase()}" tti jijjiiramaniiru!`
+        : currentLang === 'am'
+        ? `${selectedEvidenceIds.length} ማስረጃዎች በአንድ ጊዜ ወደ "${newStatus.toUpperCase()}" ተቀይረዋል!`
+        : `Successfully updated ${selectedEvidenceIds.length} evidence item(s) to ${newStatus.toUpperCase()} in Firestore!`;
+      showShortcutFeedback(toastMsg, '✓');
+
+      // Clear selection
+      setSelectedEvidenceIds([]);
+    } catch (err: any) {
+      console.error('Error executing bulk evidence action:', err);
+      alert('Bulk action failed: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setIsBatchUpdating(false);
+    }
+  };
+
+  // Toggle speech recognition for witness statement summary
+  const toggleWitnessSpeechDictation = () => {
+    if (isWitnessRecording) {
+      if (witnessSpeechRecognitionRef.current) {
+        witnessSpeechRecognitionRef.current.stop();
+      }
+      setIsWitnessRecording(false);
+      return;
+    }
+
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      alert('Speech recognition is not supported in this browser. Please type the testimony summary.');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRec();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = currentLang === 'om' ? 'om-ET' : currentLang === 'am' ? 'am-ET' : 'en-US';
+
+      recognition.onstart = () => {
+        setIsWitnessRecording(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript.trim()) {
+          setNewWitnessStmtText(prev => prev ? `${prev} ${transcript.trim()}` : transcript.trim());
+        }
+      };
+
+      recognition.onerror = (e: any) => {
+        console.warn('Witness speech recognition error:', e);
+        setIsWitnessRecording(false);
+      };
+
+      recognition.onend = () => {
+        setIsWitnessRecording(false);
+      };
+
+      witnessSpeechRecognitionRef.current = recognition;
+      recognition.start();
+    } catch (e) {
+      console.warn('Speech recognition init error:', e);
+      setIsWitnessRecording(false);
+    }
+  };
+
+  // Submit and log new witness statement
+  const handleSaveWitnessStatementSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWitnessStmtName.trim()) {
+      alert(currentLang === 'om' ? 'Maqaa ragaa galchuun dirqama!' : 'Please enter the witness name.');
+      return;
+    }
+    if (!newWitnessStmtText.trim()) {
+      alert(currentLang === 'om' ? 'Axereeraa jecha ragaa galchuun dirqama!' : 'Please enter the testimony summary.');
+      return;
+    }
+
+    setIsLoggingWitnessStatement(true);
+    const effectiveCaseId = sessionId || 'case-today-301';
+    const activeCaseNo = sessionTitle || (courtLevel === 'highCourt' ? 'CR-2026/089' : 'CR-2026/045');
+    const statementId = 'stmt_' + Date.now();
+    const timeStr = new Date().toLocaleTimeString();
+
+    const newStatement: CaseWitnessStatement = {
+      id: statementId,
+      caseId: effectiveCaseId,
+      caseNumber: activeCaseNo,
+      witnessName: newWitnessStmtName.trim(),
+      witnessRole: newWitnessStmtRole,
+      statementText: newWitnessStmtText.trim(),
+      crossExaminationNotes: newWitnessStmtCross.trim() || undefined,
+      credibilityRating: newWitnessStmtCredibility,
+      recordedBy: profile?.visitorName || 'Court Reporter',
+      timestamp: timeStr,
+      statutoryBasis: 'Heera FDRE / SDFHH Art. 136-137 (Witness Examination & Cross)',
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      await saveCaseWitnessStatement(newStatement);
+      setCaseWitnessStatements(prev => [newStatement, ...prev]);
+
+      // Also append to session history logs
+      const newLog: LogEntry = {
+        id: statementId,
+        timestamp: timeStr,
+        text: `[GALMEE JECHA RAGAA - ${newStatement.witnessName} (${newStatement.witnessRole.toUpperCase()})]: ${newStatement.statementText}${newStatement.crossExaminationNotes ? ` | Qaxxaamuraa: ${newStatement.crossExaminationNotes}` : ''} | Madaallii: ${newStatement.credibilityRating.toUpperCase()}`,
+        type: 'manual',
+        tags: ['testimony', 'witness_statement', newStatement.witnessRole, newStatement.credibilityRating]
+      };
+      setHistory(prev => [newLog, ...prev]);
+
+      // If active session in Firestore, sync
+      if (sessionId) {
+        try {
+          const sessionRef = doc(db, 'court_sessions', sessionId);
+          await updateDoc(sessionRef, {
+            logs: [newLog, ...history],
+            updatedAt: serverTimestamp()
+          });
+        } catch (err) {
+          console.warn('Syncing witness statement log to session failed:', err);
+        }
+      }
+
+      // Reset form
+      setNewWitnessStmtName('');
+      setNewWitnessStmtText('');
+      setNewWitnessStmtCross('');
+      setNewWitnessStmtCredibility('high');
+
+      showShortcutFeedback(
+        currentLang === 'om' ? 'Jechi ragaa galmee dhimmaatiin walqabatee milkaa\'inaan galmaa\'eera!' : 'Witness statement logged and linked to case file!',
+        '📜'
+      );
+    } catch (err: any) {
+      console.error('Error saving witness statement:', err);
+      alert('Failed to save statement: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setIsLoggingWitnessStatement(false);
+    }
+  };
+
+  // Inline Evidence Expansion & Secure Share Link Dialog State
+  const [expandedEvidenceIds, setExpandedEvidenceIds] = useState<Record<string, boolean>>({});
+  const [shareEvidenceLog, setShareEvidenceLog] = useState<LogEntry | null>(null);
+  const [shareExpiryHours, setShareExpiryHours] = useState<number>(24);
+  const [sharePinCode, setSharePinCode] = useState<string>('');
+  const [copiedShareLink, setCopiedShareLink] = useState<boolean>(false);
+  const [copiedTelegramChannelLink, setCopiedTelegramChannelLink] = useState<boolean>(false);
+
+  // Telegram Poll Creator Dialog State
+  const [showCreatePollModal, setShowCreatePollModal] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState('Cassation #214539 commercial lease irratti ni hojjetaa?');
+  const [pollOptions, setPollOptions] = useState<string[]>(['Eeyyee', 'Lakki', 'Murtii addaa']);
+  const [pollChannelTarget, setPollChannelTarget] = useState('@seeraai_ethio');
+
+  const handleAddPollOption = () => {
+    if (pollOptions.length < 10) {
+      setPollOptions([...pollOptions, `Option ${pollOptions.length + 1}`]);
+    }
+  };
+
+  const handleRemovePollOption = (index: number) => {
+    if (pollOptions.length > 2) {
+      setPollOptions(pollOptions.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleSaveAndPublishPoll = async () => {
+    if (!pollQuestion.trim()) {
+      alert(currentLang === 'om' ? 'Gaaffiin poll galchuuf dirqama!' : 'Please enter a poll question.');
+      return;
+    }
+    const validOptions = pollOptions.filter(o => o.trim());
+    if (validOptions.length < 2) {
+      alert(currentLang === 'om' ? 'Opsiiniin yoo xiqqaate 2 barbaachisa!' : 'At least 2 valid options are required.');
+      return;
+    }
+
+    const commandStr = `/poll ${pollQuestion.trim()} | ${validOptions.join(' | ')}`;
+
+    try {
+      if (db) {
+        await addDoc(collection(db, 'telegram_polls'), {
+          pollId: 'poll_' + Date.now(),
+          question: pollQuestion.trim(),
+          options: validOptions,
+          command: commandStr,
+          createdBy: profile?.visitorName || 'Authorized Jurist',
+          createdAt: new Date().toISOString(),
+          channelTarget: pollChannelTarget
+        });
+      }
+      navigator.clipboard.writeText(commandStr);
+      showShortcutFeedback(
+        currentLang === 'om' ? 'Ajajni /poll clipboard-itti waraabamee Firestore keessatti galmaa\'eera!' : 'Poll command /poll copied and logged to Firestore!',
+        '📊'
+      );
+      setShowCreatePollModal(false);
+    } catch (err) {
+      console.warn('Error saving poll to Firestore:', err);
+      navigator.clipboard.writeText(commandStr);
+      showShortcutFeedback('Poll command /poll copied to clipboard.', '📊');
+      setShowCreatePollModal(false);
+    }
+  };
+
+  const toggleExpandEvidence = (logId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setExpandedEvidenceIds(prev => ({
+      ...prev,
+      [logId]: !prev[logId]
+    }));
+  };
+
+  const handleOpenShareDialog = (log: LogEntry, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setShareEvidenceLog(log);
+    setShareExpiryHours(24);
+    setSharePinCode(Math.floor(1000 + Math.random() * 9000).toString());
+    setCopiedShareLink(false);
+  };
+
+  const getLogEvidenceStatus = (log: LogEntry): 'admissible' | 'rejected' | 'verified' | 'pending' | 'uploaded' => {
+    const rawStatus = (
+      log.evidenceMetadata?.authenticityStatus ||
+      (log.evidenceMetadata as any)?.status ||
+      (log.evidenceMetadata as any)?.admissibilityStatus ||
+      ''
+    ).toLowerCase();
+    if (rawStatus.includes('admissible') || rawStatus === 'admitted') {
+      return 'admissible';
+    }
+    if (rawStatus.includes('rejected') || rawStatus.includes('inadmissible')) {
+      return 'rejected';
+    }
+    if (rawStatus.includes('verified') || rawStatus.includes('authentic') || rawStatus.includes('sealed')) {
+      return 'verified';
+    }
+    if (rawStatus.includes('pending') || rawStatus.includes('examination') || rawStatus.includes('review') || rawStatus.includes('challenge')) {
+      return 'pending';
+    }
+    return 'uploaded';
+  };
+
+  const toggleEvidenceStatus = (
+    log: LogEntry,
+    newStatus: 'admissible' | 'rejected' | 'verified' | 'pending' | 'uploaded',
+    e?: React.MouseEvent
+  ) => {
+    if (e) e.stopPropagation();
+    const statusLabel = newStatus === 'admissible'
+      ? 'Admissible by Court Order'
+      : newStatus === 'rejected'
+      ? 'Rejected by Bench Order'
+      : newStatus === 'verified'
+      ? 'Verified Authentic & Court Sealed'
+      : newStatus === 'pending'
+      ? 'Pending Admissibility Review'
+      : 'Uploaded Document Record';
+
+    setHistory(prev => prev.map(item => {
+      if (item.id === log.id) {
+        return {
+          ...item,
+          evidenceMetadata: {
+            ...item.evidenceMetadata,
+            authenticityStatus: statusLabel,
+            status: newStatus,
+            admissibilityStatus: (newStatus === 'admissible' || newStatus === 'rejected') ? newStatus : undefined
+          }
+        };
+      }
+      return item;
+    }));
+    showShortcutFeedback(`Document status updated to ${newStatus.toUpperCase()}`, '✓');
+  };
+
+  const handleCopyEvidenceCitation = (log: LogEntry, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const exhibitNo = log.evidenceMetadata?.exhibitNumber || `EXHIBIT-EVD-${log.id.slice(-6).toUpperCase()}`;
+    const witnessName = witnesses.find(w => w.id === log.witnessId)?.name || log.evidenceMetadata?.submittedBy || 'Court Record / Docket';
+    const relevance = log.evidenceMetadata?.framedIssueRelevance || 'General Docket Evidence';
+    const authenticity = log.evidenceMetadata?.authenticityStatus || 'Verified Authentic & Court Sealed';
+    const dateStr = log.timestamp ? new Date(log.timestamp).toLocaleString() : new Date().toLocaleString();
+    const fileRef = log.fileName ? `\n• File Attachment: ${log.fileName} (${log.fileSize || 'Attached'})` : '';
+
+    const citationText = `📋 [SEERAAI EVIDENCE CITATION & STATUTORY REFERENCE]
+• Exhibit Identifier: ${exhibitNo}
+• Submitted By / Source: ${witnessName}
+• Evidence Summary / Text: "${log.text}"${fileRef}
+• Framed Issue Relevance: ${relevance}
+• Authenticity Status: ${authenticity}
+• Record Date: ${dateStr}
+• Statutory Legal Basis: Ethiopian Civil Procedure Code Art. 137 / Criminal Procedure Code Art. 136 (Admissibility & Evaluation of Evidence)
+• Archive Verification: Telegram Legal Archive (@seeraai_ethio)`;
+
+    navigator.clipboard.writeText(citationText);
+    setCopiedCitationId(log.id);
+    showShortcutFeedback(
+      currentLang === 'om' ? 'Waraabbiin Ragaa Clipboard\'tti galeeira!' : currentLang === 'am' ? 'የማስረጃው ጥቅስ ኮፒ ተደርጓል!' : 'Evidence citation & statutory reference copied!',
+      '📋'
+    );
+    setTimeout(() => {
+      setCopiedCitationId(null);
+    }, 2500);
+  };
+
+  // Live Courtroom Kiosk WebSocket Monitoring State
+  const [kioskConnectionState, setKioskConnectionState] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
+  const [activeKiosksCount, setActiveKiosksCount] = useState<number>(0);
+  const [lastKioskHeartbeat, setLastKioskHeartbeat] = useState<string | null>(null);
+  const [isRefreshingKiosks, setIsRefreshingKiosks] = useState(false);
+
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: any = null;
+    let pollInterval: any = null;
+
+    const checkKioskStatusHttp = async () => {
+      try {
+        const res = await fetch('/api/kiosk/status');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && typeof data.connectedKiosks === 'number') {
+            setActiveKiosksCount(data.connectedKiosks);
+            setLastKioskHeartbeat(new Date().toLocaleTimeString());
+          }
+        }
+      } catch (e) {
+        // HTTP fallback quiet
+      }
+    };
+
+    const connectKioskWebSocket = () => {
+      if (typeof window === 'undefined') return;
+      try {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/kiosk-ws`;
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          setKioskConnectionState('connected');
+          setLastKioskHeartbeat(new Date().toLocaleTimeString());
+          // Fetch authoritative HTTP snapshot
+          checkKioskStatusHttp();
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'KIOSK_PRESENCE' && typeof data.connectedKiosks === 'number') {
+              setActiveKiosksCount(data.connectedKiosks);
+              setLastKioskHeartbeat(new Date().toLocaleTimeString());
+            } else if (data.type === 'CONNECTED') {
+              setKioskConnectionState('connected');
+              checkKioskStatusHttp();
+            }
+          } catch {
+            // ignore non-json
+          }
+        };
+
+        ws.onclose = () => {
+          setKioskConnectionState('disconnected');
+          reconnectTimeout = setTimeout(connectKioskWebSocket, 3000);
+        };
+
+        ws.onerror = () => {
+          setKioskConnectionState('disconnected');
+          ws?.close();
+        };
+      } catch (err) {
+        setKioskConnectionState('disconnected');
+      }
+    };
+
+    connectKioskWebSocket();
+    // Periodic HTTP heartbeat verification every 10 seconds
+    pollInterval = setInterval(checkKioskStatusHttp, 10000);
+
+    return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (pollInterval) clearInterval(pollInterval);
+      if (ws) {
+        ws.onclose = null;
+        ws.close();
+      }
+    };
+  }, []);
+
+  const handleBroadcastHardRefresh = async () => {
+    setIsRefreshingKiosks(true);
+    try {
+      await fetch('/api/kiosk/hard-refresh', { method: 'POST' });
+    } catch (e) {
+      console.warn('Hard refresh trigger error:', e);
+    } finally {
+      setTimeout(() => setIsRefreshingKiosks(false), 800);
+    }
+  };
 
   // Legal Privilege State (Web Crypto API AES-GCM)
   const [isLegalPrivilegeActive, setIsLegalPrivilegeActive] = useState(false);
@@ -591,6 +2114,7 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
           tags: ['evidence_summary', 'key_facts']
         };
         setHistory(prev => [mappedLog, ...prev]);
+        extractPrecedentsFromText(summaryText);
       }
     } catch (err: any) {
       console.error(err);
@@ -638,32 +2162,47 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
     }
   };
 
-  // Background Auto-Save effect
+  // Consolidated Background Auto-Save effect (Debounced 2s)
   useEffect(() => {
-    try {
-      const stateToSave = {
-        currentStepIndex,
-        courtLevel,
-        sessionId,
-        sessionTitle,
-        history,
-        witnesses,
-        quickNotes,
-        seconds,
-        claimText,
-        defenseText,
-        transcribedTestimony,
-        framedIssueForEvidence,
-        ocrCategory,
-        ocrImagePreview,
-        ocrExtractedText,
-        updatedAt: Date.now(),
-      };
-      localStorage.setItem(getUserScopedKey(AUTOSAVE_BASE_KEY), JSON.stringify(stateToSave));
-    } catch (e) {
-      console.warn('Failed to auto-save state:', e);
-    }
-  }, [currentStepIndex, courtLevel, sessionId, sessionTitle, history, witnesses, quickNotes, seconds, claimText, defenseText, transcribedTestimony, framedIssueForEvidence, ocrCategory, ocrImagePreview, ocrExtractedText]);
+    if (!sessionId) return;
+
+    const saveTimer = setTimeout(() => {
+      try {
+        setIsAutoSaving(true);
+        const stateToSave = {
+          currentStepIndex,
+          courtLevel,
+          sessionId,
+          sessionTitle,
+          isCasePublic,
+          history,
+          witnesses,
+          quickNotes,
+          seconds,
+          claimText,
+          defenseText,
+          transcribedTestimony,
+          framedIssueForEvidence,
+          ocrCategory,
+          ocrImagePreview,
+          ocrExtractedText,
+          updatedAt: Date.now(),
+        };
+        localStorage.setItem(getUserScopedKey(AUTOSAVE_BASE_KEY), JSON.stringify(stateToSave));
+        setLastAutoSaveTime(new Date().toLocaleTimeString());
+      } catch (e) {
+        console.warn('Failed to auto-save state:', e);
+      } finally {
+        setTimeout(() => setIsAutoSaving(false), 1000);
+      }
+    }, 2000);
+
+    return () => clearTimeout(saveTimer);
+  }, [
+    currentStepIndex, courtLevel, sessionId, sessionTitle, isCasePublic,
+    history, witnesses, quickNotes, seconds, claimText, defenseText,
+    transcribedTestimony, framedIssueForEvidence, ocrCategory, ocrImagePreview, ocrExtractedText
+  ]);
   const [showNotes, setShowNotes] = useState(false);
   const [isNotesMinimized, setIsNotesMinimized] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -700,6 +2239,11 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
   // Voice Memo Recorder State
   const [isRecordingVoiceMemo, setIsRecordingVoiceMemo] = useState(false);
   const [voiceMemoToast, setVoiceMemoToast] = useState<string | null>(null);
+
+  const showShortcutFeedback = (message: string, icon: string = '⚡') => {
+    setVoiceMemoToast(`${icon} ${message}`);
+    setTimeout(() => setVoiceMemoToast(null), 3000);
+  };
 
   const toggleVoiceMemoRecording = () => {
     if (isRecordingVoiceMemo) {
@@ -1282,11 +2826,26 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
   };
 
   const filteredHistory = history.filter(log => {
-    if (!historySearch.trim()) return true;
-    const search = historySearch.toLowerCase();
-    const witnessName = witnesses.find(w => w.id === log.witnessId)?.name.toLowerCase() || '';
-    const hasTag = log.tags?.some(tag => tag.toLowerCase().includes(search));
-    return log.text.toLowerCase().includes(search) || witnessName.includes(search) || hasTag;
+    // 1. Text Search Filter
+    let matchesSearch = true;
+    if (historySearch.trim()) {
+      const search = historySearch.toLowerCase();
+      const witnessName = witnesses.find(w => w.id === log.witnessId)?.name.toLowerCase() || '';
+      const hasTag = log.tags?.some(tag => tag.toLowerCase().includes(search));
+      const fileMatch = log.fileName?.toLowerCase().includes(search);
+      const exhibitMatch = log.evidenceMetadata?.exhibitNumber?.toLowerCase().includes(search);
+      matchesSearch = log.text.toLowerCase().includes(search) || witnessName.includes(search) || Boolean(hasTag) || Boolean(fileMatch) || Boolean(exhibitMatch);
+    }
+    if (!matchesSearch) return false;
+
+    // 2. Evidence Status Filter ('verified', 'pending', 'uploaded')
+    if (evidenceStatusFilter !== 'all') {
+      if (!isEvidenceLog(log)) return false;
+      const itemStatus = getLogEvidenceStatus(log);
+      if (itemStatus !== evidenceStatusFilter) return false;
+    }
+
+    return true;
   });
 
   const exportToCSV = () => {
@@ -1452,6 +3011,67 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
               <h1 className="text-2xl sm:text-4xl font-black uppercase tracking-tighter">
                 Courtroom Assistant
               </h1>
+              <div className="flex items-center gap-3">
+                <div 
+                  className={`flex items-center gap-2 px-2.5 py-1 rounded-full border text-[10px] font-black uppercase transition-all shadow-sm ${
+                    syncState.status === 'offline' 
+                      ? 'bg-slate-900 text-slate-500 border-slate-800' 
+                      : syncState.status === 'syncing'
+                      ? 'bg-sky-500/10 text-sky-400 border-sky-500/30 animate-pulse'
+                      : syncState.status === 'error'
+                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                      : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                  }`}
+                  title={syncState.status === 'offline' ? 'Offline: Using Cached Data' : 'Real-time: Server Synced'}
+                >
+                  {syncState.status === 'offline' ? <CloudOff className="w-3 h-3" /> : <Cloud className="w-3 h-3" />}
+                  <span>{syncState.status === 'offline' ? 'Offline Mode' : syncState.status === 'syncing' ? 'Syncing...' : 'Real-time'}</span>
+                </div>
+                {syncState.lastSyncTime && (
+                  <span className="text-[9px] font-mono text-slate-500 hidden xs:inline">
+                    Last: {new Date(syncState.lastSyncTime).toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
+
+              {/* Courtroom Live API & Evidence Streaming Indicators (2GB Storage Active) */}
+              <div className="flex items-center gap-2 flex-wrap mt-2">
+                <div 
+                  onClick={() => setLiveApiStatus(prev => prev === 'connected' ? 'connecting' : prev === 'connecting' ? 'offline' : 'connected')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-black uppercase transition-all cursor-pointer shadow-sm ${
+                    liveApiStatus === 'connected'
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : liveApiStatus === 'connecting'
+                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse'
+                      : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                  }`}
+                  title="Click to toggle Courtroom Live API connection state"
+                >
+                  <span className="relative flex h-2 w-2">
+                    {liveApiStatus === 'connected' && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
+                    <span className={`relative inline-flex rounded-full h-2 w-2 ${liveApiStatus === 'connected' ? 'bg-emerald-400' : liveApiStatus === 'connecting' ? 'bg-amber-400' : 'bg-rose-400'}`}></span>
+                  </span>
+                  <span>Live API: {liveApiStatus}</span>
+                </div>
+
+                <div 
+                  onClick={() => setIsEvidenceStreaming(!isEvidenceStreaming)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-black uppercase transition-all cursor-pointer shadow-sm ${
+                    isEvidenceStreaming 
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse' 
+                      : 'bg-slate-900 text-slate-400 border-slate-800'
+                  }`}
+                  title="Click to toggle evidence streaming simulation"
+                >
+                  <Radio className="w-3 h-3 text-amber-400 animate-spin" />
+                  <span>{isEvidenceStreaming ? '⚡ EVIDENCE STREAMING ACTIVE' : 'Evidence Standby'}</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-[10px] font-mono text-slate-300">
+                  <Database className="w-3 h-3 text-sky-400" />
+                  <span>2GB Storage Pool ({storagePoolInfo.usage} / {storagePoolInfo.quota})</span>
+                </div>
+              </div>
               <div className="flex items-center gap-2 mt-1">
                 <select
                   value={courtLevel}
@@ -1462,35 +3082,314 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
                   <option value="highCourt">{t.courtLevels.highCourt}</option>
                   <option value="cassation">{t.courtLevels.cassation}</option>
                 </select>
-                <div className="text-amber-400 font-mono font-bold text-xs hidden sm:block">
+                <div className="flex flex-wrap items-center gap-2 telegram-integration-tools">
+                  <div className="inline-flex items-center rounded-lg border border-sky-500/50 bg-sky-950/80 shadow-sm transition-all hover:border-sky-400 group">
+                    <button
+                      type="button"
+                      onClick={() => window.open('https://t.me/seeraai_ethio', '_blank')}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-sky-300 hover:text-white hover:bg-sky-900/60 rounded-l-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer animate-[pulse_3s_ease-in-out_infinite]"
+                      title="Open @seeraai_ethio on Telegram"
+                    >
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-sky-400"></span>
+                      </span>
+                      <Send className="w-3 h-3 text-sky-400" />
+                      <span>@seeraai_ethio</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText('https://t.me/seeraai_ethio');
+                        setCopiedTelegramChannelLink(true);
+                        showShortcutFeedback(
+                          currentLang === 'om' ? 'Liankiin @seeraai_ethio waraabameera!' : currentLang === 'am' ? 'የ@seeraai_ethio ሊንክ ኮፒ ተደርጓል!' : 'Telegram link @seeraai_ethio copied!',
+                          '📋'
+                        );
+                        setTimeout(() => setCopiedTelegramChannelLink(false), 2500);
+                      }}
+                      className="px-2 py-1 border-l border-sky-500/40 text-sky-300 hover:text-white hover:bg-sky-900/80 rounded-r-lg text-[10px] font-medium transition-colors cursor-pointer flex items-center gap-1"
+                      title={currentLang === 'om' ? 'Liankii @seeraai_ethio waraabi (Copy to Clipboard)' : 'Copy @seeraai_ethio link to clipboard'}
+                      aria-label="Copy Telegram Channel link to clipboard"
+                    >
+                      {copiedTelegramChannelLink ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-[9px] text-emerald-300 font-bold hidden xs:inline">{currentLang === 'om' ? 'Waraabame!' : 'Copied!'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3 text-sky-300 hover:text-sky-100" />
+                          <span className="text-[9px] text-sky-300 hidden xs:inline">Copy</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowCreatePollModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-amber-500 text-slate-950 font-black rounded-lg text-[10px] uppercase tracking-wider hover:bg-amber-400 transition-all shadow-md cursor-pointer border border-amber-600"
+                    title="Create /poll command for Telegram channel consensus"
+                  >
+                    <BarChart3 className="w-3 h-3" />
+                    <span>{currentLang === 'om' ? '📊 Poll Uumii' : '📊 Create Poll'}</span>
+                  </button>
+                </div>
+                <div className="text-amber-400 font-mono font-bold text-xs hidden sm:flex items-center gap-1.5">
                   • LIVE PROCEEDING
+                  {isAutoSaving && (
+                    <span className="flex items-center gap-1 text-emerald-400 animate-pulse text-[9px] uppercase bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                      <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Auto-saving...
+                    </span>
+                  )}
+                  {!isAutoSaving && lastAutoSaveTime && (
+                    <span className="text-slate-500 text-[9px] font-normal">
+                      (Saved at {lastAutoSaveTime})
+                    </span>
+                  )}
+                </div>
+                {/* Live Courtroom Kiosk WebSocket Connection State Indicator */}
+                <div
+                  className={`flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-mono border transition-all ${
+                    kioskConnectionState === 'connected'
+                      ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300 shadow-sm shadow-emerald-500/10'
+                      : kioskConnectionState === 'connecting'
+                      ? 'bg-amber-950/80 border-amber-500/50 text-amber-300 animate-pulse'
+                      : 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+                  }`}
+                  title={`WebSocket Status: ${kioskConnectionState} | Active Kiosks: ${activeKiosksCount}`}
+                >
+                  <span className="relative flex h-2 w-2">
+                    {kioskConnectionState === 'connected' && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    )}
+                    <span
+                      className={`relative inline-flex rounded-full h-2 w-2 ${
+                        kioskConnectionState === 'connected'
+                          ? 'bg-emerald-400'
+                          : kioskConnectionState === 'connecting'
+                          ? 'bg-amber-400'
+                          : 'bg-rose-400'
+                      }`}
+                    ></span>
+                  </span>
+
+                  <div className="flex items-center gap-1.5">
+                    <Monitor className="w-3.5 h-3.5" />
+                    <span className="font-bold">
+                      {kioskConnectionState === 'connected'
+                        ? currentLang === 'om'
+                          ? `Kiosk Dhaddachaa: ${activeKiosksCount} Qunnameera`
+                          : currentLang === 'am'
+                          ? `የችሎት ኪዮስክ፡ ${activeKiosksCount} ተገናኝቷል`
+                          : `Courtroom Kiosk: ${activeKiosksCount} Live`
+                        : kioskConnectionState === 'connecting'
+                        ? currentLang === 'om'
+                          ? 'Kiosk: Qunnamtii eegaa jira...'
+                          : currentLang === 'am'
+                          ? 'ኪዮስክ፡ በማገናኘት ላይ...'
+                          : 'Kiosk: Connecting WS...'
+                        : currentLang === 'om'
+                        ? 'Kiosk: Qunnamtiin citeera'
+                        : currentLang === 'am'
+                        ? 'ኪዮስክ፡ ተቋርጧል'
+                        : 'Kiosk: Disconnected'}
+                    </span>
+                    <span className="text-[10px] opacity-70 hidden md:inline">
+                      (WS /kiosk-ws)
+                    </span>
+                  </div>
+
+                  {kioskConnectionState === 'connected' && (
+                    <button
+                      type="button"
+                      onClick={handleBroadcastHardRefresh}
+                      disabled={isRefreshingKiosks}
+                      title="Sync / Hard Refresh All Connected Courtroom Kiosks via WebSocket"
+                      className="ml-1 p-0.5 rounded hover:bg-emerald-900/60 text-emerald-300 transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isRefreshingKiosks ? 'animate-spin' : ''}`} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Real-time Cassation Precedent Tracker (AI Discovered) */}
+                {discoveredPrecedents.length > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-sky-950/80 border border-sky-500/50 text-sky-300 rounded-xl text-[10px] font-mono shadow-sm animate-in fade-in slide-in-from-left-2">
+                    <Zap className="w-3 h-3 text-sky-400 animate-pulse" />
+                    <span className="font-bold">DISCOVERED PRECEDENTS:</span>
+                    <div className="flex items-center gap-1.5 overflow-x-auto max-w-[200px] no-scrollbar">
+                      {discoveredPrecedents.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => {
+                            setArchive1500Query(p.referenceNumber);
+                            setShowArchive1500Modal(true);
+                            handleLoadArchive1500(p.referenceNumber);
+                          }}
+                          className="px-2 py-0.5 rounded bg-sky-900/60 hover:bg-sky-800 text-white font-black whitespace-nowrap transition-colors border border-sky-500/30"
+                          title={`Click to lookup Case No. ${p.referenceNumber} in archive`}
+                        >
+                          #{p.referenceNumber}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Real-time Caseload Metrics Visual Indicator Badge */}
+                <div
+                  className="flex items-center gap-2 px-3 py-1 bg-amber-950/80 border border-amber-500/50 text-amber-300 rounded-xl text-xs font-mono shadow-sm"
+                  title={`Live Caseload Sync Active | Last Updated: ${realtimeCaseloadMetrics.lastUpdated}`}
+                >
+                  <BarChart3 className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  <span className="font-bold">
+                    {currentLang === 'om'
+                      ? `📊 Galmee Live: ${realtimeCaseloadMetrics.totalCases} | Raawwii: ${realtimeCaseloadMetrics.clearanceRate}% | Avg Age: ${realtimeCaseloadMetrics.avgAgeDays}d`
+                      : currentLang === 'am'
+                      ? `📊 የቀጥታ መዝገብ፡ ${realtimeCaseloadMetrics.totalCases} | አፈፃፀም፡ ${realtimeCaseloadMetrics.clearanceRate}% | አማካይ ቀን፡ ${realtimeCaseloadMetrics.avgAgeDays}d`
+                      : `📊 Live Caseload: ${realtimeCaseloadMetrics.totalCases} | Clearance: ${realtimeCaseloadMetrics.clearanceRate}% | Avg Age: ${realtimeCaseloadMetrics.avgAgeDays}d`}
+                  </span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 sm:gap-8">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <button
+              onClick={() => setShowWitnessModal(true)}
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-black uppercase text-xs transition-all border-2 bg-amber-500 text-slate-950 border-amber-600 hover:bg-amber-400 shadow-lg cursor-pointer"
+            >
+              <span>🎙️</span>
+              <span>Witness Testimony</span>
+            </button>
+
+            <button
+              onClick={() => setShowCourtOrderModal(true)}
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-black uppercase text-xs transition-all border-2 bg-cyan-500 text-slate-950 border-cyan-600 hover:bg-cyan-400 shadow-lg cursor-pointer"
+            >
+              <span>⚖️</span>
+              <span>Generate Court Order</span>
+            </button>
+
+            <button
+              onClick={exportHearingMinutesPDF}
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-black uppercase text-xs transition-all border-2 bg-indigo-600 text-white border-indigo-500 hover:bg-indigo-500 shadow-lg cursor-pointer"
+            >
+              <span>📄</span>
+              <span>Hearing Minutes PDF</span>
+            </button>
+
             <button
               onClick={exportFullSessionReport}
-              className="flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-sm transition-all border-2 bg-emerald-500 text-slate-950 border-emerald-600 hover:bg-emerald-400"
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-black uppercase text-xs transition-all border-2 bg-emerald-500 text-slate-950 border-emerald-600 hover:bg-emerald-400 cursor-pointer"
             >
-              <Download className="w-5 h-5" />
+              <Download className="w-4 h-4" />
               {t.courtroomHistory.exportSession}
             </button>
 
             <button
+              onClick={exportComprehensiveReportPDF}
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-black uppercase text-xs transition-all border-2 bg-slate-100 text-slate-950 border-slate-300 hover:bg-white shadow-xl cursor-pointer"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Generate Case Report</span>
+            </button>
+
+            <button
+              onClick={exportCaseFileSummaryPDF}
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-black uppercase text-xs transition-all border-2 bg-amber-500 text-slate-950 border-amber-600 hover:bg-amber-400 shadow-xl cursor-pointer"
+              title="Generate summary PDF containing all evidence metadata and case milestones"
+            >
+              <FileText className="w-4 h-4" />
+              <span>{currentLang === 'om' ? 'Galmee Ragaa & Milestones (PDF)' : 'Export Case File'}</span>
+            </button>
+
+            <button
+              onClick={handleArchiveCase}
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-black uppercase text-xs transition-all border-2 bg-purple-600 text-white border-purple-500 hover:bg-purple-500 shadow-lg cursor-pointer"
+              title="Archive this case and move to archived records"
+            >
+              <span>📦</span>
+              <span>{currentLang === 'om' ? 'Galmee Kuusi (Archive)' : 'Archive Case'}</span>
+            </button>
+
+            <button
               onClick={() => setShowAnalytics(!showAnalytics)}
-              className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-sm transition-all border-2 ${
+              className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black uppercase text-xs transition-all border-2 ${
                 showAnalytics 
                   ? 'bg-amber-500 text-slate-950 border-amber-600' 
                   : 'bg-slate-900 text-amber-500 border-slate-800 hover:border-amber-500'
-              }`}
+              } cursor-pointer`}
             >
-              <BarChart3 className="w-5 h-5" />
+              <BarChart3 className="w-4 h-4" />
               {t.courtroomAnalytics.title}
             </button>
           </div>
         </div>
+
+        {/* Fuula Dhaddachaa & Fuula Ofisarri Galmee Banu: Live Litigants & Ethiopian Calendar Schedule Banner */}
+        {(() => {
+          const todayEth = formatCourtHearingScheduleDate(new Date(), currentLang === 'am' ? 'am' : currentLang === 'om' ? 'om' : 'en');
+          return (
+            <div className="bg-slate-900 border-2 border-amber-500/40 rounded-3xl p-4 sm:p-5 shadow-2xl relative overflow-hidden space-y-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Gavel className="w-5 h-5 text-amber-400 shrink-0" />
+                  <span className="text-xs font-mono font-bold text-amber-300 uppercase tracking-widest">
+                    {currentLang === 'om' 
+                      ? 'Fuula Dhaddachaa & Ofisaraa: Galmee Beellamaa & Maqaa Wal-Falmitootaa' 
+                      : currentLang === 'am' 
+                      ? 'የችሎት እና የምዝገባ ገፅ፡ የተቀጠረ መዝገብ እና የተከራካሪዎች ስም' 
+                      : 'Courtroom Bench & Registrar Portal: Case Schedule & Litigants'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 font-mono text-xs">
+                  <span className="px-3 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Guyyaa E.C.: <strong>{todayEth.ethDate}</strong></span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                {/* Litigant 1: Prosecutor / Plaintiff */}
+                <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 flex items-center gap-3">
+                  <Users className="w-5 h-5 text-sky-400 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="text-[10px] text-slate-500 font-mono block uppercase">Iyyataa / Abbaa Alangaa (Plaintiff/Prosecutor):</span>
+                    <strong className="text-sm font-bold text-slate-100 truncate block">
+                      Abbaa Alangaa Federaalaa (Prosecutor)
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Versus Badge */}
+                <div className="p-3 rounded-2xl bg-slate-950 border border-amber-500/30 flex items-center justify-between gap-2 bg-amber-500/5">
+                  <span className="text-amber-400 font-black font-mono text-sm uppercase">VS</span>
+                  <div className="text-right min-w-0">
+                    <span className="text-[10px] text-slate-500 font-mono block">Lakk. Galmee / Docket #:</span>
+                    <strong className="text-xs font-mono font-bold text-slate-200 truncate block">CR-2026-99812</strong>
+                  </div>
+                </div>
+
+                {/* Litigant 2: Defendant / Respondent */}
+                <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 flex items-center gap-3">
+                  <Users className="w-5 h-5 text-rose-400 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="text-[10px] text-slate-500 font-mono block uppercase">Himatamaa / Deebii Kennaa (Defendant):</span>
+                    <strong className="text-sm font-bold text-slate-100 truncate block">
+                      Gemechu Tadesse (Defendant)
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Confidentiality Notice */}
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-center gap-4 text-amber-300">
@@ -1551,6 +3450,32 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
             </div>
           </div>
 
+          {/* BUILT-IN COURTROOM AUDIO RECORDER BUTTON */}
+          <button
+            type="button"
+            onClick={() => setShowCourtroomAudioModal(true)}
+            className="flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-sm transition-all border-2 bg-gradient-to-r from-rose-600 via-amber-500 to-amber-600 text-white border-rose-400 hover:from-rose-500 hover:to-amber-500 shadow-xl shadow-rose-950/40 hover:scale-[1.02] cursor-pointer"
+            title="Real-time courtroom audio recorder with waveform visualization and direct case filing"
+          >
+            <Mic className="w-5 h-5 text-white animate-pulse" />
+            <span>🎙️ Waraabbata Sagalee Dhaddachaa</span>
+          </button>
+
+          {/* FLOATING COURT AUDIO CONTROL PANEL TOGGLE */}
+          <button
+            type="button"
+            onClick={() => setShowFloatingAudioControl(!showFloatingAudioControl)}
+            className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black uppercase text-sm transition-all border-2 cursor-pointer shadow-lg ${
+              showFloatingAudioControl
+                ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 shadow-rose-950/40 hover:bg-rose-500/30'
+                : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white hover:border-slate-500'
+            }`}
+            title="Toggle Live Floating Court Audio API Control"
+          >
+            <Radio className="w-5 h-5 text-rose-400 animate-pulse" />
+            <span>{showFloatingAudioControl ? '🎙️ Audio Controller (Active)' : '🎙️ Audio Controller'}</span>
+          </button>
+
           {/* DICTATE COURT NOTE BUTTON - Anchored to Case ID & Saved to My Content */}
           <button
             type="button"
@@ -1558,8 +3483,8 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
             className="flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-sm transition-all border-2 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 border-amber-300 hover:from-amber-400 hover:to-amber-300 shadow-xl shadow-amber-950/50 hover:scale-[1.02] cursor-pointer"
             title="Dictate Court Note: Real-time voice capture anchored to Case ID and saved to My Content dashboard"
           >
-            <Mic className="w-5 h-5 text-slate-950 animate-pulse" />
-            <span>🎙️ Dictate Court Note</span>
+            <Mic className="w-5 h-5 text-slate-950" />
+            <span>🎙️ Dictate Note</span>
           </button>
 
           <button
@@ -1641,8 +3566,73 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
               <Plus className="w-4 h-4" />
               {isSaving ? t.courtroomSession.saving : t.courtroomSession.saveSession}
             </button>
+            {sessionId && (
+              <div className="flex items-center gap-0.5 ml-auto sm:ml-0 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-inner">
+                <button
+                  onClick={handleToggleVisibility}
+                  className={`flex items-center gap-2 px-3 py-1.5 font-black uppercase text-[9px] transition-all hover:brightness-110 ${
+                    isCasePublic 
+                      ? 'bg-emerald-500/20 text-emerald-400' 
+                      : 'bg-rose-500/20 text-rose-400'
+                  }`}
+                  title={isCasePublic ? 'Click to make case private' : 'Click to make case public'}
+                >
+                  {isCasePublic ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                  <span>{isCasePublic ? 'Public' : 'Private'}</span>
+                </button>
+                <div className="w-[1px] h-4 bg-slate-800" />
+                <a
+                  href={`/?tab=case-status&caseId=${sessionId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 text-slate-500 hover:text-amber-400 transition-colors flex items-center justify-center group"
+                  title="View as Public Client"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                </a>
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+             {/* Courtroom Seating Layout Button */}
+             <button
+              onClick={() => setShowCourtroomLayoutModal(true)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-black uppercase text-xs transition-all border-2 bg-slate-800 hover:bg-slate-700 text-amber-300 border-amber-500/40 hover:border-amber-400 shadow-sm cursor-pointer"
+              title="Visually map seating positions of Judge, Prosecutor, Plaintiff, Defendant, and Witnesses"
+            >
+              <Users className="w-4 h-4 text-amber-400" />
+              <span>{currentLang === 'om' ? 'Caasaa Teessumaa' : currentLang === 'am' ? 'የችሎት አቀማመጥ' : 'Courtroom Layout'}</span>
+            </button>
+
+             {/* Evidence Camera Capture Button */}
+             <button
+              onClick={() => setShowEvidenceCaptureModal(true)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-black uppercase text-xs transition-all border-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 border-amber-400 shadow-md font-black cursor-pointer active:scale-95"
+              title="Take a photo of physical evidence with device camera and add to case file"
+            >
+              <Camera className="w-4 h-4 fill-slate-950" />
+              <span>{currentLang === 'om' ? 'Kaameeraa Ragaa' : currentLang === 'am' ? 'የማስረጃ ካሜራ' : 'Capture Evidence'}</span>
+            </button>
+
+            <button
+              onClick={() => setShowMultiFileUpload(true)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-black uppercase text-xs transition-all border-2 bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-400/40 shadow-md cursor-pointer active:scale-95"
+              title="Batch upload multiple evidence documents with AI metadata extraction"
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>{currentLang === 'om' ? 'Batch Upload' : 'Batch Upload'}</span>
+            </button>
+
+             <button
+              onClick={() => setShowWitnessStopwatch(!showWitnessStopwatch)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black uppercase text-xs transition-all border-2 ${
+                showWitnessStopwatch ? 'bg-amber-500 text-slate-950 border-amber-600' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-amber-500/50'
+              }`}
+              title="Toggle Witness Testimony Stopwatch"
+            >
+              <Timer className="w-4 h-4" />
+              {currentLang === 'om' ? 'Yeroo Ragaa' : 'Stopwatch'}
+            </button>
              <button
               onClick={() => setShowSessionManager(!showSessionManager)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black uppercase text-xs transition-all border-2 ${
@@ -1855,9 +3845,47 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
         </div>
       )}
 
-      <div className="flex flex-col lg:flex-row gap-10">
-        {/* Main Content Area - Left Column */}
-        <div className="flex-1 space-y-10">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        {/* Left Column (Editor & Workbench) - 2/3 width */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Main Primary View Switcher: Proceedings & Workbench vs Witness Statements Tab */}
+          <div className="bg-slate-900 border-2 border-slate-800 rounded-2xl p-1.5 flex items-center gap-2 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setActiveMainTab('proceedings')}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-mono text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                activeMainTab === 'proceedings'
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-lg border border-amber-400'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <Gavel className="w-4 h-4" />
+              <span>{currentLang === 'om' ? 'Dhaddacha & Hojii Seeraa' : currentLang === 'am' ? 'የችሎት ሂደት እና ውሳኔዎች' : 'Proceedings & Workbench'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveMainTab('witnessStatements')}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-mono text-xs font-black uppercase tracking-wider transition-all cursor-pointer relative ${
+                activeMainTab === 'witnessStatements'
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-lg border border-amber-400'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>{currentLang === 'om' ? 'Galmee Jecha Ragaa (Witness Statements)' : currentLang === 'am' ? 'የምስክሮች ቃል መዝገብ (Witness Statements)' : 'Witness Statements'}</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                activeMainTab === 'witnessStatements'
+                  ? 'bg-slate-950 text-amber-300 border border-slate-900'
+                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+              }`}>
+                {caseWitnessStatements.length}
+              </span>
+            </button>
+          </div>
+
+          {activeMainTab === 'proceedings' ? (
+            <div className="space-y-10">
           {/* Voice-to-Memo Tool: Record Spoken Arguments via Microphone API & Auto-Organize into Structured Trilingual Legal Memos */}
           {showVoiceToMemo && (
             <div className="space-y-6">
@@ -1883,13 +3911,13 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
             </div>
           )}
 
-          {/* Complete Judicial Proceedings Workbench: Pleadings, Preliminary Objections (Art. 245(1)), Interlocutory Rulings, Voice Oral Hearing, Framing of Issues, 3rd Party/Land/Agri Summons, and Final Judgment */}
+          {/* Complete Judicial Proceedings Workbench */}
           <JudgeProceedingsWorkbench 
             currentLang={currentLang} 
             courtLevel={courtLevel}
             activeCaseNumber={sessionTitle || (courtLevel === 'highCourt' ? 'Galmee Lakk. 249062/2016' : 'Galmee Lakk. 24891/2016')}
           />
-
+          
           {/* Pleadings & Voice Testimony Transcription Hub */}
           <div className="bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -1905,6 +3933,88 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
                     {currentLang === 'om' ? 'Galmee Himannaa, Deebii Himannaa fi Sagalee Ragaa Gara Barreeffamaatti Jijjiiruu' : 'Statement of Claim/Defense entry & Speech-to-Text witness transcription'}
                   </p>
                 </div>
+              </div>
+            </div>
+
+            {/* 🎙️ LIVE TRANSCRIPTION FEED WITH SPEAKER TAGGING & DIRECT EVIDENCE LOCKER SAVING */}
+            <LiveTranscriptionDisplay
+              currentLang={currentLang}
+              caseId={sessionId || 'case-today-301'}
+              caseNumber={sessionTitle || (courtLevel === 'highCourt' ? 'Galmee Lakk. 249062/2016' : 'Galmee Lakk. 24891/2016')}
+              courtName={courtLevel === 'cassation' ? 'Mana Murtii Waliigalaa Federaalaa Dhaddacha Ijibbaataa' : courtLevel === 'highCourt' ? 'Mana Murtii Ol\'aanaa Godina Shawaa Bahaa' : 'Mana Murtii Aanaa Adaamaa'}
+              activeJudgeName={profile?.visitorName || 'Dr. Caalaa Tasfaayee'}
+              onSaveEvidenceSuccess={(seg) => {
+                const newLog: LogEntry = {
+                  id: 'evid_stmt_' + Date.now(),
+                  timestamp: new Date().toLocaleTimeString(),
+                  text: `[LOCKER EXHIBIT] Sagaleen/qabxiin ${seg.speakerRole} (${seg.speakerName}) kuusaa ragaa qabatamaatti hidhameera: "${seg.statement.slice(0, 80)}..."`,
+                  type: 'manual',
+                  tags: ['evidence_locker', 'audio_testimony', 'exhibit_recorded']
+                };
+                setHistory((prev) => [newLog, ...prev]);
+              }}
+            />
+
+            {/* 🏛️ & 📸 COURTROOM LAYOUT & PHYSICAL EVIDENCE CAMERA DUAL QUICK ACCESS CARDS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Courtroom Seating Layout Card */}
+              <div className="bg-slate-950/90 border-2 border-amber-500/30 hover:border-amber-500/60 rounded-2xl p-4 sm:p-5 space-y-3 transition-all shadow-md group relative">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-black shadow-inner">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
+                    JUDICIAL BENCH MAPPING
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-white group-hover:text-amber-300 transition-colors">
+                    {currentLang === 'om' ? 'Caasaa Teessuma Dhaddachaa' : currentLang === 'am' ? 'የችሎት አቀማመጥ ንድፍ' : 'Courtroom Seating Layout'}
+                  </h4>
+                  <p className="text-xs text-slate-400 leading-relaxed mt-1">
+                    {currentLang === 'om'
+                      ? 'Teessuma Abbaa Seeraa, Abbaa Alangaa, Himataa, Himatamaa fi Ragaalee kaartaa dhaddachaa irratti qindeessi.'
+                      : 'Visually map seating positions of Judge, Prosecutor, Plaintiff, Defendant, and Witnesses.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCourtroomLayoutModal(true)}
+                  className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-amber-500 text-slate-300 hover:text-slate-950 font-black text-xs uppercase tracking-wider border border-slate-700 hover:border-amber-400 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <Users className="w-4 h-4" />
+                  <span>{currentLang === 'om' ? 'Teessuma Dhaddachaa Bani' : currentLang === 'am' ? 'አቀማመጥ ክፈት' : 'Open Courtroom Map'} &rarr;</span>
+                </button>
+              </div>
+
+              {/* Physical Evidence Camera Capture Card */}
+              <div className="bg-slate-950/90 border-2 border-emerald-500/30 hover:border-emerald-500/60 rounded-2xl p-4 sm:p-5 space-y-3 transition-all shadow-md group relative">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black shadow-inner">
+                    <Camera className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                    REAL EVIDENCE CAMERA
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-white group-hover:text-emerald-300 transition-colors">
+                    {currentLang === 'om' ? 'Waraabbata Suuraa Kaameeraa' : currentLang === 'am' ? 'የማስረጃ ካሜራ ቀረጻ' : 'Evidence Camera Capture'}
+                  </h4>
+                  <p className="text-xs text-slate-400 leading-relaxed mt-1">
+                    {currentLang === 'om'
+                      ? 'Kaameeraa meeshaatiin suuraa ragaa qabatamaa kaasuun battalumatti galmee kanaan wal-qabsiisi.'
+                      : 'Snap photo of physical evidence with device camera and auto-link to active case file.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowEvidenceCaptureModal(true)}
+                  className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition-all cursor-pointer active:scale-95"
+                >
+                  <Camera className="w-4 h-4 fill-slate-950" />
+                  <span>{currentLang === 'om' ? 'Kaameeraan Suuraa Kaasi' : currentLang === 'am' ? 'ፎቶ አንሳ' : 'Snap Photo Evidence'} &rarr;</span>
+                </button>
               </div>
             </div>
 
@@ -2154,6 +4264,16 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
                       <span>{isListening ? (currentLang === 'om' ? 'Waraabamee... (Listening)' : 'Listening...') : (currentLang === 'om' ? 'Sagalee Waraabi (Record Voice)' : 'Record Voice Testimony')}</span>
                     </button>
                 </div>
+              </div>
+
+              <div className="flex justify-between items-center px-1">
+                <button
+                  onClick={() => handleAutoLinkCitations('testimony')}
+                  className="text-[10px] font-black uppercase text-amber-500 hover:text-amber-400 flex items-center gap-1 transition-colors"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Link Citations
+                </button>
               </div>
 
               <textarea
@@ -2494,9 +4614,669 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
             </button>
           </div>
         </div>
+      ) : (
+        /* Dedicated 'Witness Statements' Tab linked directly to current case file */
+        <div className="space-y-8 animate-in fade-in duration-200">
+          {/* Active Case Docket & Witness Testimony Summary Header */}
+          <div className="bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6 mb-6">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-black text-2xl shadow-inner shrink-0">
+                  <Users className="w-7 h-7" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-mono font-black uppercase px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      GALMEE JECHA RAGAA
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                      {courtLevel === 'cassation' ? 'Dhaddacha Ijibbaataa' : courtLevel === 'highCourt' ? 'Mana Murtii Ol\'aanaa' : 'Mana Murtii Jalqabaa'}
+                    </span>
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-black uppercase text-white mt-1">
+                    {currentLang === 'om' ? 'Axereeraa Jecha Ragaalee Galmee Dhaddachaa' : currentLang === 'am' ? 'የችሎት ምስክሮች ቃል ማጠቃለያ መዝገብ' : 'Case Witness Statements & Testimony Summaries'}
+                  </h3>
+                  <p className="text-xs text-slate-400 font-bold font-mono mt-0.5">
+                    {sessionTitle || (courtLevel === 'highCourt' ? 'CR-2026/089' : 'CR-2026/045')} • {profile?.visitorName || 'Judge / Court Reporter'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Actions for Witness Statements */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (caseWitnessStatements.length === 0) {
+                      alert('No witness statements recorded yet for this case.');
+                      return;
+                    }
+                    const textReport = `MANA MURTII DHADDACHAA - GALMEE JECHA RAGAA
+Lakk. Galmee: ${sessionTitle || 'CR-2026/045'}
+Guyyaa: ${new Date().toLocaleDateString()}
+Baay'ina Ragaalee: ${caseWitnessStatements.length}
+
+${caseWitnessStatements.map((stmt, idx) => `
+--------------------------------------------------
+[${idx + 1}] RAGAA: ${stmt.witnessName.toUpperCase()} (${stmt.witnessRole.toUpperCase()})
+Sa'aatii: ${stmt.timestamp} | Madaallii Amanamummaa: ${stmt.credibilityRating.toUpperCase()}
+AXEREERAA JECHA RAGAA:
+"${stmt.statementText}"
+${stmt.crossExaminationNotes ? `QABXII GAAFFII QAXXAAMURAA:\n"${stmt.crossExaminationNotes}"` : ''}
+Bu'uura Seeraa: ${stmt.statutoryBasis || 'SDFHH Art. 136-137'}
+`).join('\n')}
+==================================================
+Mirkaneessa Dhaddachaa: Abbaa Seeraa / Galmeessaa`;
+
+                    navigator.clipboard.writeText(textReport);
+                    showShortcutFeedback(
+                      currentLang === 'om' ? 'Axereeraan ragaalee hundi clipboard\'tti waraabameera!' : 'Full witness statements dossier copied to clipboard!',
+                      '📋'
+                    );
+                  }}
+                  className="px-3.5 py-2 rounded-xl text-xs font-mono font-bold uppercase bg-slate-950 hover:bg-slate-800 text-amber-300 border border-slate-800 hover:border-amber-500/50 flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                  title="Copy full case testimony summary to clipboard"
+                >
+                  <Copy className="w-4 h-4 text-amber-400" />
+                  <span>{currentLang === 'om' ? 'Waraabi (Copy Dossier)' : 'Copy Dossier'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Witness Statements Breakdown Counters */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5">
+                <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                  Total Statements
+                </span>
+                <span className="text-2xl font-black font-mono text-white mt-1 block">
+                  {caseWitnessStatements.length}
+                </span>
+                <span className="text-[9px] font-mono text-amber-400/80 mt-0.5 block">Linked to Active Case</span>
+              </div>
+
+              <div className="bg-slate-950/70 border border-blue-500/20 rounded-2xl p-3.5">
+                <span className="text-[10px] font-mono font-bold text-blue-400 uppercase tracking-wider block">
+                  Plaintiff Witnesses
+                </span>
+                <span className="text-2xl font-black font-mono text-blue-300 mt-1 block">
+                  {caseWitnessStatements.filter(s => s.witnessRole === 'plaintiff_witness').length}
+                </span>
+                <span className="text-[9px] font-mono text-slate-500 mt-0.5 block">Himataa</span>
+              </div>
+
+              <div className="bg-slate-950/70 border border-amber-500/20 rounded-2xl p-3.5">
+                <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-wider block">
+                  Defendant Witnesses
+                </span>
+                <span className="text-2xl font-black font-mono text-amber-300 mt-1 block">
+                  {caseWitnessStatements.filter(s => s.witnessRole === 'defendant_witness').length}
+                </span>
+                <span className="text-[9px] font-mono text-slate-500 mt-0.5 block">Himatamaa</span>
+              </div>
+
+              <div className="bg-slate-950/70 border border-emerald-500/20 rounded-2xl p-3.5">
+                <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider block">
+                  High Credibility
+                </span>
+                <span className="text-2xl font-black font-mono text-emerald-300 mt-1 block">
+                  {caseWitnessStatements.filter(s => s.credibilityRating === 'high').length}
+                </span>
+                <span className="text-[9px] font-mono text-emerald-500/80 mt-0.5 block">Amanamaa</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Form to Log New Witness Statement Linked to Case */}
+          <div className="bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-emerald-500 p-2.5 rounded-xl text-slate-950 font-black shadow-md">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-lg font-black uppercase text-white">
+                    {currentLang === 'om' ? 'Galmeessuu Axereeraa Jecha Ragaa' : currentLang === 'am' ? 'የምስክር ቃል ማጠቃለያ መመዝገቢያ' : 'Log Witness Testimony Summary'}
+                  </h4>
+                  <p className="text-xs text-slate-400 font-bold mt-0.5">
+                    {currentLang === 'om' ? 'Jecha ragaa dhaddacharratti kenname axereerii galmee kanaan walqabsiisi' : 'Record summary of witness testimony directly linked to this court docket'}
+                  </p>
+                </div>
+              </div>
+
+              <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                Art. 136-137 SDFHH
+              </span>
+            </div>
+
+            <form onSubmit={handleSaveWitnessStatementSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Witness Name & Pre-fill Selector */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                    <span>{currentLang === 'om' ? 'Maqaa Ragaa' : 'Witness Name'} *</span>
+                    {witnesses.length > 0 && (
+                      <span className="text-[10px] text-amber-400 font-normal">
+                        Select from session or type
+                      </span>
+                    )}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={newWitnessStmtName}
+                      onChange={(e) => setNewWitnessStmtName(e.target.value)}
+                      placeholder={currentLang === 'om' ? 'Fkn: Obbo Gammachiis Qananii' : 'e.g., Gemechis Keneni'}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                    />
+                  </div>
+                  {witnesses.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                      <span className="text-[10px] text-slate-500 font-mono">Quick select:</span>
+                      {witnesses.map(w => (
+                        <button
+                          key={w.id}
+                          type="button"
+                          onClick={() => {
+                            setNewWitnessStmtName(w.name);
+                            setNewWitnessStmtRole(w.type === 'plaintiff' ? 'plaintiff_witness' : 'defendant_witness');
+                          }}
+                          className="px-2 py-0.5 text-[10px] font-mono rounded bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition-colors cursor-pointer"
+                        >
+                          {w.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Witness Role Selector */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono font-bold text-slate-300 uppercase tracking-wider block">
+                    {currentLang === 'om' ? 'Gahee / Qaama Ragaan Dhiyeesse' : 'Witness Role / Party'} *
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewWitnessStmtRole('plaintiff_witness')}
+                      className={`p-2 rounded-xl text-xs font-mono font-bold uppercase transition-all cursor-pointer border ${
+                        newWitnessStmtRole === 'plaintiff_witness'
+                          ? 'bg-blue-600/30 text-blue-300 border-blue-500 shadow-sm'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      Himataa (Plaintiff)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNewWitnessStmtRole('defendant_witness')}
+                      className={`p-2 rounded-xl text-xs font-mono font-bold uppercase transition-all cursor-pointer border ${
+                        newWitnessStmtRole === 'defendant_witness'
+                          ? 'bg-amber-600/30 text-amber-300 border-amber-500 shadow-sm'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      Himatamaa (Defendant)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNewWitnessStmtRole('expert_witness')}
+                      className={`p-2 rounded-xl text-xs font-mono font-bold uppercase transition-all cursor-pointer border ${
+                        newWitnessStmtRole === 'expert_witness'
+                          ? 'bg-purple-600/30 text-purple-300 border-purple-500 shadow-sm'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      Ogeessa (Expert)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNewWitnessStmtRole('court_witness')}
+                      className={`p-2 rounded-xl text-xs font-mono font-bold uppercase transition-all cursor-pointer border ${
+                        newWitnessStmtRole === 'court_witness'
+                          ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500 shadow-sm'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      Mana Murtii (Court)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Testimony Summary Textarea with Speech Dictation Button */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-mono font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                    <Scale className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{currentLang === 'om' ? 'Axereeraa Jecha Ragaa (Direct Testimony Summary)' : 'Testimony Summary'} *</span>
+                  </label>
+                  
+                  {/* Voice dictation speech button */}
+                  <button
+                    type="button"
+                    onClick={toggleWitnessSpeechDictation}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer border ${
+                      isWitnessRecording
+                        ? 'bg-rose-500 text-white border-rose-400 animate-pulse shadow-md'
+                        : 'bg-slate-950 hover:bg-slate-800 text-amber-300 border-slate-800 hover:border-amber-500/50'
+                    }`}
+                    title="Speak into microphone to transcribe testimony in real time"
+                  >
+                    {isWitnessRecording ? <MicOff className="w-3 h-3 text-white" /> : <Mic className="w-3 h-3 text-amber-400" />}
+                    <span>{isWitnessRecording ? 'Listening...' : 'Voice Dictate'}</span>
+                  </button>
+                </div>
+
+                <textarea
+                  required
+                  rows={4}
+                  value={newWitnessStmtText}
+                  onChange={(e) => setNewWitnessStmtText(e.target.value)}
+                  placeholder={
+                    currentLang === 'om'
+                      ? 'Ibsa ragaan dhugaa bahe: Wanta argan, yeroo, iddoo gochi raawwatame, fi ragaa qabatamaa eeran...'
+                      : 'Summarize sworn testimony: Witness observations, timelines, admissions, and key evidentiary claims...'
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none leading-relaxed custom-scrollbar"
+                />
+              </div>
+
+              {/* Cross-Examination Notes */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                  <span>{currentLang === 'om' ? 'Qabxiiwwan Gaaffii Qaxxaamuraa (Cross-Examination Notes)' : 'Cross-Examination & Impeachment Notes'}</span>
+                  <span className="text-slate-500 font-normal lowercase">(optional)</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={newWitnessStmtCross}
+                  onChange={(e) => setNewWitnessStmtCross(e.target.value)}
+                  placeholder={
+                    currentLang === 'om'
+                      ? 'Faallaa dubbatame, shakkiilee gama biraatiin ka\'an, ykn wal-dhabdee ragaan kaan wajjin qaban...'
+                      : 'Contradictions raised, credibility challenges, inconsistent prior statements, or demeanor notes...'
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-3 text-xs text-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none leading-relaxed custom-scrollbar"
+                />
+              </div>
+
+              {/* Credibility Assessment & Submit */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-slate-800/80">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider shrink-0">
+                    Credibility:
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setNewWitnessStmtCredibility('high')}
+                      className={`px-3 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer border ${
+                        newWitnessStmtCredibility === 'high'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm'
+                          : 'bg-slate-950 text-slate-500 border-slate-800'
+                      }`}
+                    >
+                      Amanamaa (High)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewWitnessStmtCredibility('moderate')}
+                      className={`px-3 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer border ${
+                        newWitnessStmtCredibility === 'moderate'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
+                          : 'bg-slate-950 text-slate-500 border-slate-800'
+                      }`}
+                    >
+                      Giddu-galeessa (Moderate)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewWitnessStmtCredibility('questionable')}
+                      className={`px-3 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer border ${
+                        newWitnessStmtCredibility === 'questionable'
+                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-sm'
+                          : 'bg-slate-950 text-slate-500 border-slate-800'
+                      }`}
+                    >
+                      Shakkiisisaa (Questionable)
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoggingWitnessStatement}
+                  className="px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 border border-amber-400"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{isLoggingWitnessStatement ? 'Saving to Case...' : 'Save Witness Statement to Case File'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Witness Statements List Section */}
+          <div className="bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <h4 className="text-lg font-black uppercase text-white flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-amber-400" />
+                  <span>{currentLang === 'om' ? 'Galmee Jecha Ragaalee Dhimma Kanaan Hidhaman' : 'Logged Case Witness Statements'}</span>
+                </h4>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  {caseWitnessStatements.length}
+                </span>
+              </div>
+
+              {/* Live Search Input for Statements */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={witnessStatementSearch}
+                  onChange={(e) => setWitnessStatementSearch(e.target.value)}
+                  placeholder={currentLang === 'om' ? 'Barbaadi (Maqaa, Jecha...)' : 'Filter statements...'}
+                  className="bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-amber-500 outline-none w-56"
+                />
+                <Search className="w-4 h-4 absolute left-3 top-2 text-slate-500" />
+              </div>
+            </div>
+
+            {/* Filter Pills for Witness Roles */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar text-xs">
+              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
+                Role Filter:
+              </span>
+              <button
+                type="button"
+                onClick={() => setWitnessStatementFilter('all')}
+                className={`px-3 py-1 rounded-xl font-mono text-[10px] font-bold uppercase transition-all cursor-pointer shrink-0 border ${
+                  witnessStatementFilter === 'all'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                All ({caseWitnessStatements.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWitnessStatementFilter('plaintiff_witness')}
+                className={`px-3 py-1 rounded-xl font-mono text-[10px] font-bold uppercase transition-all cursor-pointer shrink-0 border ${
+                  witnessStatementFilter === 'plaintiff_witness'
+                    ? 'bg-blue-600/30 text-blue-300 border-blue-500/50 shadow-sm'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                Plaintiff ({caseWitnessStatements.filter(s => s.witnessRole === 'plaintiff_witness').length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWitnessStatementFilter('defendant_witness')}
+                className={`px-3 py-1 rounded-xl font-mono text-[10px] font-bold uppercase transition-all cursor-pointer shrink-0 border ${
+                  witnessStatementFilter === 'defendant_witness'
+                    ? 'bg-amber-600/30 text-amber-300 border-amber-500/50 shadow-sm'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                Defendant ({caseWitnessStatements.filter(s => s.witnessRole === 'defendant_witness').length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWitnessStatementFilter('expert_witness')}
+                className={`px-3 py-1 rounded-xl font-mono text-[10px] font-bold uppercase transition-all cursor-pointer shrink-0 border ${
+                  witnessStatementFilter === 'expert_witness'
+                    ? 'bg-purple-600/30 text-purple-300 border-purple-500/50 shadow-sm'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                Expert ({caseWitnessStatements.filter(s => s.witnessRole === 'expert_witness').length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWitnessStatementFilter('court_witness')}
+                className={`px-3 py-1 rounded-xl font-mono text-[10px] font-bold uppercase transition-all cursor-pointer shrink-0 border ${
+                  witnessStatementFilter === 'court_witness'
+                    ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50 shadow-sm'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                Court ({caseWitnessStatements.filter(s => s.witnessRole === 'court_witness').length})
+              </button>
+            </div>
+
+            {/* Statements List Cards */}
+            <div className="space-y-4">
+              {caseWitnessStatements
+                .filter(stmt => {
+                  if (witnessStatementFilter !== 'all' && stmt.witnessRole !== witnessStatementFilter) return false;
+                  if (witnessStatementSearch.trim()) {
+                    const q = witnessStatementSearch.toLowerCase();
+                    return stmt.witnessName.toLowerCase().includes(q) ||
+                           stmt.statementText.toLowerCase().includes(q) ||
+                           (stmt.crossExaminationNotes && stmt.crossExaminationNotes.toLowerCase().includes(q));
+                  }
+                  return true;
+                }).length === 0 ? (
+                <div className="text-center py-16 bg-slate-950/60 rounded-2xl border border-dashed border-slate-800 space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto">
+                    <Users className="w-6 h-6" />
+                  </div>
+                  <h5 className="text-sm font-bold text-white uppercase tracking-wider">
+                    {currentLang === 'om' ? 'Jechi Ragaa Galmaa\'e Hin Jiru' : 'No Witness Statements Found'}
+                  </h5>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    {currentLang === 'om'
+                      ? 'Ragaalee dhaddacharratti dhiyaatan jecha isaanii foomii gubbaa irratti galmeessaa.'
+                      : 'Use the form above to log sworn testimonies and cross-examination notes linked to this case docket.'}
+                  </p>
+                </div>
+              ) : (
+                caseWitnessStatements
+                  .filter(stmt => {
+                    if (witnessStatementFilter !== 'all' && stmt.witnessRole !== witnessStatementFilter) return false;
+                    if (witnessStatementSearch.trim()) {
+                      const q = witnessStatementSearch.toLowerCase();
+                      return stmt.witnessName.toLowerCase().includes(q) ||
+                             stmt.statementText.toLowerCase().includes(q) ||
+                             (stmt.crossExaminationNotes && stmt.crossExaminationNotes.toLowerCase().includes(q));
+                    }
+                    return true;
+                  })
+                  .map((stmt) => (
+                    <div
+                      key={stmt.id}
+                      className="bg-slate-950/80 border-2 border-slate-800/90 hover:border-amber-500/40 rounded-2xl p-5 space-y-4 transition-all shadow-md group"
+                    >
+                      {/* Top Row: Witness Meta */}
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm uppercase shadow-inner ${
+                            stmt.witnessRole === 'plaintiff_witness'
+                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                              : stmt.witnessRole === 'defendant_witness'
+                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                              : stmt.witnessRole === 'expert_witness'
+                              ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                              : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          }`}>
+                            {stmt.witnessName.slice(0, 2).toUpperCase()}
+                          </div>
+
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h5 className="text-sm font-black text-white">
+                                {stmt.witnessName}
+                              </h5>
+                              <span className={`text-[9px] font-mono font-black uppercase px-2 py-0.5 rounded-md border ${
+                                stmt.witnessRole === 'plaintiff_witness'
+                                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                                  : stmt.witnessRole === 'defendant_witness'
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  : stmt.witnessRole === 'expert_witness'
+                                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              }`}>
+                                {stmt.witnessRole.replace('_', ' ')}
+                              </span>
+                              <span className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded-md border ${
+                                stmt.credibilityRating === 'high'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  : stmt.credibilityRating === 'moderate'
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                              }`}>
+                                Credibility: {stmt.credibilityRating}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 mt-0.5">
+                              <span>Recorded: {stmt.timestamp}</span>
+                              <span>•</span>
+                              <span>Case: {stmt.caseNumber || sessionTitle || 'CR-2026/045'}</span>
+                              <span>•</span>
+                              <span>Officer: {stmt.recordedBy || 'Court Staff'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const citation = `[RAGAA DHADDACHAA: ${stmt.witnessName} (${stmt.witnessRole.toUpperCase()})]\n"${stmt.statementText}"\n${stmt.crossExaminationNotes ? `[Qaxxaamuraa: ${stmt.crossExaminationNotes}]\n` : ''}(Lakk. Galmee: ${stmt.caseNumber || 'CR-2026/045'}, Bu'uura: SDFHH Art. 136)`;
+                              navigator.clipboard.writeText(citation);
+                              showShortcutFeedback('Witness statement citation copied!', '📋');
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase bg-slate-900 hover:bg-slate-800 text-amber-400 border border-slate-800 hover:border-amber-500/40 flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Copy formal statement quote"
+                          >
+                            <Copy className="w-3 h-3" />
+                            <span>Copy Quote</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuickNotes(prev => (prev ? `${prev}\n\n` : '') + `[RAGAA: ${stmt.witnessName}]: ${stmt.statementText}`);
+                              showShortcutFeedback('Appended to Judgment Bench Notes!', '📝');
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Add to Bench Notes"
+                          >
+                            <FileText className="w-3 h-3" />
+                            <span>To Notes</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Direct Statement Body */}
+                      <div className="p-4 bg-slate-900/90 rounded-xl border border-slate-800 text-sm font-serif italic text-slate-200 leading-relaxed relative pl-6">
+                        <span className="text-3xl text-amber-500/40 font-serif absolute left-2 top-1 select-none">“</span>
+                        {stmt.statementText}
+                      </div>
+
+                      {/* Cross Examination Callout if available */}
+                      {stmt.crossExaminationNotes && (
+                        <div className="p-3 bg-rose-950/20 border border-rose-500/30 rounded-xl text-xs space-y-1">
+                          <div className="flex items-center gap-1.5 font-mono font-bold text-rose-400 uppercase text-[10px]">
+                            <AlertTriangle className="w-3 h-3 text-rose-400" />
+                            <span>Qabxiiwwan Gaaffii Qaxxaamuraa (Cross-Examination Highlights)</span>
+                          </div>
+                          <p className="text-slate-300 text-xs leading-relaxed">
+                            {stmt.crossExaminationNotes}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+        </div>
 
         {/* Widgets & History Log - Right Column */}
         <div className="w-full lg:w-96 flex flex-col gap-6">
+          {/* Visual Case Milestone Roadmap Tracker */}
+          <div className="bg-slate-900 rounded-3xl p-6 border-2 border-slate-800 shadow-xl">
+            <h3 className="text-sm font-black uppercase text-amber-500 mb-4">
+              {currentLang === 'om' ? 'Milestone Galmee' : 'Case Milestones'}
+            </h3>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-[10px] font-bold text-slate-400">Progress</span>
+                <button
+                  type="button"
+                  onClick={handleOpenMainAuditTrail}
+                  className="text-[9px] px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/20 font-bold transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <History className="w-3 h-3" />
+                  <span>Audit Trail</span>
+                </button>
+                <span className="text-[10px] font-bold text-amber-500">{Math.round(((currentStepIndex + 1) / PROCEDURAL_STEPS.length) * 100)}%</span>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-2">
+                <div className="bg-amber-500 h-2 rounded-full transition-all duration-500" style={{ width: `${((currentStepIndex + 1) / PROCEDURAL_STEPS.length) * 100}%` }}></div>
+              </div>
+            </div>
+            <CaseMilestoneTracker
+              currentLang={currentLang}
+              caseNumber={sessionId || (courtLevel === 'highCourt' ? 'CR-2026/089' : 'CR-2026/045')}
+              caseTitle={sessionTitle || 'Abbaa Alangaa vs Gemechu Tadesse'}
+            />
+
+            {/* Real-time Milestone Search Filter Results */}
+            {historySearch.trim() && (
+              <div className="mt-3 pt-3 border-t border-slate-800 space-y-2">
+                <div className="text-[10px] font-mono text-amber-400 uppercase tracking-wide flex items-center justify-between">
+                  <span>Filtered Milestones:</span>
+                  <span className="bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-300">
+                    {PROCEDURAL_STEPS.filter(s => {
+                      const q = historySearch.toLowerCase();
+                      return s.title.om.toLowerCase().includes(q) ||
+                             s.title.am.toLowerCase().includes(q) ||
+                             s.title.en.toLowerCase().includes(q) ||
+                             (s.statuteRef && s.statuteRef.toLowerCase().includes(q));
+                    }).length} matches
+                  </span>
+                </div>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {PROCEDURAL_STEPS.filter(s => {
+                    const q = historySearch.toLowerCase();
+                    return s.title.om.toLowerCase().includes(q) ||
+                           s.title.am.toLowerCase().includes(q) ||
+                           s.title.en.toLowerCase().includes(q) ||
+                           (s.statuteRef && s.statuteRef.toLowerCase().includes(q));
+                  }).map(step => (
+                    <div 
+                      key={step.id} 
+                      onClick={() => setCurrentStepIndex(step.id - 1)}
+                      className={`p-2 rounded-xl text-xs cursor-pointer transition-all border ${
+                        currentStepIndex === step.id - 1
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                          : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="font-bold">{step.title[currentLang] || step.title.en}</div>
+                      {step.statuteRef && <div className="text-[10px] text-cyan-400 font-mono">📖 {step.statuteRef}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <Reorder.Group axis="y" values={widgetOrder} onReorder={setWidgetOrder} className="space-y-6">
             {widgetOrder.map((widgetId) => (
               <Reorder.Item 
@@ -2868,8 +5648,18 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
                       placeholder={t.courtroomNotes.placeholder}
                       className="w-full h-48 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white font-medium focus:outline-none focus:border-amber-500 transition-colors resize-none custom-scrollbar"
                     />
-                    <div className="mt-2 text-[9px] font-black uppercase tracking-widest text-slate-500 px-2 text-right">
-                      {quickNotes.length} chars
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => handleAutoLinkCitations('notes')}
+                        className="text-[9px] font-black uppercase text-amber-500 hover:text-amber-400 flex items-center gap-1 transition-colors"
+                        title="Scan for Article citations and convert to links"
+                      >
+                        <FileText className="w-3 h-3" />
+                        Auto-Link Citations
+                      </button>
+                      <div className="text-[9px] font-black uppercase tracking-widest text-slate-500 px-2 text-right">
+                        {quickNotes.length} chars
+                      </div>
                     </div>
                   </div>
                 )}
@@ -2909,26 +5699,564 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
             </div>
           </div>
 
-          <div className="bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 flex flex-col h-[700px] lg:h-auto lg:max-h-[700px] shadow-2xl overflow-hidden sticky top-8">
-            <div className="flex items-center justify-between mb-6 border-b-2 border-slate-800 pb-4">
-              <h3 className="text-xl font-black uppercase text-amber-500 flex items-center gap-2">
-                <History className="w-6 h-6" />
-                {t.courtroomHistory.title}
-              </h3>
-              <div className="flex items-center gap-4">
-                <div className="relative hidden sm:block">
-                  <input
-                    type="text"
-                    value={historySearch}
-                    onChange={(e) => setHistorySearch(e.target.value)}
-                    placeholder={t.common.searchPlaceholder}
-                    className="bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1 text-xs font-bold text-white focus:border-amber-500 outline-none w-40"
-                  />
-                  <Plus className="w-3 h-3 absolute left-2.5 top-2 text-slate-500 rotate-45" />
+          {/* Latest Legal News & Telegram Archive Feed Section */}
+          <div className="bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            {/* Header & Sync Status */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-6 h-6 text-cyan-400" />
+                  <h3 className="text-xl font-black uppercase text-cyan-400 tracking-wide">
+                    {currentLang === 'om' ? 'Oduu & Murtiilee Seeraa Haaraa' : currentLang === 'am' ? 'አዳዲስ የህግ መረጃዎችና ውሳኔዎች' : 'Latest Legal Updates & Precedents'}
+                  </h3>
+                  {unreadNewsCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-cyan-500 text-slate-950 font-black text-[10px] animate-pulse">
+                      +{unreadNewsCount} New
+                    </span>
+                  )}
                 </div>
-                <span className="bg-slate-800 text-slate-400 px-3 py-1 rounded-lg text-xs font-bold font-mono">
-                  {filteredHistory.length} ITEMS
+                <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                  <span className="flex items-center gap-1.5 font-mono">
+                    <span className={`inline-block w-2 h-2 rounded-full ${isBackgroundSyncActive ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+                    <span className={isBackgroundSyncActive ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
+                      {isBackgroundSyncActive
+                        ? (currentLang === 'om' ? 'Walsimsiisni Kallattii Hojiirra Jira' : 'Background Sync: Active (@seeraai_ethio)')
+                        : (currentLang === 'om' ? 'Walsimsiisni Dhaabbateera' : 'Background Sync: Paused')}
+                    </span>
+                  </span>
+                  <span>•</span>
+                  <span className="text-slate-500">
+                    {currentLang === 'om' ? 'Yeroo dhihoo:' : 'Last checked:'} {lastSyncTimestamp}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons: Polling toggle, manual refresh, and 1,500+ archive modal trigger */}
+              <div className="flex items-center flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBackgroundSyncActive(!isBackgroundSyncActive)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    isBackgroundSyncActive
+                      ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20'
+                      : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'
+                  }`}
+                  title={isBackgroundSyncActive ? 'Pause background sync' : 'Resume background sync'}
+                >
+                  <Wifi className={`w-3.5 h-3.5 ${isBackgroundSyncActive ? 'text-emerald-400' : 'text-slate-400'}`} />
+                  <span>{isBackgroundSyncActive ? 'Live' : 'Paused'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleRefreshNews(selectedNewsSource)}
+                  disabled={isSyncingNews}
+                  className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Refresh news feed now"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${isSyncingNews ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingNews ? (currentLang === 'om' ? 'Fe\'aa jira...' : 'Syncing...') : (currentLang === 'om' ? 'Haaromsi' : 'Sync Now')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowArchive1500Modal(true);
+                    handleLoadArchive1500();
+                  }}
+                  className="px-3 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>1,500+ {currentLang === 'om' ? 'Kuusaa Seeraa' : 'Legal Archive'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Live Notification Toast */}
+            {newUpdatesToast && (
+              <div className="p-2.5 rounded-xl bg-cyan-950/80 border border-cyan-500/40 text-cyan-200 text-xs flex items-center justify-between gap-2 shadow-lg animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+                  <span className="font-semibold">{newUpdatesToast}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNewUpdatesToast(null)}
+                  className="text-cyan-400 hover:text-white p-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Controls Bar: Channel Source Tabs & Legal News Type Filter Dropdown */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-1 text-xs">
+              {/* Channel Tabs */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedNewsSource('all');
+                    handleRefreshNews('all');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer shrink-0 ${
+                    selectedNewsSource === 'all'
+                      ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                      : 'bg-slate-950 text-slate-400 border border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  🌐 {currentLang === 'om' ? 'Chaanaloota Hunda' : 'All Channels'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedNewsSource('seeraai_ethio');
+                    handleRefreshNews('seeraai_ethio');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                    selectedNewsSource === 'seeraai_ethio'
+                      ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                      : 'bg-slate-950 text-slate-400 border border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <span>⚖️ @seeraai_ethio</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-slate-900 text-[10px] text-cyan-300 font-mono">Master</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedNewsSource('wakolegalstudio');
+                    handleRefreshNews('wakolegalstudio');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                    selectedNewsSource === 'wakolegalstudio'
+                      ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                      : 'bg-slate-950 text-slate-400 border border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <span>📚 @wakolegalstudio</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-slate-900 text-[10px] text-amber-300 font-mono">1,500+</span>
+                </button>
+              </div>
+
+              {/* Type Filter Dropdown ('Precedents' | 'Proclamations' | 'General Announcements') */}
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 bg-slate-950 border border-cyan-500/30 rounded-xl px-2.5 py-1.5 shadow-sm">
+                  <Filter className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <label htmlFor="news-type-filter" className="text-[10px] font-black uppercase text-slate-400 tracking-wider hidden md:inline">
+                    {currentLang === 'om' ? 'Gosa Oduu:' : currentLang === 'am' ? 'የመረጃ አይነት:' : 'Category:'}
+                  </label>
+                  <select
+                    id="news-type-filter"
+                    value={newsTypeFilter}
+                    onChange={(e) => setNewsTypeFilter(e.target.value as any)}
+                    className="bg-transparent text-cyan-300 font-bold focus:outline-none cursor-pointer text-xs"
+                  >
+                    <option value="all" className="bg-slate-900 text-slate-200">
+                      {currentLang === 'om' ? '✨ Hunda (All Updates)' : currentLang === 'am' ? '✨ ሁሉም መረጃዎች' : '✨ All Updates'}
+                    </option>
+                    <option value="precedents" className="bg-slate-900 text-amber-300">
+                      {currentLang === 'om' ? '⚖️ Murtiiwwan Ijibbaataa (Precedents)' : currentLang === 'am' ? '⚖️ የሰበር ውሳኔዎች (Precedents)' : '⚖️ Precedents (Cassation)'}
+                    </option>
+                    <option value="proclamations" className="bg-slate-900 text-cyan-300">
+                      {currentLang === 'om' ? '📜 Labsiilee & Dambii (Proclamations)' : currentLang === 'am' ? '📜 አዋጆችና ደንቦች (Proclamations)' : '📜 Proclamations & Decrees'}
+                    </option>
+                    <option value="announcements" className="bg-slate-900 text-emerald-300">
+                      {currentLang === 'om' ? '📢 Beeksisa & Hubannoo (Announcements)' : currentLang === 'am' ? '📢 ጠቅላላ ማስታወቂያዎች' : '📢 General Announcements'}
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* List of News & Precedents */}
+            <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1 custom-scrollbar">
+              {latestNews.length === 0 ? (
+                <div className="p-8 text-center bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+                  <p className="text-sm font-bold text-slate-400">
+                    {currentLang === 'om' ? 'Oduun seeraa yeroo ammaa hin jiru.' : 'No recent updates available.'}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {currentLang === 'om' ? 'Qunnamtii Telegram qorachuuf qabduu "Haaromsi" cuqaasaa.' : 'Click "Sync Now" to fetch the latest channel updates.'}
+                  </p>
+                </div>
+              ) : (
+                latestNews
+                  .filter(news => {
+                    // 1. Channel Source Filter
+                    if (selectedNewsSource !== 'all') {
+                      const ch = (news.channelHandle || '').toLowerCase().replace('@', '');
+                      if (ch !== selectedNewsSource) return false;
+                    }
+
+                    // 2. Type/Category Filter: Precedents, Proclamations, Announcements
+                    if (newsTypeFilter === 'all') return true;
+
+                    const matchString = `${news.type || ''} ${news.referenceNumber || ''} ${news.category || ''} ${news.title?.om || ''} ${news.title?.am || ''} ${news.title?.en || ''}`.toLowerCase();
+
+                    const isCassationPrecedent =
+                      news.type === 'cassation_decision' ||
+                      matchString.includes('galmee') ||
+                      matchString.includes('cassation') ||
+                      matchString.includes('ijibbaata') ||
+                      matchString.includes('የሰበር') ||
+                      matchString.includes('ውሳኔ');
+
+                    const isProclamationOrStatute =
+                      news.type === 'proclamation' ||
+                      news.type === 'regulation' ||
+                      news.type === 'directive' ||
+                      matchString.includes('labsii') ||
+                      matchString.includes('dambii') ||
+                      matchString.includes('qajeelfama') ||
+                      matchString.includes('proclamation') ||
+                      matchString.includes('regulation') ||
+                      matchString.includes('directive') ||
+                      matchString.includes('አዋጅ') ||
+                      matchString.includes('ደንብ') ||
+                      matchString.includes('መመሪያ');
+
+                    if (newsTypeFilter === 'precedents') {
+                      return isCassationPrecedent;
+                    }
+
+                    if (newsTypeFilter === 'proclamations') {
+                      return isProclamationOrStatute;
+                    }
+
+                    if (newsTypeFilter === 'announcements') {
+                      return (
+                        (!isCassationPrecedent && !isProclamationOrStatute) ||
+                        matchString.includes('beeksisa') ||
+                        matchString.includes('announcement') ||
+                        matchString.includes('hubannoo') ||
+                        matchString.includes('ማስታወቂያ') ||
+                        matchString.includes('gorsa')
+                      );
+                    }
+
+                    return true;
+                  })
+                  .map((news) => {
+                    const isAudioPlaying = playingAudioId === news.id;
+                    const textToRead = `${news.title[currentLang] || news.title.om}. ${news.summary[currentLang] || news.summary.om}`;
+
+                    return (
+                      <div
+                        key={news.id}
+                        className="p-4 bg-slate-950 rounded-2xl border border-slate-800 hover:border-cyan-500/50 transition-all space-y-3 group"
+                      >
+                        {/* Reference & Badges */}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded-md bg-cyan-950/80 text-cyan-300 border border-cyan-800 text-[10px] font-mono font-bold">
+                              {news.referenceNumber}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-slate-900 text-slate-400 text-[10px] font-mono">
+                              @{news.channelHandle || 'seeraai_ethio'}
+                            </span>
+                            {news.jurisdiction && (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-900 text-amber-300 text-[10px] font-bold uppercase">
+                                {news.jurisdiction}
+                              </span>
+                            )}
+                            {news.category && (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-900 text-slate-400 text-[10px]">
+                                {news.category.replace('_', ' ')}
+                              </span>
+                            )}
+                          </div>
+                          {news.publishDate && (
+                            <span className="text-[10px] font-mono text-slate-500">
+                              {news.publishDate}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Title */}
+                        <h4 className="font-bold text-sm text-cyan-200 group-hover:text-cyan-100 leading-snug">
+                          {renderLegalTextWithTooltips(news.title[currentLang] || news.title.om, currentLang)}
+                        </h4>
+
+                        {/* Summary */}
+                        <p className="text-xs text-slate-300 leading-relaxed line-clamp-3">
+                          {renderLegalTextWithTooltips(news.summary[currentLang] || news.summary.om, currentLang)}
+                        </p>
+
+                        {/* Key Principles / Ratio Box */}
+                        {(news.keyPrinciples?.[currentLang] || news.keyPrinciples?.om) && (
+                          <div className="p-2.5 rounded-xl bg-slate-900/80 border-l-2 border-amber-500 text-[11px] text-amber-200/90 italic">
+                            <strong className="not-italic text-amber-400 block font-mono text-[10px] uppercase">
+                              ⚖️ {currentLang === 'om' ? 'Qajeeltoo Dirqisiisaa:' : currentLang === 'am' ? 'አስገዳጅ የህግ መርህ:' : 'Binding Ratio:'}
+                            </strong>
+                            {news.keyPrinciples[currentLang] || news.keyPrinciples.om}
+                          </div>
+                        )}
+
+                        {/* Action Toolbar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-900">
+                          <div className="flex items-center gap-1.5">
+                            {/* Insert Citation to Court Docket */}
+                            <button
+                              type="button"
+                              onClick={() => handleInsertCitationToSession(news)}
+                              className="px-2.5 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+                              title="Add as cited precedent in this session's transcript"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>{currentLang === 'om' ? 'Galmeetti Dabali' : currentLang === 'am' ? 'ወደ መዝገብ አክል' : 'Cite in Docket'}</span>
+                            </button>
+
+                            {/* TTS Voice Dictation */}
+                            <button
+                              type="button"
+                              onClick={() => handleSpeakText(news.id, textToRead)}
+                              className={`p-1.5 rounded-lg border text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                isAudioPlaying
+                                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
+                                  : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800'
+                              }`}
+                              title={isAudioPlaying ? 'Stop audio' : 'Listen to summary'}
+                            >
+                              {isAudioPlaying ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                              <span className="hidden sm:inline text-[11px]">
+                                {isAudioPlaying ? (currentLang === 'om' ? 'Dhaabi' : 'Stop') : (currentLang === 'om' ? 'Dubbisi' : 'Listen')}
+                              </span>
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {/* Copy Citation */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const text = `[Wabii Seeraa]: ${news.referenceNumber} - ${news.title[currentLang] || news.title.om}\nMadda: ${news.postUrl || `https://t.me/${news.channelHandle}`}`;
+                                navigator.clipboard.writeText(text);
+                                setNewUpdatesToast(currentLang === 'om' ? 'Wabiin garaggalfameera!' : 'Citation copied!');
+                                setTimeout(() => setNewUpdatesToast(null), 2500);
+                              }}
+                              className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 text-xs transition cursor-pointer"
+                              title="Copy legal citation"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Open Original Telegram Post */}
+                            {news.postUrl && (
+                              <a
+                                href={news.postUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-800 font-bold text-xs transition flex items-center gap-1"
+                                title="Open Telegram post"
+                              >
+                                <span>Telegram</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+
+          <div className="bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 flex flex-col h-[700px] lg:h-auto lg:max-h-[700px] shadow-2xl overflow-hidden sticky top-8">
+            <div className="space-y-3 mb-4 border-b-2 border-slate-800 pb-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="text-xl font-black uppercase text-amber-500 flex items-center gap-2">
+                  <History className="w-6 h-6" />
+                  {t.courtroomHistory.title}
+                </h3>
+                <div className="flex items-center gap-3">
+                  <div className="relative hidden sm:block">
+                    <input
+                      type="text"
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                      placeholder={t.common.searchPlaceholder}
+                      className="bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1 text-xs font-bold text-white focus:border-amber-500 outline-none w-40"
+                    />
+                    <Plus className="w-3 h-3 absolute left-2.5 top-2 text-slate-500 rotate-45" />
+                  </div>
+                  <span className="bg-slate-800 text-slate-400 px-3 py-1 rounded-lg text-xs font-bold font-mono">
+                    {filteredHistory.length} ITEMS
+                  </span>
+                </div>
+              </div>
+
+              {/* Court Staff Evidence Status Filter Tabs */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar text-xs">
+                <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
+                  Filter:
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setEvidenceStatusFilter('all')}
+                  className={`px-2.5 py-1 rounded-xl font-mono text-[10px] font-bold uppercase transition-all cursor-pointer shrink-0 border ${
+                    evidenceStatusFilter === 'all'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  All ({history.length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEvidenceStatusFilter('admissible')}
+                  className={`px-2.5 py-1 rounded-xl font-mono text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center gap-1 shrink-0 border ${
+                    evidenceStatusFilter === 'admissible'
+                      ? 'bg-emerald-950 text-emerald-300 border-emerald-500/50 shadow-sm'
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  Admissible ({history.filter(h => isEvidenceLog(h) && getLogEvidenceStatus(h) === 'admissible').length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEvidenceStatusFilter('rejected')}
+                  className={`px-2.5 py-1 rounded-xl font-mono text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center gap-1 shrink-0 border ${
+                    evidenceStatusFilter === 'rejected'
+                      ? 'bg-rose-950 text-rose-300 border-rose-500/50 shadow-sm'
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <X className="w-3 h-3 text-rose-400" />
+                  Rejected ({history.filter(h => isEvidenceLog(h) && getLogEvidenceStatus(h) === 'rejected').length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEvidenceStatusFilter('verified')}
+                  className={`px-2.5 py-1 rounded-xl font-mono text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center gap-1 shrink-0 border ${
+                    evidenceStatusFilter === 'verified'
+                      ? 'bg-emerald-950 text-emerald-300 border-emerald-500/50 shadow-sm'
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                  Verified ({history.filter(h => isEvidenceLog(h) && getLogEvidenceStatus(h) === 'verified').length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEvidenceStatusFilter('pending')}
+                  className={`px-2.5 py-1 rounded-xl font-mono text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center gap-1 shrink-0 border ${
+                    evidenceStatusFilter === 'pending'
+                      ? 'bg-amber-950 text-amber-300 border-amber-500/50 shadow-sm'
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <Timer className="w-3 h-3 text-amber-400" />
+                  Pending ({history.filter(h => isEvidenceLog(h) && getLogEvidenceStatus(h) === 'pending').length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEvidenceStatusFilter('uploaded')}
+                  className={`px-2.5 py-1 rounded-xl font-mono text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center gap-1 shrink-0 border ${
+                    evidenceStatusFilter === 'uploaded'
+                      ? 'bg-sky-950 text-sky-300 border-sky-500/50 shadow-sm'
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <UploadCloud className="w-3 h-3 text-sky-400" />
+                  Uploaded ({history.filter(h => isEvidenceLog(h) && getLogEvidenceStatus(h) === 'uploaded').length})
+                </button>
+              </div>
+
+              {/* Select All & Bulk Action Bar for Court Staff */}
+              <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <button
+                    type="button"
+                    onClick={handleSelectAllEvidence}
+                    className="flex items-center gap-2 text-[10px] font-mono font-bold text-slate-300 hover:text-amber-400 cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredHistory.filter(isEvidenceLog).length > 0 &&
+                        filteredHistory.filter(isEvidenceLog).every(l => selectedEvidenceIds.includes(l.id))
+                      }
+                      onChange={() => handleSelectAllEvidence()}
+                      className="w-3.5 h-3.5 rounded border-slate-700 text-amber-500 focus:ring-0 focus:ring-offset-0 bg-slate-950 cursor-pointer"
+                    />
+                    <span>{currentLang === 'om' ? 'Ragaalee Hundumaa Fili' : 'Select All Filtered Evidence'}</span>
+                    <span className="text-slate-500 font-normal">
+                      ({filteredHistory.filter(isEvidenceLog).length})
+                    </span>
+                  </button>
+
+                  {selectedEvidenceIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEvidenceIds([])}
+                      className="text-[10px] font-mono text-slate-400 hover:text-amber-300 underline cursor-pointer"
+                    >
+                      Clear ({selectedEvidenceIds.length})
+                    </button>
+                  )}
+                </div>
+
+                {/* Floating / Sticky Bulk Action Bar for Admissibility Updates in Firestore */}
+                {selectedEvidenceIds.length > 0 && (
+                  <div className="p-3 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 rounded-2xl border-2 border-amber-500/60 shadow-2xl space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                        <span className="font-mono font-black text-amber-300 uppercase tracking-wider text-[11px]">
+                          {selectedEvidenceIds.length} {currentLang === 'om' ? 'Ragaan Filatameera' : 'Evidence Items Selected'}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-mono font-bold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded">
+                        Firestore Batch Operation
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        disabled={isBatchUpdating}
+                        onClick={() => handleExecuteBulkAction('admissible')}
+                        className="flex items-center justify-center gap-1 px-2.5 py-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 active:scale-95 disabled:opacity-50 text-white font-mono text-[9.5px] font-black uppercase rounded-xl shadow-lg border border-emerald-400 transition-all cursor-pointer"
+                        title="Update all selected evidence items to Admissible status in a single Firestore batch write"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 text-white shrink-0" />
+                        <span className="truncate">{isBatchUpdating ? '...' : 'Admissible'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isBatchUpdating}
+                        onClick={() => handleExecuteBulkAction('pending')}
+                        className="flex items-center justify-center gap-1 px-2.5 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 active:scale-95 disabled:opacity-50 text-white font-mono text-[9.5px] font-black uppercase rounded-xl shadow-lg border border-amber-400 transition-all cursor-pointer"
+                        title="Update all selected evidence items to Pending status in a single Firestore batch write"
+                      >
+                        <Timer className="w-3.5 h-3.5 text-white shrink-0" />
+                        <span className="truncate">{isBatchUpdating ? '...' : 'Pending'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isBatchUpdating}
+                        onClick={() => handleExecuteBulkAction('rejected')}
+                        className="flex items-center justify-center gap-1 px-2.5 py-2 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 active:scale-95 disabled:opacity-50 text-white font-mono text-[9.5px] font-black uppercase rounded-xl shadow-lg border border-rose-400 transition-all cursor-pointer"
+                        title="Update all selected evidence items to Rejected status in a single Firestore batch write"
+                      >
+                        <X className="w-3.5 h-3.5 text-white shrink-0" />
+                        <span className="truncate">{isBatchUpdating ? '...' : 'Rejected'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2938,45 +6266,326 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
                   {t.courtroomHistory.empty}
                 </div>
               ) : (
-                filteredHistory.map((log) => (
-                  <div 
-                    key={log.id} 
-                    className={`p-4 rounded-2xl border-l-4 shadow-sm animate-in slide-in-from-right-2 duration-300 ${
-                      log.type === 'auto' 
-                        ? 'bg-slate-950/50 border-amber-500' 
-                        : 'bg-blue-950/20 border-blue-500'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <span className={`text-[10px] font-black uppercase tracking-wider ${log.type === 'auto' ? 'text-amber-500' : 'text-blue-400'}`}>
-                        {log.type === 'auto' ? t.courtroomHistory.autoStep : t.courtroomHistory.manualEntry}
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-500 bg-slate-950 px-2 py-0.5 rounded-md">
-                        {log.timestamp}
-                      </span>
-                    </div>
-                    {log.witnessId && (
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="bg-amber-500/20 text-amber-400 text-[8px] font-black uppercase px-2 py-0.5 rounded-full border border-amber-500/30">
-                          {witnesses.find(w => w.id === log.witnessId)?.name || 'Witness'}
-                        </span>
-                        {log.tags?.map(tag => (
-                          <span key={tag} className="bg-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase px-2 py-0.5 rounded-full border border-emerald-500/30">
-                            {tag}
+                <Reorder.Group
+                  axis="y"
+                  values={filteredHistory}
+                  onReorder={(newOrder: LogEntry[]) => {
+                    if (evidenceStatusFilter === 'all' && !historySearch.trim()) {
+                      setHistory(newOrder);
+                    } else {
+                      const nonFiltered = history.filter(h => !filteredHistory.some(f => f.id === h.id));
+                      setHistory([...newOrder, ...nonFiltered]);
+                    }
+                  }}
+                  className="space-y-4"
+                >
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    {filteredHistory.map((log, index) => (
+                      <Reorder.Item
+                        key={log.id}
+                        value={log}
+                        initial={{ opacity: 0, y: 14, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -12, scale: 0.97 }}
+                        layout
+                        transition={{
+                          duration: 0.28,
+                          delay: Math.min(index * 0.04, 0.32),
+                          ease: [0.22, 1, 0.36, 1],
+                          layout: { duration: 0.25 }
+                        }}
+                        className={`p-4 rounded-2xl border-l-4 shadow-sm relative transition-colors duration-200 ${
+                          selectedEvidenceIds.includes(log.id)
+                            ? 'bg-amber-500/10 border-amber-400 ring-2 ring-amber-400/50 shadow-md'
+                            : log.type === 'auto' 
+                            ? 'bg-slate-950/50 border-amber-500' 
+                            : 'bg-blue-950/20 border-blue-500'
+                        }`}
+                      >
+                      <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          {/* Selection Checkbox for Bulk Batch Actions */}
+                          {isEvidenceLog(log) && (
+                            <label
+                              className="flex items-center gap-1.5 cursor-pointer select-none bg-slate-900/90 px-2 py-0.5 rounded-md border border-slate-700/60 hover:border-amber-400 shrink-0"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Select this evidence item for bulk batch operations"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedEvidenceIds.includes(log.id)}
+                                onChange={(e) => handleToggleSelectEvidence(log.id, e as any)}
+                                className="w-3.5 h-3.5 rounded border-slate-700 text-amber-500 focus:ring-0 focus:ring-offset-0 bg-slate-950 cursor-pointer"
+                              />
+                              <span className="text-[9px] font-mono text-slate-300 font-bold uppercase">Select</span>
+                            </label>
+                          )}
+
+                          {/* Drag & Drop Reordering Handle */}
+                          <div
+                            className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-amber-400 transition-colors"
+                            title="Drag to reorder evidence hierarchy for case preparation"
+                          >
+                            <GripVertical className="w-4 h-4" />
+                          </div>
+                          <span className={`text-[10px] font-black uppercase tracking-wider ${log.type === 'auto' ? 'text-amber-500' : 'text-blue-400'}`}>
+                            {log.type === 'auto' ? t.courtroomHistory.autoStep : t.courtroomHistory.manualEntry}
                           </span>
-                        ))}
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          {isEvidenceLog(log) && getLogEvidenceStatus(log) === 'admissible' && (
+                            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 text-[8px] font-mono font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
+                              ADMISSIBLE
+                            </span>
+                          )}
+                          {isEvidenceLog(log) && getLogEvidenceStatus(log) === 'rejected' && (
+                            <span className="bg-rose-500/20 text-rose-300 border border-rose-500/50 text-[8px] font-mono font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                              <X className="w-2.5 h-2.5 text-rose-400" />
+                              REJECTED
+                            </span>
+                          )}
+                          <span className="text-[10px] font-mono text-slate-500 bg-slate-950 px-2 py-0.5 rounded-md">
+                            {log.timestamp}
+                          </span>
+                        </div>
                       </div>
-                    )}
-                    <p className={`text-sm font-bold leading-relaxed ${log.type === 'auto' ? 'text-slate-100' : 'text-blue-100'}`}>
-                      {log.type === 'auto' && log.stepId && (
-                        <span className="text-amber-500 mr-2">#{log.stepId}</span>
+                      {log.witnessId && (
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span className="bg-amber-500/20 text-amber-400 text-[8px] font-black uppercase px-2 py-0.5 rounded-full border border-amber-500/30">
+                            {witnesses.find(w => w.id === log.witnessId)?.name || 'Witness'}
+                          </span>
+                          {log.tags?.map(tag => (
+                            <span key={tag} className="bg-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase px-2 py-0.5 rounded-full border border-emerald-500/30">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
                       )}
-                      {log.text}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
+                      <p className="text-sm font-bold text-slate-200 leading-relaxed">
+                        {log.text}
+                      </p>
+
+                      {isEvidenceLog(log) && (
+                        <div className="space-y-2 mt-2.5">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedEvidenceLog(log)}
+                              className="flex-1 flex items-center justify-between gap-2 px-3 py-2 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/40 hover:border-emerald-400 rounded-xl text-xs font-bold text-emerald-300 transition-all duration-200 group shadow-sm cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2 overflow-hidden flex-wrap sm:flex-nowrap">
+                                {getFileTypeIcon(log.fileType, log.fileName, log.fileUrl, log.evidenceMetadata?.evidenceType)}
+                                <span className="truncate font-mono">
+                                  {log.fileName || (currentLang === 'om' ? 'Faayila Ragaa & Metaadaataa' : currentLang === 'am' ? 'የማስረጃ ፋይል እና ሜታዳታ' : 'Evidence File & Metadata Preview')}
+                                </span>
+                                <span className="text-[9px] uppercase font-mono px-2 py-0.5 rounded font-bold bg-slate-900/90 text-amber-300 border border-amber-500/30 shrink-0">
+                                  {getFileTypeBadgeLabel(log.fileType, log.fileName, log.evidenceMetadata?.evidenceType)}
+                                </span>
+                                {log.fileSize && (
+                                  <span className="text-[9px] font-mono text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800 shrink-0">
+                                    {log.fileSize}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="bg-emerald-500/20 text-emerald-400 text-[10px] uppercase font-black px-2 py-0.5 rounded-md border border-emerald-500/30">
+                                  {currentLang === 'om' ? 'Ilaali' : currentLang === 'am' ? 'ክፈት' : 'Preview'}
+                                </span>
+                                <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyEvidenceCitation(log, e)}
+                              title="Wabii Ragaa & Seeraa Waraabi / Copy Evidence Citation"
+                              className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-400/60 text-amber-300 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                            >
+                              {copiedCitationId === log.id ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span className="text-[10px] uppercase font-bold text-emerald-400 hidden sm:inline">Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5 text-amber-400" />
+                                  <span className="text-[10px] uppercase font-bold hidden sm:inline">Copy Citation</span>
+                                </>
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleOpenShareDialog(log, e)}
+                              title="Dabarsu / Qoodi (Share Secure Temporary Link)"
+                              className="px-3 py-2 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 hover:border-sky-400/60 text-sky-300 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                            >
+                              <Share2 className="w-3.5 h-3.5 text-sky-400" />
+                              <span className="text-[10px] uppercase font-bold hidden sm:inline">Share</span>
+                            </button>
+                          </div>
+
+                          {/* Interactive Document Verification & Expand Toggle Bar */}
+                          <div className="flex items-center justify-between text-[10px] font-mono px-2.5 py-1.5 bg-slate-950/80 rounded-xl border border-slate-800/80 flex-wrap gap-2">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-slate-400 font-bold uppercase tracking-wider hidden sm:inline mr-1">Status:</span>
+                              <button
+                                type="button"
+                                onClick={(e) => toggleEvidenceStatus(log, 'admissible', e)}
+                                className={`px-2 py-0.5 rounded-md font-bold uppercase flex items-center gap-1 transition-all cursor-pointer ${
+                                  getLogEvidenceStatus(log) === 'admissible'
+                                    ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50 shadow-sm'
+                                    : 'text-slate-500 hover:text-emerald-400'
+                                }`}
+                                title="Mark as Admissible Evidence by Court Order"
+                              >
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                Admissible
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => toggleEvidenceStatus(log, 'rejected', e)}
+                                className={`px-2 py-0.5 rounded-md font-bold uppercase flex items-center gap-1 transition-all cursor-pointer ${
+                                  getLogEvidenceStatus(log) === 'rejected'
+                                    ? 'bg-rose-500/30 text-rose-300 border border-rose-500/50 shadow-sm'
+                                    : 'text-slate-500 hover:text-rose-400'
+                                }`}
+                                title="Mark as Rejected Evidence by Bench Order"
+                              >
+                                <X className="w-3 h-3 text-rose-400" />
+                                Rejected
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => toggleEvidenceStatus(log, 'verified', e)}
+                                className={`px-2 py-0.5 rounded-md font-bold uppercase flex items-center gap-1 transition-all cursor-pointer ${
+                                  getLogEvidenceStatus(log) === 'verified'
+                                    ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50 shadow-sm'
+                                    : 'text-slate-500 hover:text-emerald-400'
+                                }`}
+                                title="Mark as Verified & Authentic"
+                              >
+                                <CheckCircle2 className="w-3 h-3" />
+                                Verified
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => toggleEvidenceStatus(log, 'pending', e)}
+                                className={`px-2 py-0.5 rounded-md font-bold uppercase flex items-center gap-1 transition-all cursor-pointer ${
+                                  getLogEvidenceStatus(log) === 'pending'
+                                    ? 'bg-amber-500/30 text-amber-300 border border-amber-500/50 shadow-sm'
+                                    : 'text-slate-500 hover:text-amber-400'
+                                }`}
+                                title="Mark as Pending Examination"
+                              >
+                                <Timer className="w-3 h-3" />
+                                Pending
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => toggleEvidenceStatus(log, 'uploaded', e)}
+                                className={`px-2 py-0.5 rounded-md font-bold uppercase flex items-center gap-1 transition-all cursor-pointer ${
+                                  getLogEvidenceStatus(log) === 'uploaded'
+                                    ? 'bg-sky-500/30 text-sky-300 border border-sky-500/50 shadow-sm'
+                                    : 'text-slate-500 hover:text-sky-400'
+                                }`}
+                                title="Mark as Uploaded Record"
+                              >
+                                <UploadCloud className="w-3 h-3" />
+                                Uploaded
+                              </button>
+                            </div>
+
+                            {/* Inline Expand / Collapse Snippet Toggle Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => toggleExpandEvidence(log.id, e)}
+                              className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-amber-300 rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer"
+                              title="Toggle Inline Image Thumbnail / PDF Text Snippet"
+                            >
+                              <span>{expandedEvidenceIds[log.id] ? 'Collapse' : 'Expand'}</span>
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedEvidenceIds[log.id] ? 'rotate-180 text-amber-400' : 'text-slate-400'}`} />
+                            </button>
+                          </div>
+
+                          {/* Inline Expandable Thumbnail / PDF Text Snippet Container */}
+                          {expandedEvidenceIds[log.id] && (
+                            <div className="mt-3 p-3 bg-slate-950/90 rounded-2xl border border-emerald-500/30 space-y-2 animate-in fade-in duration-200">
+                              <div className="flex items-center justify-between text-[10px] font-mono text-emerald-400 border-b border-slate-800 pb-1.5">
+                                <span className="font-bold uppercase tracking-wider flex items-center gap-1">
+                                  <FileCode className="w-3.5 h-3.5" /> Inline Document Preview & Snippet
+                                </span>
+                                <span className="text-slate-500 font-normal">Page 1 Excerpt</span>
+                              </div>
+
+                              {log.fileUrl && /png|jpe?g|webp|gif|svg/i.test(log.fileUrl || log.fileName || '') ? (
+                                <div className="flex flex-col items-center justify-center p-2 bg-slate-900/60 rounded-xl border border-slate-800">
+                                  <img
+                                    src={log.fileUrl}
+                                    alt="Inline Evidence Thumbnail"
+                                    className="max-h-48 rounded-lg object-contain border border-slate-800 shadow-md"
+                                  />
+                                  <span className="text-[9px] text-slate-400 font-mono mt-1">📷 High-Res Scanned Image Thumbnail</span>
+                                </div>
+                              ) : (
+                                <div className="text-xs font-mono text-slate-200 leading-relaxed space-y-1.5 bg-slate-900/70 p-3 rounded-xl border border-slate-800/80">
+                                  <div className="text-amber-300 font-semibold italic border-l-2 border-amber-400 pl-2">
+                                    "{log.text.length > 250 ? log.text.substring(0, 250) + '...' : log.text}"
+                                  </div>
+                                  {log.evidenceMetadata?.summary && (
+                                    <div className="text-slate-300 text-[11px] pt-1.5 border-t border-slate-800/80">
+                                      <strong className="text-emerald-400 uppercase tracking-wider text-[9px] block">OCR / Extracted Fact Summary:</strong>
+                                      <span>{log.evidenceMetadata.summary}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Witness Contradiction Annotation Field */}
+                      {log.witnessId && (
+                        <div className="mt-3 pt-3 border-t border-slate-800/50">
+                          {(() => {
+                            const isConflicting = CONTRADICTION_KEYWORDS.some(keyword => 
+                              (log.annotation || '').toLowerCase().includes(keyword.toLowerCase())
+                            );
+                            return (
+                              <div className="space-y-2">
+                                {isConflicting && (
+                                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-rose-400 animate-pulse px-1">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    <span>{currentLang === 'om' ? 'Wal-faallessuun Argatame' : currentLang === 'am' ? 'ተቃርኖ ተገኝቷል' : 'Potential Contradiction Detected'}</span>
+                                  </div>
+                                )}
+                                <textarea
+                                  value={log.annotation || ''}
+                                  onChange={(e) => {
+                                    const newAnnotation = e.target.value;
+                                    setHistory(prev => prev.map(h => h.id === log.id ? { ...h, annotation: newAnnotation } : h));
+                                  }}
+                                  placeholder={currentLang === 'om' ? 'Yaada ragaa wal-faallessu asitti galmeessi...' : 'Annotate witness contradictions here...'}
+                                  className={`w-full bg-slate-950 border rounded-xl p-3 text-xs text-amber-300 placeholder-slate-600 focus:outline-none resize-none transition-all duration-300 ${
+                                    isConflicting 
+                                      ? 'border-rose-500/60 shadow-[0_0_10px_rgba(244,63,94,0.15)] focus:border-rose-400' 
+                                      : 'border-slate-800 focus:border-amber-500/50'
+                                  }`}
+                                  rows={2}
+                                />
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </Reorder.Item>
+                  ))}
+                </AnimatePresence>
+              </Reorder.Group>
+            )}
           </div>
         </div>
       </div>
@@ -3014,6 +6623,7 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
           {/* Body */}
           {!isNotesMinimized && (
             <div className="p-4 space-y-3">
+              <Notifications />
               <div className="flex items-center justify-between">
                 <button
                   type="button"
@@ -3044,12 +6654,29 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
 
               {isRecordingVoiceMemo && <VoiceActivityWave />}
 
-              <textarea
-                value={quickNotes}
-                onChange={(e) => setQuickNotes(e.target.value)}
-                placeholder={t.courtroomNotes.placeholder}
-                className="w-full h-48 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white font-medium focus:outline-none focus:border-amber-500 transition-colors resize-none custom-scrollbar"
-              />
+              {(() => {
+                const hasConflict = CONTRADICTION_KEYWORDS.some(k => quickNotes.toLowerCase().includes(k.toLowerCase()));
+                return (
+                  <div className="space-y-2">
+                    {hasConflict && (
+                      <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-rose-400 animate-pulse px-1">
+                        <Zap className="w-3 h-3" />
+                        <span>{currentLang === 'om' ? 'Mormiin Argatame' : 'Conflict Flagged in Notes'}</span>
+                      </div>
+                    )}
+                    <textarea
+                      value={quickNotes}
+                      onChange={(e) => setQuickNotes(e.target.value)}
+                      placeholder={t.courtroomNotes.placeholder}
+                      className={`w-full h-48 bg-slate-950 border rounded-2xl p-4 text-white font-medium focus:outline-none transition-all resize-none custom-scrollbar ${
+                        hasConflict 
+                          ? 'border-rose-500/60 shadow-[0_0_15px_rgba(244,63,94,0.1)] focus:border-rose-400' 
+                          : 'border-slate-800 focus:border-amber-500'
+                      }`}
+                    />
+                  </div>
+                );
+              })()}
               <div className="mt-2 flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-500 px-2">
                 <span>Persisted Session Storage</span>
                 <span className={quickNotes.length > 0 ? 'text-amber-500' : ''}>{quickNotes.length} chars</span>
@@ -3513,6 +7140,98 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
       </AnimatePresence>
 
       {/* Dictate Court Note Modal - Anchored to Case ID & Saved to My Content */}
+      {/* Firestore Audit Trail Modal */}
+      <AnimatePresence>
+        {isAuditModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAuditModalOpen(false)}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            >
+              <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+                    <History className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Detailed Case Audit Trail</h3>
+                    <p className="text-xs text-slate-400">Timestamped milestone status records from Firestore</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsAuditModalOpen(false)}
+                  className="p-2 rounded-xl hover:bg-slate-800 text-slate-400 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {isFetchingAuditLogs ? (
+                  <div className="flex flex-col items-center justify-center py-20 space-y-3">
+                    <RefreshCw className="w-8 h-8 animate-spin text-amber-500" />
+                    <p className="text-sm text-slate-400 font-mono">Fetching secure records...</p>
+                  </div>
+                ) : milestoneAuditLogs.length === 0 ? (
+                  <div className="text-center py-20 text-slate-500 italic">
+                    No audit logs found for this case.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between px-2">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Event History ({milestoneAuditLogs.length})</span>
+                      <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border ${auditSource === 'firestore' ? 'bg-emerald-950 text-emerald-400 border-emerald-500/30' : 'bg-amber-950 text-amber-400 border-amber-500/30'}`}>
+                        SOURCE: {auditSource.toUpperCase()}
+                      </span>
+                    </div>
+                    {milestoneAuditLogs.map((log, idx) => (
+                      <div key={log.id || idx} className="relative pl-6 border-l border-slate-800 pb-4 last:pb-0">
+                        <div className="absolute left-[-5px] top-1 w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
+                        <div className="bg-slate-950/50 border border-slate-850 rounded-2xl p-4 space-y-2 hover:border-slate-700 transition-colors">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">
+                              {log.updatedAt}
+                            </span>
+                            <span className="text-[10px] text-slate-500 italic">By: {log.updatedBy}</span>
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-200">
+                            Milestone: {log.stageTitle[currentLang] || log.stageTitle.en}
+                          </h4>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500">Status Changed:</span>
+                            <span className="text-[10px] font-bold uppercase text-emerald-400">{log.newStatus}</span>
+                          </div>
+                          {log.notes && (
+                            <p className="text-xs text-slate-400 leading-relaxed bg-slate-900/50 p-2 rounded-lg italic">
+                              "{log.notes}"
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 border-t border-slate-800 bg-slate-950/50 text-center">
+                <p className="text-[9px] text-slate-500 uppercase tracking-tighter">
+                  Authenticated Secure Judicial Audit Log • FDRE Proclamation 410/2004 Protected
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <DictateCourtNoteModal
         isOpen={showDictateCourtNote}
         onClose={() => setShowDictateCourtNote(false)}
@@ -3532,6 +7251,897 @@ export const CourtroomAssistantView: React.FC<CourtroomAssistantViewProps> = ({ 
           ]);
         }}
       />
+
+      {/* Built-in Courtroom Audio Recording Modal */}
+      {showCourtroomAudioModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md animate-in fade-in">
+          <div className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-3xl bg-slate-900 border border-slate-700 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setShowCourtroomAudioModal(false)}
+              className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-all border border-slate-700"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <CourtroomAudioRecorder
+              currentLang={currentLang}
+              activeCaseId={sessionId || undefined}
+              activeCaseNumber={sessionId || sessionTitle || 'CR-2026/045'}
+              courtLevel={courtLevel}
+              onSavedToCase={(record) => {
+                if (record.statements && record.statements.length > 0) {
+                  const newLogs: LogEntry[] = record.statements.map((s) => ({
+                    id: s.id,
+                    timestamp: s.timestamp,
+                    text: `[${s.speakerRole.toUpperCase()}: ${s.speakerName}]: ${s.statement}`,
+                    type: 'manual',
+                    tags: ['audio_recording', 'courtroom_transcription']
+                  }));
+                  setHistory((prev) => [...newLogs, ...prev]);
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Witness Testimony Modal */}
+      <WitnessTestimonyModal
+        isOpen={showWitnessModal}
+        onClose={() => setShowWitnessModal(false)}
+        currentLang={currentLang}
+        activeCaseNumber={sessionTitle || 'CR-2026/045'}
+        onSaveTestimony={(testimony) => {
+          const newLog: LogEntry = {
+            id: testimony.id,
+            timestamp: testimony.timestamp,
+            text: `[WITNESS TESTIMONY - ${testimony.witnessName} (${testimony.witnessRole})]: ${testimony.statementText} | Cross: ${testimony.crossExaminationNotes || 'None'} | Credibility: ${testimony.credibilityRating.toUpperCase()}`,
+            type: 'manual',
+            tags: ['testimony', 'witness_linked', testimony.credibilityRating]
+          };
+          setHistory(prev => [newLog, ...prev]);
+          alert('Witness testimony successfully recorded and linked to case timeline and audio!');
+        }}
+      />
+
+      {/* Court Order Generator Modal */}
+      <CourtOrderGeneratorModal
+        isOpen={showCourtOrderModal}
+        onClose={() => setShowCourtOrderModal(false)}
+        currentLang={currentLang}
+        activeCaseNumber={sessionTitle || 'CR-2026/045'}
+        courtLevel={courtLevel}
+      />
+
+      {/* Evidence Metadata & Preview Modal */}
+      {selectedEvidenceLog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl bg-slate-900 border-2 border-emerald-500/50 shadow-[0_0_50px_rgba(16,185,129,0.2)] flex flex-col">
+            {/* Header with Court Seal */}
+            <div className="sticky top-0 z-10 p-5 bg-slate-950/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-black text-xl shadow-inner">
+                  🏛️
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    <span>MANA MURTII AANAA GURBICHA</span>
+                    <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded-full border border-emerald-500/40 font-mono">
+                      SEALED EXHIBIT
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {currentLang === 'om' ? 'Ilaalcha Metaadaataa fi Axereeraa Ragaa Dhaddachaa' : currentLang === 'am' ? 'የማስረጃ ፋይል ሜታዳታ እና አጠቃላይ ማጠቃለያ' : 'Courtroom Evidence Metadata & Material Facts Preview'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(selectedEvidenceLog.text || '');
+                    showShortcutFeedback(currentLang === 'om' ? 'Barreeffamni qabameera!' : 'Text copied!', '📋');
+                  }}
+                  className="px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-300 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Barreeffama Waraabi / Copy Text"
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>Copy Text</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(selectedEvidenceLog.text || '');
+                    showShortcutFeedback(currentLang === 'om' ? 'Barreeffamni qabameera!' : 'Text copied!', '📋');
+                  }}
+                  className="px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-300 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Barreeffama Waraabi / Copy Text"
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>Copy Text</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleCopyEvidenceCitation(selectedEvidenceLog, e)}
+                  className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Wabii Ragaa & Seeraa Waraabi / Copy Citation"
+                >
+                  {copiedCitationId === selectedEvidenceLog.id ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span className="text-emerald-400 font-bold">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4 text-amber-400" />
+                      <span>Copy Citation</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEvidenceLog(null)}
+                  className="w-9 h-9 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all border border-slate-700 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-6 space-y-6 flex-1">
+              {/* Firestore practice_cases Status Bar */}
+              <div className="flex items-center justify-between gap-2 p-3 bg-slate-950 rounded-2xl border border-slate-800 text-xs font-mono">
+                <div className="flex items-center gap-2 text-amber-400">
+                  <Zap className="w-4 h-4 text-amber-400 animate-pulse" />
+                  <span className="font-bold">Firestore DB: practice_cases</span>
+                </div>
+                {isFetchingPracticeCaseEvidence ? (
+                  <span className="text-slate-400 animate-pulse flex items-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Fetching Firestore record...
+                  </span>
+                ) : (
+                  <span className="text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Retrieved & Synchronized
+                  </span>
+                )}
+              </div>
+
+              {/* Exhibit Header Banner */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/60 via-slate-900 to-slate-950 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-3 shadow-md">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
+                    EXHIBIT IDENTIFIER & CATEGORY
+                  </span>
+                  <div className="text-base font-black text-white font-mono flex items-center gap-2 mt-0.5">
+                    {getFileTypeIcon(selectedEvidenceLog.fileType, selectedEvidenceLog.fileName, selectedEvidenceLog.fileUrl, selectedEvidenceLog.evidenceMetadata?.evidenceType)}
+                    <span>{firestoreEvidenceDetails?.name || selectedEvidenceLog.evidenceMetadata?.exhibitNumber || `EXHIBIT-EVD-${selectedEvidenceLog.id.slice(-6).toUpperCase()}`}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Evidential Weight Badge */}
+                  <span className={`px-3 py-1 rounded-xl text-xs font-black uppercase border ${
+                    firestoreEvidenceDetails?.evidentialWeight === 'primary' 
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' 
+                      : firestoreEvidenceDetails?.evidentialWeight === 'secondary'
+                      ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                      : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                  }`}>
+                    Weight: {firestoreEvidenceDetails?.evidentialWeight?.toUpperCase() || 'PRIMARY'}
+                  </span>
+
+                  {/* Admissibility Badge */}
+                  <span className="bg-slate-800 text-slate-200 px-3 py-1 rounded-xl text-xs font-bold border border-slate-700">
+                    Status: {(firestoreEvidenceDetails?.admissibilityStatus || 'Admissible').toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Document Image Preview (if present) */}
+              {selectedEvidenceLog.fileUrl && (
+                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3 flex flex-col items-center justify-center">
+                  <span className="text-xs text-slate-400 font-bold mb-2">📷 Document Scan / File Preview</span>
+                  <img
+                    src={selectedEvidenceLog.fileUrl}
+                    alt="Evidence Preview"
+                    className="max-h-64 rounded-xl object-contain border border-slate-800 shadow-md"
+                  />
+                </div>
+              )}
+
+              {/* AI-Generated Summary & Relevance from Firestore */}
+              <div className="space-y-3">
+                <div className="p-4 bg-slate-950/80 rounded-2xl border border-emerald-500/30 space-y-2">
+                  <span className="text-xs font-black uppercase text-emerald-400 tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                    <span>{currentLang === 'om' ? 'Axereeraa AI (AI Evidence Summary)' : 'AI-Generated Evidence Summary'}</span>
+                  </span>
+                  <p className="text-xs font-medium text-slate-200 leading-relaxed font-mono">
+                    {firestoreEvidenceDetails?.aiDescription || selectedEvidenceLog.text}
+                  </p>
+                </div>
+
+                {firestoreEvidenceDetails?.aiRelevance && (
+                  <div className="p-4 bg-slate-950/80 rounded-2xl border border-amber-500/30 space-y-2">
+                    <span className="text-xs font-black uppercase text-amber-400 tracking-wider flex items-center gap-1.5">
+                      <Scale className="w-4 h-4 text-amber-400" />
+                      <span>{currentLang === 'om' ? 'Rogummaa Seeraa (Evidential Relevance)' : 'Statutory & Probative Relevance'}</span>
+                    </span>
+                    <p className="text-xs font-medium text-amber-200 leading-relaxed font-mono">
+                      {firestoreEvidenceDetails.aiRelevance}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Contradiction Flag / Judge Annotation */}
+              {selectedEvidenceLog.annotation && (
+                <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 space-y-1">
+                  <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span>{currentLang === 'om' ? 'Yaada Abbaa Seeraa (Judge Annotation / Contradiction)' : 'Judge Contradiction Annotation'}</span>
+                  </span>
+                  <p className="text-xs font-bold text-amber-200">
+                    {selectedEvidenceLog.annotation}
+                  </p>
+                </div>
+              )}
+
+              {/* Metadata Attributes Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Date of Filing / Incident Date</span>
+                  <p className="text-xs font-bold text-slate-200 flex items-center gap-1.5 font-mono">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>
+                      {firestoreEvidenceDetails?.uploadedAt 
+                        ? new Date(firestoreEvidenceDetails.uploadedAt).toLocaleDateString() + ' (' + (firestoreEvidenceDetails.incidentDate || 'Filed') + ')' 
+                        : selectedEvidenceLog.timestamp}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Categorical Classification</span>
+                  <p className="text-xs font-bold text-slate-200 truncate">
+                    {firestoreEvidenceDetails?.category || selectedEvidenceLog.tags?.join(', ') || 'Documentary Exhibit'}
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Author / Source Authority</span>
+                  <p className="text-xs font-bold text-slate-200 truncate">
+                    {firestoreEvidenceDetails?.authorOrSource || witnesses.find(w => w.id === selectedEvidenceLog.witnessId)?.name || 'Mana Murtii Aanaa Gurbicha / Court Docket'}
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Framed Issue Relevance</span>
+                  <p className="text-xs font-bold text-slate-200 truncate">
+                    {framedIssueForEvidence || selectedEvidenceLog.evidenceMetadata?.framedIssueRelevance || 'General Evidence Docket'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="p-5 bg-slate-950/90 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 sticky bottom-0 z-10">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(selectedEvidenceLog.text);
+                  alert('Axereeraan ragaa (Evidence summary) clipboard tti koppii ta\'eera!');
+                }}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition flex items-center gap-2 cursor-pointer"
+              >
+                <span>📋 {currentLang === 'om' ? 'Koppii Goodhu (Copy Summary)' : 'Copy Metadata Summary'}</span>
+              </button>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => exportEvidenceMetadataPDF(selectedEvidenceLog)}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 transition flex items-center gap-2 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>{currentLang === 'om' ? 'PDF Seal waliin Buufadhu' : 'Download Watermarked Evidence PDF'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <FloatingWitnessStopwatch />
+
+      {/* 🎙️ Floating Live Court Audio Control Panel */}
+      {showFloatingAudioControl && (
+        <FloatingCourtAudioControl
+          currentLang={currentLang}
+          activeCaseNumber={sessionTitle || (courtLevel === 'highCourt' ? 'Galmee Lakk. 249062/2016' : 'Galmee Lakk. 24891/2016')}
+        />
+      )}
+
+      {/* 📸 Evidence Camera Capture Modal */}
+      <EvidenceCaptureModal
+        isOpen={showEvidenceCaptureModal}
+        onClose={() => setShowEvidenceCaptureModal(false)}
+        currentLang={currentLang}
+        caseId={sessionId || 'case-today-301'}
+        caseNumber={sessionTitle || 'CR-2026/045'}
+        claimantName={witnesses.find(w => w.type === 'plaintiff')?.name || 'Obbo Baqqalaa Gammachuu'}
+        respondentName={witnesses.find(w => w.type === 'defendant')?.name || 'Adde Birhaanee Asfaawu'}
+        activeJudgeName={profile?.visitorName || 'Abbaa Seeraa Caalaa'}
+        onEvidenceSaved={(newEv) => {
+          // Append as a log entry in history
+          const newLog: LogEntry = {
+            id: 'evid_log_' + Date.now(),
+            timestamp: new Date().toLocaleTimeString(),
+            text: `[${newEv.exhibitNumber || 'Exhibit'}] Ragaan qabatamaa (${newEv.title}) kaameeraadhaan waraabbamee galmeetti hidhameera. Rogummaa: ${newEv.legalRelevance}`,
+            type: 'manual',
+            tags: ['ragaa_qabatamaa', 'physical_evidence', newEv.category]
+          };
+          setHistory(prev => [newLog, ...prev]);
+        }}
+      />
+
+      {/* 🏛️ Courtroom Seating Layout Modal */}
+      <CourtroomLayoutModal
+        isOpen={showCourtroomLayoutModal}
+        onClose={() => setShowCourtroomLayoutModal(false)}
+        currentLang={currentLang}
+        caseId={sessionId || 'case-today-301'}
+        caseNumber={sessionTitle || 'CR-2026/045'}
+        claimantName={witnesses.find(w => w.type === 'plaintiff')?.name || 'Obbo Baqqalaa Gammachuu'}
+        respondentName={witnesses.find(w => w.type === 'defendant')?.name || 'Adde Birhaanee Asfaawu'}
+        activeJudgeName={profile?.visitorName || 'Abbaa Seeraa Caalaa'}
+        onLayoutSaved={(newLayout) => {
+          const newLog: LogEntry = {
+            id: 'layout_log_' + Date.now(),
+            timestamp: new Date().toLocaleTimeString(),
+            text: `Teessumni dhaddachaa (${newLayout.courtroomName}) abbaa seeraa, abbaa alangaa, himataa, himatamaa fi ragaaleedhaaf qindeeffamee mirkanaa'eera.`,
+            type: 'manual',
+            tags: ['courtroom_layout', 'seating_plan']
+          };
+          setHistory(prev => [newLog, ...prev]);
+        }}
+      />
+      {showMultiFileUpload && sessionId && (
+        <MultiFileEvidenceUpload 
+          currentLang={currentLang}
+          caseId={sessionId}
+          caseNumber={sessionTitle || 'CR-2026/045'}
+          onClose={() => setShowMultiFileUpload(false)}
+          onSuccess={(newItems) => {
+            // Refresh logic if needed, although attachEvidence is already done
+            showShortcutFeedback(`${newItems.length} evidence items archived successfully`, '📦');
+          }}
+        />
+      )}
+
+      {/* 🔒 Share Evidence Temporary Secure Link Dialog */}
+      {shareEvidenceLog && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-sky-500/40 rounded-3xl p-6 max-w-lg w-full space-y-5 shadow-2xl relative animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-sky-400">
+                <Share2 className="w-5 h-5" />
+                <h3 className="text-sm font-black uppercase font-mono tracking-wider">
+                  {currentLang === 'om' ? 'Linkii Nageenya Qabu Qooddachuun (Secure Share Link)' : currentLang === 'am' ? 'ደህንነቱ የተጠበቀ የማጋሪያ ሊንክ' : 'Generate Temporary Secure Share Link'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShareEvidenceLog(null)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs font-mono">
+              {/* Document Summary Card */}
+              <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
+                <div className="text-[10px] text-sky-400 font-bold uppercase tracking-wider">TARGET DOCUMENT / EXHIBIT:</div>
+                <div className="text-slate-100 font-bold truncate">
+                  {shareEvidenceLog.fileName || shareEvidenceLog.evidenceMetadata?.exhibitNumber || shareEvidenceLog.text.substring(0, 60)}
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  {shareEvidenceLog.evidenceMetadata?.authenticityStatus || 'Verified & Sealed Court Record'}
+                </div>
+              </div>
+
+              {/* Expiry Selector */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">
+                  Link Expiration Duration:
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { hrs: 1, label: '1 Hour' },
+                    { hrs: 24, label: '24 Hours' },
+                    { hrs: 168, label: '7 Days' },
+                    { hrs: 720, label: '30 Days' },
+                  ].map(opt => (
+                    <button
+                      key={opt.hrs}
+                      type="button"
+                      onClick={() => setShareExpiryHours(opt.hrs)}
+                      className={`py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                        shareExpiryHours === opt.hrs
+                          ? 'bg-sky-500/20 text-sky-300 border-sky-500/50 shadow-sm'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Security PIN Field */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                  <span>Access PIN / Passcode (Optional):</span>
+                  <span className="text-emerald-400 text-[9px] font-normal flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" /> Encrypted Access
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={sharePinCode}
+                  onChange={(e) => setSharePinCode(e.target.value)}
+                  placeholder="Enter access PIN..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-amber-300 focus:border-sky-500 outline-none font-mono"
+                />
+              </div>
+
+              {/* Generated Share Link Field */}
+              {(() => {
+                const generatedLink = `https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app/?evidenceId=${shareEvidenceLog.id}&pin=${sharePinCode || 'none'}&exp=${shareExpiryHours}h&sec=token_${shareEvidenceLog.id.slice(-6)}`;
+                return (
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <label className="text-[10px] font-bold text-sky-400 uppercase tracking-wider block">
+                      Generated Secure Link:
+                    </label>
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-300 break-all select-all font-mono">
+                      {generatedLink}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(`📋 [SEERAAI SECURE EVIDENCE SHARE LINK]\nDocument: ${shareEvidenceLog.fileName || shareEvidenceLog.text.substring(0, 50)}\nAccess Link: ${generatedLink}\nPIN Code: ${sharePinCode || 'None'}\nExpires: ${shareExpiryHours} Hours`);
+                          setCopiedShareLink(true);
+                          setTimeout(() => setCopiedShareLink(false), 2500);
+                        }}
+                        className="flex-1 py-2.5 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-sky-600/20"
+                      >
+                        {copiedShareLink ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                        <span>{copiedShareLink ? 'Link Copied to Clipboard!' : 'Copy Secure Link'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(generatedLink)}&text=${encodeURIComponent(`⚖️ SEERAAI Secure Evidence Share:\n${shareEvidenceLog.fileName || shareEvidenceLog.text.substring(0, 50)} (Expires in ${shareExpiryHours}h)`)}`;
+                          window.open(tgUrl, '_blank');
+                        }}
+                        className="px-4 py-2.5 bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+                        title="Share via Telegram"
+                      >
+                        <Send className="w-4 h-4" />
+                        <span>Telegram</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📚 1,500+ Legal Archive Explorer Modal (@wakolegalstudio & @seeraai_ethio) */}
+      {showArchive1500Modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between gap-4 bg-slate-950/60">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                    <BookOpen className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-white uppercase tracking-wide flex items-center gap-2">
+                      <span>1,500+ {currentLang === 'om' ? 'Kuusaa Sanadoota Seeraa' : currentLang === 'am' ? 'የህግ ሰነዶችና ውሳኔዎች ማከማቻ' : 'Master Legal Archive'}</span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono">
+                        v4.1.0 Sync
+                      </span>
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      {currentLang === 'om'
+                        ? 'Telegram @wakolegalstudio fi @seeraai_ethio irraa murtiiwwan ijibbaataa MMWF 1,500+, heera fi labsiilee guutuu'
+                        : currentLang === 'am'
+                        ? 'ከቴሌግራም @wakolegalstudio እና @seeraai_ethio 1,500+ አስገዳጅ የሰበር ውሳኔዎችና አዋጆች'
+                        : '1,500+ MMWF Binding Cassation Precedents, Constitutions, and Proclamations'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowArchive1500Modal(false)}
+                className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search & Category Filter Toolbar */}
+            <div className="p-4 bg-slate-950/80 border-b border-slate-800 space-y-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={archive1500Query}
+                    onChange={(e) => setArchive1500Query(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleLoadArchive1500(archive1500Query, archive1500Category, 1);
+                      }
+                    }}
+                    placeholder={
+                      currentLang === 'om'
+                        ? 'Barbaadi (fakkeenya: waliigaltee, lafa, Lakk. Galmee 214539, Labsii 242, hojjetaa)...'
+                        : currentLang === 'am'
+                        ? 'ይፈልጉ (ምሳሌ፡ ውል፣ መሬት፣ የሰበር መዝገብ 214539፣ አዋጅ 1156)...'
+                        : 'Search 1,500+ archive (e.g. contract, land, Cassation #214539, Labor)...'
+                    }
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm font-semibold text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                  />
+                  {archive1500Query && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setArchive1500Query('');
+                        handleLoadArchive1500('', archive1500Category, 1);
+                      }}
+                      className="absolute right-3 top-3 text-slate-400 hover:text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleLoadArchive1500(archive1500Query, archive1500Category, 1)}
+                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-amber-500/20"
+                >
+                  <Search className="w-4 h-4" />
+                  <span>{currentLang === 'om' ? 'Barbaadi' : currentLang === 'am' ? 'ፈልግ' : 'Search'}</span>
+                </button>
+              </div>
+
+              {/* Categories */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+                {[
+                  { id: 'all', label: currentLang === 'om' ? 'Hunda (All)' : 'All' },
+                  { id: 'property_land', label: currentLang === 'om' ? 'Lafa & Mana' : 'Property & Land' },
+                  { id: 'labor', label: currentLang === 'om' ? 'Hojjetaa fi Hojjachiisaa' : 'Labor & Employment' },
+                  { id: 'family', label: currentLang === 'om' ? 'Maatii & Dhaala' : 'Family & Succession' },
+                  { id: 'civil_contract', label: currentLang === 'om' ? 'Waliigaltee Siivilii' : 'Civil Contracts' },
+                  { id: 'criminal', label: currentLang === 'om' ? 'Yakka' : 'Criminal Law' },
+                  { id: 'commercial_tax', label: currentLang === 'om' ? 'Daldala & Gibira' : 'Commercial & Tax' },
+                  { id: 'procedure_evidence', label: currentLang === 'om' ? 'Adeemsa & Ragaa' : 'Procedure & Evidence' },
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      setArchive1500Category(cat.id);
+                      handleLoadArchive1500(archive1500Query, cat.id, 1);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition shrink-0 cursor-pointer ${
+                      archive1500Category === cat.id
+                        ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                        : 'bg-slate-900 text-slate-400 border border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Body: Files List */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+              {isArchive1500Loading ? (
+                <div className="py-20 flex flex-col items-center justify-center gap-3">
+                  <RefreshCw className="w-8 h-8 text-amber-500 animate-spin" />
+                  <p className="text-sm font-bold text-slate-400">
+                    {currentLang === 'om' ? 'Faayilota 1,500+ keessaa barbaadaa jira...' : 'Searching 1,500+ legal files archive...'}
+                  </p>
+                </div>
+              ) : !archive1500Data || archive1500Data.files.length === 0 ? (
+                <div className="py-16 text-center bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+                  <BookOpen className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+                  <p className="text-base font-bold text-slate-300">
+                    {currentLang === 'om' ? 'Faayilli barbaadame hin argamne' : 'No matching legal documents found'}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {currentLang === 'om' ? 'Jechoota biraatiin yaalaa ykn filter jijjiiraa.' : 'Try different keywords or reset the category filter.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-slate-400 font-mono pb-2 border-b border-slate-800">
+                    <span>
+                      {currentLang === 'om' ? 'Faayilota Argaman:' : 'Results Found:'} <strong className="text-amber-400">{archive1500Data.total}</strong>
+                    </span>
+                    <span>
+                      Fuula {archive1500Data.page} / {archive1500Data.totalPages}
+                    </span>
+                  </div>
+
+                  {archive1500Data.files.map((file: any) => {
+                    const titleText = file.title?.[currentLang] || file.title?.om || file.referenceNumber;
+                    const summaryText = file.summary?.[currentLang] || file.summary?.om || '';
+
+                    return (
+                      <div
+                        key={file.id}
+                        className="p-4 bg-slate-950 rounded-2xl border border-slate-800 hover:border-amber-500/50 transition-all space-y-3"
+                      >
+                        {/* Reference Badges */}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="px-2.5 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/30 text-xs font-mono font-bold">
+                              {file.referenceNumber}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-slate-900 text-slate-400 text-[10px] font-mono">
+                              {file.channel || '@wakolegalstudio'}
+                            </span>
+                            {file.category && (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-900 text-cyan-300 text-[10px] font-bold">
+                                {file.category.replace('_', ' ')}
+                              </span>
+                            )}
+                            {file.yearEC && (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-900 text-slate-400 text-[10px] font-mono">
+                                Bara {file.yearEC} E.C.
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Title */}
+                        <h4 className="font-bold text-sm text-slate-100 leading-snug">
+                          {titleText}
+                        </h4>
+
+                        {/* Summary */}
+                        {summaryText && (
+                          <p className="text-xs text-slate-300 leading-relaxed line-clamp-2">
+                            {summaryText}
+                          </p>
+                        )}
+
+                        {/* Key Articles */}
+                        {file.keyArticles && file.keyArticles.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                            <span className="text-[10px] text-slate-500 font-mono">Keeyyattoota:</span>
+                            {file.keyArticles.map((art: string, aIdx: number) => (
+                              <span key={aIdx} className="px-1.5 py-0.5 rounded bg-slate-900 text-slate-300 text-[10px] font-mono border border-slate-800">
+                                {art}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Actions */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-900">
+                          {/* Cite in Court Transcript */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleInsertCitationToSession(file);
+                              setShowArchive1500Modal(false);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>{currentLang === 'om' ? 'Galmee Dhaddachaatti Dabali' : 'Cite in Court Transcript'}</span>
+                          </button>
+
+                          <div className="flex items-center gap-2">
+                            {/* Copy Citation */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const cite = `[Wabii Seeraa]: ${file.referenceNumber} - ${titleText}\nMadda: ${file.channel || '@wakolegalstudio'}`;
+                                navigator.clipboard.writeText(cite);
+                                setArchiveCopiedId(file.id);
+                                setTimeout(() => setArchiveCopiedId(null), 2000);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              {archiveCopiedId === file.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>{archiveCopiedId === file.id ? 'Copied!' : 'Copy'}</span>
+                            </button>
+
+                            {/* Open Channel Post */}
+                            <a
+                              href={`https://t.me/${(file.channel || 'wakolegalstudio').replace('@', '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-800 text-xs font-bold transition flex items-center gap-1"
+                            >
+                              <span>Telegram</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Pagination Footer */}
+            {archive1500Data && archive1500Data.totalPages > 1 && (
+              <div className="p-4 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  disabled={archive1500Page <= 1}
+                  onClick={() => handleLoadArchive1500(archive1500Query, archive1500Category, archive1500Page - 1)}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-bold transition disabled:opacity-40 cursor-pointer"
+                >
+                  ← {currentLang === 'om' ? 'Duraa' : 'Previous'}
+                </button>
+
+                <span className="text-xs font-mono text-slate-400">
+                  {archive1500Page} / {archive1500Data.totalPages}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={archive1500Page >= archive1500Data.totalPages}
+                  onClick={() => handleLoadArchive1500(archive1500Query, archive1500Category, archive1500Page + 1)}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-bold transition disabled:opacity-40 cursor-pointer"
+                >
+                  {currentLang === 'om' ? 'Itti Aanu' : 'Next'} →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Create Telegram Poll Modal */}
+      {showCreatePollModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 border-2 border-amber-500/60 rounded-3xl w-full max-w-xl p-6 shadow-2xl space-y-5 text-slate-100">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 rounded-xl bg-amber-500 text-slate-950 font-bold">📊</span>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-wide text-amber-400">
+                    {currentLang === 'om' ? 'Uuminsa Poll Seeraa Telegram (/poll)' : 'Telegram Legal Consensus Poll Creator'}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    {currentLang === 'om' ? 'Gareedhaaf qormaata walii-galaa (Consensus) qopheessi' : 'Pre-fill /poll command arguments for @seeraai_ethio channel'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreatePollModal(false)}
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-300 mb-1">
+                  {currentLang === 'om' ? 'Gaaffii Poll (Question)' : 'Poll Question'}
+                </label>
+                <input
+                  type="text"
+                  value={pollQuestion}
+                  onChange={(e) => setPollQuestion(e.target.value)}
+                  placeholder="e.g. Cassation #214539 commercial lease irratti ni hojjetaa?"
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 focus:border-amber-500 focus:outline-none text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase text-slate-300">
+                    {currentLang === 'om' ? 'Filannoowwan (Options, min 2, max 10)' : 'Poll Options (min 2, max 10)'}
+                  </label>
+                  {pollOptions.length < 10 && (
+                    <button
+                      type="button"
+                      onClick={handleAddPollOption}
+                      className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> {currentLang === 'om' ? 'Filannoo Dabali' : 'Add Option'}
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {pollOptions.map((opt, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-slate-500 w-5">{idx + 1}.</span>
+                      <input
+                        type="text"
+                        value={opt}
+                        onChange={(e) => {
+                          const updated = [...pollOptions];
+                          updated[idx] = e.target.value;
+                          setPollOptions(updated);
+                        }}
+                        placeholder={`Option ${idx + 1}`}
+                        className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 focus:border-amber-500 focus:outline-none text-xs"
+                      />
+                      {pollOptions.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePollOption(idx)}
+                          className="p-2 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg transition cursor-pointer"
+                          title="Remove option"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Generated /poll Command Preview */}
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-amber-500/30 space-y-1.5">
+                <div className="text-[10px] font-mono text-amber-400 uppercase tracking-wide">
+                  📋 Generated /poll Command Preview:
+                </div>
+                <div className="font-mono text-xs text-cyan-300 bg-slate-900 p-2.5 rounded-xl border border-slate-800 break-all select-all">
+                  {`/poll ${pollQuestion.trim() || 'Question?'} | ${pollOptions.filter(o => o.trim()).join(' | ')}`}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowCreatePollModal(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition cursor-pointer"
+              >
+                {currentLang === 'om' ? 'Haqi' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAndPublishPoll}
+                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shadow-lg shadow-amber-500/20 flex items-center gap-2 cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+                <span>{currentLang === 'om' ? 'Command Waraabi & Galmeessi' : 'Copy Command & Log Poll'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

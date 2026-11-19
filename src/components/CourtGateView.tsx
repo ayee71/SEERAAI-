@@ -354,7 +354,6 @@ export const CourtGateView: React.FC<CourtGateViewProps> = (props) => {
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-400 truncate mt-0.5">{u.usernameOrEmail}</div>
-                  <div className="text-[10px] text-slate-500 font-mono mt-1">Passcode: {u.passcode} (Cuqi)</div>
                 </button>
               ))}
             </div>
@@ -431,7 +430,6 @@ export const CourtGateView: React.FC<CourtGateViewProps> = (props) => {
                     {inst.name}
                   </div>
                   <div className="text-[11px] text-slate-400 truncate mt-0.5">{inst.adminEmail}</div>
-                  <div className="text-[10px] text-slate-500 font-mono mt-1">Code: {inst.accessCode} (Cuqi)</div>
                 </button>
               ))}
             </div>

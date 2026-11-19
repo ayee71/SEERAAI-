@@ -157,7 +157,21 @@ export async function getCourtUserContext(): Promise<CourtUserContext> {
   try {
     const token = await currentUser.getIdTokenResult();
     const rawRole = (token.claims.courtRole || token.claims.role) as string | undefined;
-    isSuperAdminClaim = token.claims.admin === true || token.claims.role === 'superadmin';
+    const providerId =
+      (token.signInProvider as string | null) ||
+      currentUser.providerData?.[0]?.providerId ||
+      null;
+    const { isOwnerEmail } = await import('./ownerAuth');
+    const isVerifiedOwner = Boolean(
+      currentUser.emailVerified &&
+      !currentUser.isAnonymous &&
+      providerId !== 'phone' &&
+      isOwnerEmail(currentUser.email)
+    );
+    isSuperAdminClaim =
+      token.claims.admin === true ||
+      token.claims.role === 'superadmin' ||
+      isVerifiedOwner;
     if (isSuperAdminClaim) {
       claimRole = 'superadmin';
     } else if (rawRole && READ_ROLES.includes(rawRole as CourtRole)) {

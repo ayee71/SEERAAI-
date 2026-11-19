@@ -1,4 +1,5 @@
-import { TranslationDictionary } from './translations';
+import type { TranslationDictionary } from './translations';
+
 
 const om: TranslationDictionary = {
   appName: "SeeraAI",
@@ -29,6 +30,8 @@ const om: TranslationDictionary = {
     courtCassation: "Mana Murtii Waliigalaa Federaalaa / Dhaddacha Ijibbaataa (Cassation Bench)",
     speechAndOcrConverter: "Jijjiirraa Sagalee & OCR",
     worldBizarreLaws: "Seerota Addunyaa Bitaa-Galeeyyii",
+    courtDocuments: "Kuusaa Sanadoota Mana Murtii (External Storage)",
+    telegramArchive: "Arkaba Telegram (Galmee 1,500+)",
     settings: "Qindaa'iinsa",
   },
   courtroomTimer: {
@@ -355,6 +358,32 @@ const om: TranslationDictionary = {
     outputOptionAllThree: "Afaan Sadeen Yeroo Mara (All 3 Languages)",
     legalStandardsTitle: "Imaammata Qulqullina Seeraa:",
     legalStandardsDesc: "Sirnichi seera Itoophiyaa, keeyyattoota labsii fi murteewwan dhaddacha ijoo eeguun dirqama qaba.",
+  },
+  googleWorkspace: {
+    title: "Wal-simsiisa Google Workspace",
+    subtitle: "Quunnamtii Classroom fi Keep qindeessaa.",
+    classroomTitle: "Google Classroom",
+    classroomDesc: "Hojiiwwan fi qorannoo kallattiin barattootaaf qoodaa.",
+    keepTitle: "Google Keep",
+    keepDesc: "Yaadannoo seeraa fi checklistoota SeeraAI fi account Google keessan gidduutti wal-simsiisaa.",
+    autoSyncReminders: "Ofumaan yaadachiisa wal-simsiisi:",
+    lastSync: "Wal-simsiisa Dhumaa:",
+    neverSynced: "Hanga ammaatti hin jiru",
+    syncNow: "Amma Wal-simsiisi",
+    syncing: "Wal-simsiisaa jira...",
+    syncSuccess: "Wal-simsiisni milkaa'eera!",
+    syncError: "Wal-simsiisni hin milkoofne",
+    connectGoogle: "Account Google Connect Godhi",
+  },
+  namecheap: {
+    title: "Bulchiinsa Doomeeyinii (Domain Manager)",
+    desc: "Maqaa doomeeyinii mana murtii ykn dhaabbata seeraa keessanii Namecheap irratti sakatta'aa.",
+    placeholder: "fakkeenya.com",
+    button: "Sakatta'i",
+    available: "Doomeeyiniin kun ni argama!",
+    notAvailable: "Doomeeyiniin kun hin argamu.",
+    premium: "Doomeeyinii filatamaa (Premium)",
+    buy: "Namecheap irratti bitadhu",
   },
   recentSearches: {
     title: "Barbaadawwan Dhihoo",

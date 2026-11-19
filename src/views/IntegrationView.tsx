@@ -113,13 +113,13 @@ export const IntegrationView: React.FC<IntegrationViewProps> = ({
       step: 4,
       emoji: '⚡',
       title: {
-        om: '4. Gemini High-Availability Engine & Dursaa Ofumaa (Failover Inference)',
+        om: '4. Gemini Engine & Dursaa Ofumaa (Failover Inference)',
         am: '4. የGemini ሞዴል እና ፈጣን ምትክ አሰራር (Failover Engine)',
-        en: '4. High-Availability Gemini Inference with Intelligent Failover',
+        en: '4. Gemini Inference with Intelligent Failover',
       },
       summary: {
-        om: 'Saffisa sekondii tokko gadiin deebii kennuuf `gemini-flash-lite-latest` fi `gemini-3.1-flash-lite` fayyadama; yoo tokko quotiin dhibame kan biraatti ofumaan ce\'a.',
-        am: 'ከአንድ ሴኮንድ ባነሰ ጊዜ ውስጥ ምላሽ ለመስጠት `gemini-flash-lite-latest` ይጠቀማል፤ አንዱ ቢጨናነቅ ወዲያውኑ ወደ ሌላኛው ይሸጋገራል።',
+        om: 'Saffisa sekondii tokko gadiin deebii kennuuf `gemini-4-hydrogen` fi `gemini-3.1-flash-lite` fayyadama; yoo tokko quotiin dhibame kan biraatti ofumaan ce\'a.',
+        am: 'ከአንድ ሴኮንድ ባነሰ ጊዜ ውስጥ ምላሽ ለመስጠት `gemini-4-hydrogen` ይጠቀማል፤ አንዱ ቢጨናነቅ ወዲያውኑ ወደ ሌላኛው ይሸጋገራል።',
         en: 'Ultra-low latency execution via Gemini Flash Lite models with real-time automatic multi-tier fallback to eliminate 429 quota disruptions.',
       },
       detail: {
@@ -427,7 +427,7 @@ export const IntegrationView: React.FC<IntegrationViewProps> = ({
                 <span className="text-emerald-400 font-mono text-xs">⚡ &lt; 850ms Avg Latency</span>
               </div>
               <h3 className="text-lg font-bold text-slate-100 font-serif-legal">
-                gemini-flash-lite-latest
+                gemini-4-hydrogen
               </h3>
               <p className="text-xs text-slate-400 leading-relaxed">
                 {currentLang === 'om'
@@ -447,7 +447,7 @@ export const IntegrationView: React.FC<IntegrationViewProps> = ({
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-slate-500">Availability SLA</span>
-                  <span className="text-emerald-400">99.98% High Availability</span>
+                  <span className="text-emerald-400">Active Cloud SLA</span>
                 </div>
               </div>
             </div>
@@ -461,7 +461,7 @@ export const IntegrationView: React.FC<IntegrationViewProps> = ({
                 <span className="text-slate-400 font-mono text-xs">🧠 Resilience Failover</span>
               </div>
               <h3 className="text-lg font-bold text-slate-100 font-serif-legal">
-                gemini-3.1-flash-lite / gemini-flash-latest
+                gemini-3.1-flash-lite
               </h3>
               <p className="text-xs text-slate-400 leading-relaxed">
                 {currentLang === 'om'

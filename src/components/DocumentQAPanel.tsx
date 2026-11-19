@@ -46,7 +46,7 @@ export const DocumentQAPanel: React.FC<DocumentQAPanelProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(initiallyOpen);
   const [question, setQuestion] = useState('');
-  const [modelTier, setModelTier] = useState<string>('gemini-flash-lite-latest');
+  const [modelTier, setModelTier] = useState<string>('gemini-4-hydrogen');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [qaHistory, setQaHistory] = useState<DocumentQuestionResponse[]>([]);
@@ -192,11 +192,9 @@ export const DocumentQAPanel: React.FC<DocumentQAPanelProps> = ({
 
             <div className="flex items-center gap-1.5">
               {[
-                { id: 'gemini-flash-lite-latest', label: '⚡ Flash Lite (Recommended)' },
+                { id: 'gemini-4-hydrogen', label: '⚡ Gemini 4 Hydrogen (Recommended)' },
+                { id: 'deep_thinking', label: '🧠 Deep Thinking' },
                 { id: 'gemini-3.1-flash-lite', label: '⚖️ Gemini 3.1 Flash Lite' },
-                { id: 'gemini-flash-latest', label: '🧠 Gemini Flash' },
-                { id: 'gemini-3.5-pro', label: 'Pro 3.5' },
-                { id: 'gemini-3.5-flash', label: 'Flash 3.5' },
               ].map((m) => (
                 <button
                   key={m.id}

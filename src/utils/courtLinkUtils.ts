@@ -113,6 +113,43 @@ export const getAllCourtLinks = (): CourtLinkDetails[] => {
     });
   }
 
+  // Official Practice Court Domain: mmurtii.com / mmurtii.oro / mmurtii.serai
+  linksMap.set('mmurtii', {
+    courtId: 'inst_mmurtii_practice',
+    courtName: 'Mana Murtii Shaakalaa (Practice Court - mmurtii.com)',
+    slug: 'mmurtii',
+    domainHandle: 'mmurtii.com',
+    fullHttpUrl: 'https://mmurtii.com',
+    level: 'supreme_court',
+    zoneOrCity: 'Oromiyaa (Practice Simulation)',
+    seat: 'Digital Practice Bench',
+    institutionId: 'inst_mmurtii_practice'
+  });
+
+  linksMap.set('mmurtii-oro', {
+    courtId: 'inst_mmurtii_oro',
+    courtName: 'Mana Murtii Shaakalaa (Practice Court - mmurtii.oro)',
+    slug: 'mmurtii-oro',
+    domainHandle: 'mmurtii.oro',
+    fullHttpUrl: 'court://mmurtii.oro',
+    level: 'supreme_court',
+    zoneOrCity: 'Oromiyaa (Practice Simulation)',
+    seat: 'Digital Practice Bench',
+    institutionId: 'inst_mmurtii_practice'
+  });
+
+  linksMap.set('mmurtii-serai', {
+    courtId: 'inst_mmurtii_serai',
+    courtName: 'Mana Murtii Shaakalaa (Practice Court - mmurtii.serai)',
+    slug: 'mmurtii-serai',
+    domainHandle: 'mmurtii.serai',
+    fullHttpUrl: 'court://mmurtii.serai',
+    level: 'supreme_court',
+    zoneOrCity: 'Oromiyaa (Practice Simulation)',
+    seat: 'Digital Practice Bench',
+    institutionId: 'inst_mmurtii_practice'
+  });
+
   // 2. Load from saved institutions in local storage / Firestore
   try {
     const insts = getLocalInstitutions();
@@ -129,7 +166,7 @@ export const getAllCourtLinks = (): CourtLinkDetails[] => {
 
 /**
  * Resolve input court link string to matching CourtLinkDetails
- * Accepts: "court://mmagurbicha.serai", "mmagurbicha.serai", "mmagurbicha", "gurbicha", "mmagurbicha/login"
+ * Accepts: "mmurtii.com", "https://mmurtii.com", "mmurtii.oro", "court://mmagurbicha.serai", "mmagurbicha.serai"
  */
 export const resolveCourtLink = (input: string): CourtLinkDetails | null => {
   if (!input || !input.trim()) return null;
@@ -138,9 +175,18 @@ export const resolveCourtLink = (input: string): CourtLinkDetails | null => {
     .replace(/^court:\/\//, '')
     .replace(/^https?:\/\//, '')
     .replace(/\/.*$/, '')
-    .replace(/\.serai$/, '');
+    .replace(/\.serai$/, '')
+    .replace(/\.com$/, '')
+    .replace(/\.org$/, '')
+    .replace(/\.oro$/, '')
+    .replace(/\.et$/, '')
+    .replace(/\.net$/, '');
 
   const allLinks = getAllCourtLinks();
+
+  if (cleaned === 'mmurtii' || cleaned === 'mmurti' || cleaned.includes('mmurtii') || cleaned.includes('mmurti')) {
+    return allLinks.find(l => l.slug === 'mmurtii') || null;
+  }
 
   // Exact match on slug
   let match = allLinks.find(l => l.slug === cleaned);

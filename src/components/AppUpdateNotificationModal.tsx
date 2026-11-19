@@ -18,6 +18,11 @@ export const AppUpdateNotificationModal: React.FC<AppUpdateNotificationModalProp
   const [countdown, setCountdown] = useState<number>(12); // Auto-update in 12s unless paused
   const [isPaused, setIsPaused] = useState<boolean>(false);
 
+  const handlePerformUpdate = async () => {
+    setIsUpdating(true);
+    await applyAppUpdate();
+  };
+
   useEffect(() => {
     if (!updateInfo?.isUpdateAvailable || isPaused) return;
 
@@ -25,7 +30,7 @@ export const AppUpdateNotificationModal: React.FC<AppUpdateNotificationModalProp
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          handlePerformUpdate();
+          void handlePerformUpdate();
           return 0;
         }
         return prev - 1;
@@ -38,11 +43,6 @@ export const AppUpdateNotificationModal: React.FC<AppUpdateNotificationModalProp
   if (!updateInfo || !updateInfo.isUpdateAvailable) {
     return null;
   }
-
-  const handlePerformUpdate = async () => {
-    setIsUpdating(true);
-    await applyAppUpdate();
-  };
 
   const isMandatory = Boolean(updateInfo?.isMandatory);
 
@@ -120,17 +120,15 @@ export const AppUpdateNotificationModal: React.FC<AppUpdateNotificationModalProp
         {/* Decorative Top Glow Bar */}
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-amber-300 to-amber-600 animate-pulse" />
 
-        {/* Close Button - Only show if not mandatory */}
-        {!isMandatory && (
-          <button
-            type="button"
-            onClick={onDismiss}
-            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        )}
+        {/* Close Button - Always available so user can use current state */}
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+          aria-label="Close"
+        >
+          <X className="w-5 h-5" />
+        </button>
 
         {/* Header */}
         <div className="flex items-start gap-4">
@@ -202,15 +200,13 @@ export const AppUpdateNotificationModal: React.FC<AppUpdateNotificationModalProp
 
         {/* Action Buttons */}
         <div className="mt-5 flex items-center justify-end gap-3">
-          {!isMandatory && (
-            <button
-              type="button"
-              onClick={onDismiss}
-              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              {texts.laterBtn}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 transition-colors cursor-pointer"
+          >
+            {texts.laterBtn} (Continue)
+          </button>
 
           <button
             type="button"
@@ -226,3 +222,5 @@ export const AppUpdateNotificationModal: React.FC<AppUpdateNotificationModalProp
     </div>
   );
 };
+
+export default AppUpdateNotificationModal;

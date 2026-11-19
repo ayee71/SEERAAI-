@@ -270,7 +270,7 @@ Qorannoo fi madaallii sadarkaa olaanaa kennuun murtii kamiitu seeraan sirrii akk
         prompt,
         taskType: 'explain_law',
         outputLanguages: [currentLang],
-        modelTier: isDeepThinkingX20 ? 'deep_thinking' : 'gemini-flash-lite-latest',
+        modelTier: isDeepThinkingX20 ? 'deep_thinking' : 'gemini-4-hydrogen',
       });
       setAnalysisResult(res.content);
     } catch (err: any) {
@@ -325,7 +325,7 @@ Maaloo qorannoo gadi fageenya qabu kenni:
         prompt,
         taskType: 'explain_law',
         outputLanguages: [currentLang],
-        modelTier: isDeepThinkingX20 ? 'deep_thinking' : 'gemini-flash-lite-latest',
+        modelTier: isDeepThinkingX20 ? 'deep_thinking' : 'gemini-4-hydrogen',
       });
       setAnalysisResult(res.content);
     } catch (err: any) {

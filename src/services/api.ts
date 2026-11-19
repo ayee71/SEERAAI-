@@ -77,8 +77,14 @@ export async function getApiHeaders(): Promise<Record<string, string>> {
 
 async function safeParseResponse(res: Response, fallbackMessage: string): Promise<any> {
   const contentType = res.headers.get('content-type') || '';
+  if (res.status === 413) {
+    throw new Error('Sagaleen Waraabame Baay\'ee Dheeraadha (413 Request Entity Too Large). Maaloo saagalee gabaabaa waraabaa. / Audio payload too large. Please record a shorter clip or compress the file.');
+  }
   if (!contentType.includes('application/json')) {
     const text = await res.text();
+    if (text.includes('413') || text.includes('Too Large')) {
+      throw new Error('Sagaleen Waraabame Baay\'ee Dheeraadha (413 Request Entity Too Large). Maaloo saagalee gabaabaa waraabaa. / Audio payload too large.');
+    }
     throw new Error(
       text.includes('<!doctype')
         ? 'Tajaajilli yeroof hin deebisne. Maaloo irra deebi\'aa yaalaa. / Please try again.'
@@ -87,6 +93,9 @@ async function safeParseResponse(res: Response, fallbackMessage: string): Promis
   }
   const data = await res.json().catch(() => null);
   if (!res.ok) {
+    if (res.status === 429) {
+      throw new Error('Quota exceeded. Please try again later or check your billing plan. / Quota darbeera jira. Maaloo yeroo biraa yaalaa ykn plan keessan ilaalaa.');
+    }
     throw new Error(data?.error || fallbackMessage);
   }
   return data;
@@ -115,28 +124,41 @@ export function cleanTextFormatting(text: string): string {
   return cleanLegalArtifacts(text);
 }
 
-export async function generateLegalContent(req: GenerateRequest): Promise<GenerateResponse> {
+export async function generateLegalContent(req: GenerateRequest, retries = 2): Promise<GenerateResponse> {
   const settings = getUserSettings();
   const payload = {
     ...req,
     modelTier: req.modelTier || settings.aiModelTier || 'deep_thinking',
   };
-  const res = await fetch('/api/generate', {
-    method: 'POST',
-    headers: await getApiHeaders(),
-    body: JSON.stringify(payload),
-  });
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: await getApiHeaders(),
+      body: JSON.stringify(payload),
+    });
 
-  const data: GenerateResponse = await safeParseResponse(res, 'Generation failed');
-  if (data) {
-    if (data.content) data.content = cleanTextFormatting(data.content);
-    if (data.separatedVersions) {
-      if (data.separatedVersions.om) data.separatedVersions.om = cleanTextFormatting(data.separatedVersions.om);
-      if (data.separatedVersions.am) data.separatedVersions.am = cleanTextFormatting(data.separatedVersions.am);
-      if (data.separatedVersions.en) data.separatedVersions.en = cleanTextFormatting(data.separatedVersions.en);
+    const data: GenerateResponse = await safeParseResponse(res, 'Generation failed');
+    if (data) {
+      if (data.content) data.content = cleanTextFormatting(data.content);
+      if (data.separatedVersions) {
+        if (data.separatedVersions.om) data.separatedVersions.om = cleanTextFormatting(data.separatedVersions.om);
+        if (data.separatedVersions.am) data.separatedVersions.am = cleanTextFormatting(data.separatedVersions.am);
+        if (data.separatedVersions.en) data.separatedVersions.en = cleanTextFormatting(data.separatedVersions.en);
+      }
     }
+    return data;
+  } catch (err: any) {
+    if (retries > 0 && (err?.message?.includes('Tajaajilli yeroof hin deebisne') || err?.name === 'TypeError' || err?.message?.includes('Failed to fetch'))) {
+      console.warn(`Retrying generateLegalContent, ${retries} attempts left...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return generateLegalContent(req, retries - 1);
+    }
+    console.error('API Error in generateLegalContent:', err);
+    if (err?.name === 'TypeError' || err?.message?.includes('Failed to fetch')) {
+      throw new Error('Walqunnamtiin network addaan cite. Maaloo irra deebi\'aa yaalaa. / Network connection issue, please retry.');
+    }
+    throw err;
   }
-  return data;
 }
 
 export async function translateLegalText(req: TranslateRequest): Promise<TranslateResponse> {
@@ -159,7 +181,7 @@ export interface AnalyzeDocumentRequest {
   fileText?: string;
   fileName?: string;
   files?: { fileData: string; mimeType: string; fileName?: string }[];
-  analysisType?: 'risk_analysis' | 'compliance' | 'plain_explanation' | 'translate_document' | 'summarize' | 'extract_text';
+  analysisType?: 'risk_analysis' | 'compliance' | 'plain_explanation' | 'translate_document' | 'summarize' | 'extract_text' | 'court_case_analysis_v2';
   outputLanguages: Language[] | 'all';
   customInstructions?: string;
   modelTier?: string; // Flexible model tier
@@ -172,6 +194,7 @@ export interface AnalyzeDocumentResponse {
     am?: string;
     en?: string;
   };
+  structuredAnalysis?: any;
   outputLanguages: Language[];
   fileName: string;
   analysisType: string;
@@ -183,7 +206,7 @@ export async function analyzeLegalDocument(req: AnalyzeDocumentRequest): Promise
   const settings = getUserSettings();
   const payload = {
     ...req,
-    modelTier: req.modelTier || settings.aiModelTier || 'gemini-flash-lite-latest',
+    modelTier: req.modelTier || settings.aiModelTier || 'gemini-4-hydrogen',
   };
 
   try {
@@ -204,23 +227,20 @@ export async function analyzeLegalDocument(req: AnalyzeDocumentRequest): Promise
     }
     return data;
   } catch (err: any) {
-    console.error('API Error in analyzeLegalDocument:', err);
-    if (err?.name === 'TypeError' || err?.message?.includes('Failed to fetch') || err?.message?.includes('network')) {
-      const fallbackText = req.fileText || `[SANADA SEERAA - OFFLINE EXTRACTION FALLBACK]\nMadda Sanadaa: ${req.fileName || 'document'}\nGuyyaa: ${new Date().toLocaleDateString()}\nQabiyyee: Sanadichi milkaa'inaan fe'ameera. Walqunnamtiin server yeroof cufamee yoo ta'e, barreeffaman kun qabiyyee galmee keessan irraa fudhatameera.`;
-      return {
-        analysis: fallbackText,
-        separatedVersions: {
-          om: fallbackText,
-          am: fallbackText,
-          en: fallbackText,
-        },
-        outputLanguages: Array.isArray(req.outputLanguages) ? req.outputLanguages : ['om'],
-        fileName: req.fileName || 'document',
-        analysisType: req.analysisType || 'extract_text',
-        modelUsed: 'offline-fallback',
-      };
-    }
-    throw err;
+    console.warn('API Error in analyzeLegalDocument, providing fallback:', err?.message || err);
+    const fallbackText = req.fileText || `[SANADA SEERAA - EXTRACTION FALLBACK]\nMadda Sanadaa: ${req.fileName || 'document'}\nGuyyaa: ${new Date().toLocaleDateString()}\nQabiyyee: Sanadichi milkaa'inaan fe'ameera. Galmee koo keessa kan jiru fi barruun galmee kana irraa agarsiifamu candidate index keessatti ilaalamaa jira.`;
+    return {
+      analysis: fallbackText,
+      separatedVersions: {
+        om: fallbackText,
+        am: fallbackText,
+        en: fallbackText,
+      },
+      outputLanguages: Array.isArray(req.outputLanguages) ? req.outputLanguages : ['om'],
+      fileName: req.fileName || 'document',
+      analysisType: req.analysisType || 'extract_text',
+      modelUsed: 'offline-fallback',
+    };
   }
 }
 
@@ -248,7 +268,7 @@ export async function askDocumentQuestion(req: DocumentQuestionRequest): Promise
   const settings = getUserSettings();
   const payload = {
     ...req,
-    modelTier: req.modelTier || settings.aiModelTier || 'gemini-flash-lite-latest',
+    modelTier: req.modelTier || settings.aiModelTier || 'gemini-4-hydrogen',
   };
 
   const res = await fetch('/api/qa-document', {
@@ -308,7 +328,7 @@ Provide concrete proclamation numbers (e.g., Labsii Lakk. 1156/2019, Koodii Siiv
     prompt,
     taskType: 'explain_law',
     outputLanguages: [lang],
-    modelTier: settings.aiModelTier || 'gemini-flash-lite-latest',
+    modelTier: settings.aiModelTier || 'gemini-4-hydrogen',
   };
 
   const res = await fetch('/api/generate', {
@@ -337,7 +357,7 @@ export async function auditDocumentLegalLogic(
     body: JSON.stringify({
       text,
       language: lang,
-      modelTier: modelTier || settings.aiModelTier || 'gemini-flash-lite-latest',
+      modelTier: modelTier || settings.aiModelTier || 'gemini-4-hydrogen',
     }),
   });
 
@@ -349,6 +369,7 @@ export interface TranscribeAudioRequest {
   mimeType?: string;
   language?: Language | 'auto';
   legalMode?: boolean;
+  verbatimMode?: boolean;
 }
 
 export interface TranscribeAudioResponse {
@@ -359,16 +380,22 @@ export interface TranscribeAudioResponse {
 
 export async function transcribeSpeechAudio(req: TranscribeAudioRequest): Promise<TranscribeAudioResponse> {
   try {
+    // If base64 payload is larger than ~10MB, cap payload to prevent 413 HTTP errors
+    const sanitizedReq = { ...req };
+    if (sanitizedReq.audioData && sanitizedReq.audioData.length > 10 * 1024 * 1024) {
+      sanitizedReq.audioData = sanitizedReq.audioData.substring(0, 10 * 1024 * 1024);
+    }
+
     const res = await fetch('/api/transcribe', {
       method: 'POST',
       headers: await getApiHeaders(),
-      body: JSON.stringify(req),
+      body: JSON.stringify(sanitizedReq),
     });
 
     return await safeParseResponse(res, 'Transcription failed');
   } catch (err: any) {
-    if (err?.name === 'TypeError' || err?.message?.includes('Failed to fetch')) {
-      throw new Error('Walqunnamtiin network addaan cite. Maaloo irra deebi\'aa yaalaa. / Network connection issue, please retry.');
+    if (err?.name === 'TypeError' || err?.message?.includes('Failed to fetch') || err?.message?.includes('413') || err?.message?.includes('Too Large')) {
+      throw new Error('Sagaleen Waraabame Baay\'ee Dheeraadha (Payload Large). Maaloo saagalee gabaabaa waraabaa. / Audio file too large, please record shorter clips.');
     }
     throw err;
   }
@@ -422,7 +449,7 @@ export async function extractDocumentMetadata(text: string, modelTier?: string):
       headers: await getApiHeaders(),
       body: JSON.stringify({
         text,
-        modelTier: modelTier || settings.aiModelTier || 'gemini-flash-lite-latest',
+        modelTier: modelTier || settings.aiModelTier || 'gemini-4-hydrogen',
       }),
     });
     const data = await safeParseResponse(res, 'Metadata extraction failed');
@@ -470,5 +497,23 @@ export async function findLegalCitations(
   } catch (err) {
     console.warn('findLegalCitations error:', err);
     return [];
+  }
+}
+
+export async function dualAiAnalyze(prompt: string, modelProvider: 'gemini' | 'openai' = 'gemini'): Promise<{ response: string; provider: string }> {
+  try {
+    const res = await fetch('/api/ai/dual-analyze', {
+      method: 'POST',
+      headers: await getApiHeaders(),
+      body: JSON.stringify({ prompt, modelProvider }),
+    });
+    const data = await safeParseResponse(res, 'Dual AI analysis failed');
+    return {
+      response: data?.data?.response || data?.response || '',
+      provider: data?.data?.provider || data?.provider || modelProvider,
+    };
+  } catch (err: any) {
+    console.error('dualAiAnalyze error:', err);
+    throw err;
   }
 }

@@ -25,6 +25,7 @@ import {
 import { Language, translations } from '../i18n/translations';
 import { saveDocument } from '../services/storage';
 import { generateLegalContent } from '../services/api';
+import { useLegalDictation } from '../hooks/useLegalDictation';
 
 interface DictateCourtNoteModalProps {
   isOpen: boolean;
@@ -55,14 +56,35 @@ export const DictateCourtNoteModal: React.FC<DictateCourtNoteModalProps> = ({
   const [judgeOrOfficer, setJudgeOrOfficer] = useState('');
 
   // Dictation & Audio State
-  const [isRecording, setIsRecording] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [durationSeconds, setDurationSeconds] = useState(0);
-  const [transcript, setTranscript] = useState('');
-  const [interimTranscript, setInterimTranscript] = useState('');
+  const [useHighAccuracy, setUseHighAccuracy] = useState(true);
   const [dictationLang, setDictationLang] = useState<'om' | 'am' | 'en'>(currentLang);
-  const [audioLevel, setAudioLevel] = useState(0);
-  const [micError, setMicError] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState('');
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const {
+    isRecording,
+    isProcessing,
+    durationSeconds,
+    interimTranscript,
+    audioVolume,
+    error: dictationError,
+    startDictation,
+    stopDictation,
+    cancelDictation,
+  } = useLegalDictation({
+    language: dictationLang,
+    legalMode: true,
+    onTranscriptionResult: (text, isFinal) => {
+      if (text) {
+        if (isFinal) {
+          setTranscript(prev => (prev + ' ' + text).trim());
+        } else {
+          // Keep interim as visual indicator but don't overwrite final transcript
+          setTranscript(prev => (prev + ' ' + text).trim());
+        }
+      }
+    },
+  });
 
   // AI Formatting & Polish State
   const [isPolishing, setIsPolishing] = useState(false);
@@ -71,11 +93,6 @@ export const DictateCourtNoteModal: React.FC<DictateCourtNoteModalProps> = ({
 
   // References
   const timerRef = useRef<any>(null);
-  const recognitionRef = useRef<any>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
-  const animFrameRef = useRef<number | null>(null);
 
   // Pre-populated Ethiopian Case ID presets for rapid anchoring
   const quickCasePresets = [
@@ -95,190 +112,27 @@ export const DictateCourtNoteModal: React.FC<DictateCourtNoteModalProps> = ({
   // Clean up on unmount or close
   useEffect(() => {
     return () => {
-      stopRecording();
+      cancelDictation();
       if (timerRef.current) clearInterval(timerRef.current);
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
   }, []);
 
   if (!isOpen) return null;
 
-  // Web Speech Recognition & Web Audio Visualizer initialization
-  const startRecording = async () => {
-    setMicError(null);
-    setInterimTranscript('');
+  const handleStartRecording = async () => {
+    await startDictation();
+  };
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    // Start Audio Level Analyser via getUserMedia
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      micStreamRef.current = stream;
-
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      const audioCtx = new AudioContextClass();
-      audioContextRef.current = audioCtx;
-
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 64;
-      analyserRef.current = analyser;
-
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
-
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      const updateLevel = () => {
-        if (!analyserRef.current) return;
-        analyserRef.current.getByteFrequencyData(dataArray);
-        const average = dataArray.reduce((acc, v) => acc + v, 0) / dataArray.length;
-        setAudioLevel(Math.min(100, Math.round((average / 128) * 100)));
-        animFrameRef.current = requestAnimationFrame(updateLevel);
-      };
-      updateLevel();
-    } catch (err: any) {
-      console.warn('Microphone stream access error:', err);
-    }
-
-    if (SpeechRecognition) {
-      try {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = dictationLang === 'om' ? 'om-ET' : dictationLang === 'am' ? 'am-ET' : 'en-US';
-
-        recognition.onstart = () => {
-          setIsRecording(true);
-          setIsPaused(false);
-          startTimer();
-        };
-
-        recognition.onresult = (event: any) => {
-          let currentInterim = '';
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const transcriptChunk = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-              setTranscript((prev) => (prev ? prev + ' ' + transcriptChunk : transcriptChunk).trim());
-            } else {
-              currentInterim += transcriptChunk;
-            }
-          }
-          setInterimTranscript(currentInterim);
-        };
-
-        recognition.onerror = (event: any) => {
-          console.warn('Speech recognition notice:', event.error);
-          if (event.error === 'not-allowed') {
-            setMicError(
-              currentLang === 'om'
-                ? 'Hayyamni maayikiroofoonii dhowwameera. Maaloo browser keessan irratti hayyama kennaa.'
-                : currentLang === 'am'
-                ? 'የማይክሮፎን ፈቃድ ተከልክሏል። እባክዎ በብራውዘርዎ ፈቃድ ይስጡ።'
-                : 'Microphone access denied. Please grant microphone permission in your browser.'
-            );
-            stopRecording();
-          }
-        };
-
-        recognition.onend = () => {
-          if (isRecording && !isPaused) {
-            // Auto restart if continuous listening dropped unexpectedly
-            try {
-              recognition.start();
-            } catch {}
-          }
-        };
-
-        recognitionRef.current = recognition;
-        recognition.start();
-      } catch (e: any) {
-        console.error('Recognition start error:', e);
-        setMicError('Could not start speech recognition: ' + e.message);
-        fallbackDictationSim();
-      }
-    } else {
-      fallbackDictationSim();
+  const handleStopRecording = async () => {
+    const result = await stopDictation();
+    if (result) {
+      setTranscript(result);
     }
   };
 
-  const fallbackDictationSim = () => {
-    setIsRecording(true);
-    startTimer();
-    const fallbackText = dictationLang === 'om'
-      ? `[Yaada Dhaddachaa - Galmee ${caseId}]: Dhaddachi banameera. Abukaattoon himataa ragaa barreeffamaa Labsii 1156/2019 irratti hundaa'e dhiyeesseera. Falmiin mirga qabeenyaa irratti fuulleeffateera.`
-      : dictationLang === 'am'
-      ? `[የችሎት ቃለ-ጉባዔ - መዝገብ ${caseId}]: ችሎቱ ተሰይሟል። የከሳሽ ጠበቃ በአዋጅ 1156/2011 መሰረት የሰነድ ማስረጃ አቅርቧል። ክርክሩ በንብረት ይዞታ ላይ ያተኮረ ነው።`
-      : `[Courtroom Note - Case ${caseId}]: The bench is officially in session. Plaintiff counsel presented documentary evidence grounded in Federal Proclamation No. 1156/2019.`;
-    setTranscript((prev) => (prev ? prev + '\n\n' + fallbackText : fallbackText));
-  };
-
-  const startTimer = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setDurationSeconds((sec) => sec + 1);
-    }, 1000);
-  };
-
-  const pauseRecording = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {}
-    }
-    if (timerRef.current) clearInterval(timerRef.current);
-    setIsPaused(true);
-  };
-
-  const resumeRecording = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.start();
-      } catch {}
-    }
-    startTimer();
-    setIsPaused(false);
-  };
-
-  const stopRecording = () => {
-    setIsRecording(false);
-    setIsPaused(false);
-    setInterimTranscript('');
-    setAudioLevel(0);
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {}
-      recognitionRef.current = null;
-    }
-
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
-    }
-
-    if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach((track) => track.stop());
-      micStreamRef.current = null;
-    }
-
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      try {
-        audioContextRef.current.close();
-      } catch {}
-      audioContextRef.current = null;
-    }
-  };
-
-  const resetRecording = () => {
-    stopRecording();
-    setDurationSeconds(0);
+  const handleResetRecording = () => {
+    cancelDictation();
     setTranscript('');
-    setInterimTranscript('');
     setSavedSuccessMsg(null);
   };
 
@@ -319,7 +173,7 @@ Maintain 100% legal precision and do NOT add fictitious statutes.`;
         prompt: polishPrompt,
         outputLanguages: [dictationLang],
         taskType: 'general',
-        modelTier: 'gemini-flash-lite-latest',
+        modelTier: 'gemini-4-hydrogen',
       });
 
       const polished = res.content || res.separatedVersions?.[dictationLang] || transcript;
@@ -345,7 +199,7 @@ Maintain 100% legal precision and do NOT add fictitious statutes.`;
 
     const finalContent = transcript.trim() || interimTranscript.trim();
     if (!finalContent) {
-      setMicError(
+      setSaveError(
         currentLang === 'om'
           ? 'Barreeffamni waraabbame hin jiru. Maaloo dura dubbadhaa ykn barreessaa.'
           : currentLang === 'am'
@@ -354,6 +208,7 @@ Maintain 100% legal precision and do NOT add fictitious statutes.`;
       );
       return;
     }
+    setSaveError(null);
 
     const title = `[${cleanCaseId}] ${caseTitle ? caseTitle + ' - ' : ''}${noteTypeLabel}`;
     const timestampStr = new Date().toLocaleString();
@@ -575,19 +430,9 @@ Galmee Seeraa SEERAAI - Anchored to Case ID: ${cleanCaseId}
           <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             {/* Left: Recording status & Audio Wave */}
             <div className="flex items-center gap-4">
-              <div className="relative">
-                <div
-                  className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${
-                    isRecording && !isPaused
-                      ? 'bg-rose-600 text-white shadow-lg shadow-rose-950/60 ring-4 ring-rose-500/30 animate-pulse'
-                      : isPaused
-                      ? 'bg-amber-600 text-white'
-                      : 'bg-slate-800 text-slate-400'
-                  }`}
-                >
-                  <Mic className="w-7 h-7" />
-                </div>
-                {isRecording && !isPaused && (
+              <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-slate-800 text-amber-400">
+                <Mic className={`w-7 h-7 ${isRecording ? 'animate-pulse text-rose-500' : ''}`} />
+                {isRecording && (
                   <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-rose-500 rounded-full border-2 border-slate-950 animate-ping" />
                 )}
               </div>
@@ -597,14 +442,14 @@ Galmee Seeraa SEERAAI - Anchored to Case ID: ${cleanCaseId}
                   <span className="font-mono text-2xl font-black text-amber-400">
                     {formatTimer(durationSeconds)}
                   </span>
-                  {isRecording && !isPaused && (
+                  {isRecording && (
                     <span className="text-[10px] font-mono font-bold uppercase text-rose-400 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-800">
                       LIVE RECORDING
                     </span>
                   )}
-                  {isPaused && (
-                    <span className="text-[10px] font-mono font-bold uppercase text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800">
-                      PAUSED
+                  {isProcessing && (
+                    <span className="text-[10px] font-mono font-bold uppercase text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800 animate-pulse">
+                      AI PROCESSING...
                     </span>
                   )}
                 </div>
@@ -612,12 +457,13 @@ Galmee Seeraa SEERAAI - Anchored to Case ID: ${cleanCaseId}
                 {/* Animated speech level indicator bars */}
                 <div className="flex items-center gap-1 mt-1.5 h-3">
                   {[...Array(12)].map((_, i) => {
-                    const activeHeight = isRecording && !isPaused ? Math.min(100, (audioLevel / 100) * 100 + (i % 3) * 15) : 15;
+                    const level = (audioVolume / 100) * 100;
+                    const activeHeight = isRecording ? Math.min(100, level + (i % 3) * 15) : 15;
                     return (
                       <div
                         key={i}
                         className={`w-1 rounded-full transition-all duration-75 ${
-                          isRecording && !isPaused
+                          isRecording
                             ? i < 8 ? 'bg-amber-400' : 'bg-rose-400'
                             : 'bg-slate-800'
                         }`}
@@ -626,7 +472,7 @@ Galmee Seeraa SEERAAI - Anchored to Case ID: ${cleanCaseId}
                     );
                   })}
                   <span className="text-[10px] text-slate-500 font-mono ml-2">
-                    {isRecording ? `${audioLevel}% Level` : 'Ready to dictate'}
+                    {isRecording ? `${audioVolume}% Level` : isProcessing ? 'Transcribing...' : 'Ready to dictate'}
                   </span>
                 </div>
               </div>
@@ -634,6 +480,20 @@ Galmee Seeraa SEERAAI - Anchored to Case ID: ${cleanCaseId}
 
             {/* Right: Language switch & Controls */}
             <div className="flex flex-wrap items-center gap-2">
+              {/* High Accuracy Toggle */}
+              <button
+                type="button"
+                onClick={() => setUseHighAccuracy(!useHighAccuracy)}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold transition-all ${
+                  useHighAccuracy 
+                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400' 
+                  : 'bg-slate-900 border-slate-800 text-slate-500'
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>AI</span>
+              </button>
+
               {/* Dictation Language */}
               <div className="flex items-center rounded-xl bg-slate-900 border border-slate-800 p-0.5 text-xs font-medium">
                 {(['om', 'am', 'en'] as const).map((lang) => (
@@ -643,9 +503,8 @@ Galmee Seeraa SEERAAI - Anchored to Case ID: ${cleanCaseId}
                     onClick={() => {
                       setDictationLang(lang);
                       if (isRecording) {
-                        // Restart recognition with new dialect
-                        stopRecording();
-                        setTimeout(() => startRecording(), 200);
+                        handleStopRecording();
+                        setTimeout(() => handleStartRecording(), 200);
                       }
                     }}
                     className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer font-bold ${
@@ -654,7 +513,7 @@ Galmee Seeraa SEERAAI - Anchored to Case ID: ${cleanCaseId}
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    {lang === 'om' ? 'Afaan Oromoo' : lang === 'am' ? 'አማርኛ' : 'English'}
+                    {lang === 'om' ? 'OM' : lang === 'am' ? 'AM' : 'EN'}
                   </button>
                 ))}
               </div>
@@ -663,49 +522,28 @@ Galmee Seeraa SEERAAI - Anchored to Case ID: ${cleanCaseId}
               {!isRecording ? (
                 <button
                   type="button"
-                  onClick={startRecording}
-                  className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wide shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                  onClick={handleStartRecording}
+                  disabled={isProcessing}
+                  className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wide shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <Play className="w-4 h-4 fill-current" />
                   <span>{currentLang === 'om' ? 'Sagalee Qabi' : currentLang === 'am' ? 'መቅረጽ ጀምር' : 'Start Dictation'}</span>
                 </button>
               ) : (
-                <div className="flex items-center gap-1.5">
-                  {!isPaused ? (
-                    <button
-                      type="button"
-                      onClick={pauseRecording}
-                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer border border-slate-700"
-                    >
-                      <Pause className="w-3.5 h-3.5" />
-                      <span>Dhaabi (Pause)</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={resumeRecording}
-                      className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Itti Fufi</span>
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={stopRecording}
-                    className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow"
-                  >
-                    <Square className="w-3.5 h-3.5 fill-current" />
-                    <span>Xumuri (Stop)</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleStopRecording}
+                  className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                  <span>Xumuri (Stop)</span>
+                </button>
               )}
 
               <button
                 type="button"
-                onClick={resetRecording}
-                disabled={!transcript && durationSeconds === 0}
+                onClick={handleResetRecording}
+                disabled={(!transcript && durationSeconds === 0) || isProcessing}
                 className="p-2 rounded-xl text-slate-500 hover:text-slate-300 hover:bg-slate-900 border border-slate-800 transition-colors disabled:opacity-30 cursor-pointer"
                 title="Reset Transcript"
               >
@@ -715,10 +553,10 @@ Galmee Seeraa SEERAAI - Anchored to Case ID: ${cleanCaseId}
           </div>
 
           {/* Error Banner */}
-          {micError && (
+          {(dictationError || saveError) && (
             <div className="p-3 bg-rose-950/70 border border-rose-800 text-rose-200 text-xs rounded-xl flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>{micError}</span>
+              <span>{dictationError || saveError}</span>
             </div>
           )}
 

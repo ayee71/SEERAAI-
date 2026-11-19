@@ -29,6 +29,8 @@ export interface TranslationDictionary {
     courtCassation: string;
     speechAndOcrConverter?: string;
     worldBizarreLaws?: string;
+    courtDocuments: string;
+    telegramArchive: string;
     settings: string;
   };
   courtroomTimer: {
@@ -323,6 +325,32 @@ export interface TranslationDictionary {
     outputOptionAllThree: string;
     legalStandardsTitle: string;
     legalStandardsDesc: string;
+  };
+  googleWorkspace: {
+    title: string;
+    subtitle: string;
+    classroomTitle: string;
+    classroomDesc: string;
+    keepTitle: string;
+    keepDesc: string;
+    autoSyncReminders: string;
+    lastSync: string;
+    neverSynced: string;
+    syncNow: string;
+    syncing: string;
+    syncSuccess: string;
+    syncError: string;
+    connectGoogle: string;
+  };
+  namecheap: {
+    title: string;
+    desc: string;
+    placeholder: string;
+    button: string;
+    available: string;
+    notAvailable: string;
+    premium: string;
+    buy: string;
   };
   recentSearches: {
     title: string;

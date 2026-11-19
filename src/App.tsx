@@ -4,6 +4,7 @@ import { useAuth } from './context/AuthContext';
 import { Language, loadLanguage } from './i18n/translations';
 import { getUserSettings, saveUserSettings, UserSettings, SavedLegalDocument } from './services/storage';
 import { initAppUpdateEngine, onAppUpdateAvailable, AppUpdateInfo, applyAppUpdate } from './services/appUpdateService';
+import { initTelegramLiveFeedSync } from './services/telegramLiveFeedSync';
 import { syncStatusService } from './services/syncStatusService';
 import { getStoredOfflineMode, OFFLINE_MODE_STORAGE_KEY } from './services/syncUtils';
 import './services/offlineModeService';
@@ -162,9 +163,10 @@ export default function App() {
   const [meetingTopic, setMeetingTopic] = useState<string>('Marii Falmii Seeraa & Qophii Sanadaa');
   const [showWarningModal, setShowWarningModal] = useState<boolean>(!localStorage.getItem('seera_warning_shown'));
 
-  // Initialize App Update Engine
+  // Initialize App Update Engine & 30-minute active-user Telegram live feed background sync
   useEffect(() => {
     const unsubEngine = initAppUpdateEngine();
+    const unsubFeedSync = initTelegramLiveFeedSync();
     const unsubListener = onAppUpdateAvailable((info) => {
       setAppUpdateInfo(info);
       if (info.isUpdateAvailable) {
@@ -173,6 +175,7 @@ export default function App() {
     });
     return () => {
       unsubEngine();
+      unsubFeedSync();
       unsubListener();
     };
   }, []);

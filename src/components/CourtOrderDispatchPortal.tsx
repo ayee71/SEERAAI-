@@ -56,8 +56,8 @@ export const CourtOrderDispatchPortal: React.FC<CourtOrderDispatchPortalProps> =
   const [telegramDispatchOrder, setTelegramDispatchOrder] = useState<CourtDispatchOrder | null>(null);
   const [dispatchSuccessMsg, setDispatchSuccessMsg] = useState<string | null>(null);
 
-  const telegramLink = courtInstitution?.courtTelegramLink || 'https://t.me/OromiaCourtBot';
-  const courtEmail = courtInstitution?.courtEmailAddress || courtInstitution?.adminEmail || 'legal.dispatch@oromia.gov.et';
+  const telegramLink = courtInstitution?.courtTelegramLink || 'https://t.me/seeraai_ethio';
+  const courtEmail = courtInstitution?.courtEmailAddress || courtInstitution?.adminEmail || 'manamurtii@seeraai.com';
 
   const handleRefresh = () => {
     setOrders(getDispatchOrders());

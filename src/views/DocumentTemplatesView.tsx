@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText,
   Briefcase,
@@ -27,12 +27,18 @@ import {
   Building,
   Calculator,
   Crown,
+  Mic,
+  Square,
+  Loader2,
+  Globe,
 } from 'lucide-react';
 import { Language, translations } from '../i18n/translations';
 import { generateLegalContent, GenerateResponse } from '../services/api';
 import { DocumentViewer } from '../components/DocumentViewer';
 import { DocumentQAPanel } from '../components/DocumentQAPanel';
 import { CourtFeeCalculator } from '../components/CourtFeeCalculator';
+import { useLegalDictation } from '../hooks/useLegalDictation';
+import { SUPPORTED_SPEECH_DIALECTS } from '../components/VoiceDictation';
 import { calculateOromiaCourtFee, CourtFeeCalculationResult } from '../services/courtFeeCalculatorService';
 import { useAuth } from '../context/AuthContext';
 
@@ -562,7 +568,7 @@ export const DocumentTemplatesView: React.FC<DocumentTemplatesViewProps> = ({ cu
   const [activeTabMode, setActiveTabMode] = useState<'draft' | 'qa_counsel' | 'statutory_rules'>('draft');
   const [formData, setFormData] = useState(templates[0].defaultValues);
   const [selectedLangs, setSelectedLangs] = useState<Language[]>([currentLang]);
-  const [modelTier, setModelTier] = useState<string>('gemini-flash-lite-latest');
+  const [modelTier, setModelTier] = useState<string>('gemini-4-hydrogen');
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -580,6 +586,107 @@ export const DocumentTemplatesView: React.FC<DocumentTemplatesViewProps> = ({ cu
       isPremiumUser: Boolean(profile?.subscriptionPlan === 'unlimited' || profile?.subscriptionPlan === 'pro' || profile?.isPremium === true),
     });
   });
+
+  // Hands-free Voice-to-Text Dictation for Templates
+  const [templateDictationLang, setTemplateDictationLang] = useState<Language>(currentLang || 'om');
+  const [selectedTemplateSpeechDialect, setSelectedTemplateSpeechDialect] = useState<string>(() => {
+    const match = SUPPORTED_SPEECH_DIALECTS.find((d) => d.lang === currentLang);
+    return match ? match.code : 'om-ET';
+  });
+  const specialClausesRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const {
+    isRecording: isTemplateVoiceActive,
+    isProcessing: isTemplateVoiceProcessing,
+    durationSeconds: templateVoiceDuration,
+    interimTranscript: templateVoiceInterim,
+    audioVolume: templateVoiceVolume,
+    error: templateVoiceError,
+    startDictation: startTemplateVoiceDictation,
+    stopDictation: stopTemplateVoiceDictation,
+    insertAtCursor: insertTemplateAtCursor,
+  } = useLegalDictation({
+    language: templateDictationLang,
+    speechDialect: selectedTemplateSpeechDialect,
+    legalMode: true,
+    onTranscriptionResult: (text, isFinal) => {
+      if (text && isFinal) {
+        if (specialClausesRef.current) {
+          insertTemplateAtCursor(
+            specialClausesRef.current,
+            text,
+            formData.specialClauses,
+            (newVal) => {
+              setFormData((prev) => ({
+                ...prev,
+                specialClauses: typeof newVal === 'function' ? (newVal as any)(prev.specialClauses) : newVal,
+              }));
+            }
+          );
+        } else {
+          setFormData((prev) => ({
+            ...prev,
+            specialClauses: prev.specialClauses ? `${prev.specialClauses} ${text}` : text,
+          }));
+        }
+      }
+    },
+  });
+
+  const handleToggleTemplateVoice = async () => {
+    if (isTemplateVoiceActive) {
+      const transcribed = await stopTemplateVoiceDictation();
+      if (transcribed && transcribed.trim()) {
+        if (specialClausesRef.current) {
+          insertTemplateAtCursor(
+            specialClausesRef.current,
+            transcribed,
+            formData.specialClauses,
+            (newVal) => {
+              setFormData((prev) => ({
+                ...prev,
+                specialClauses: typeof newVal === 'function' ? (newVal as any)(prev.specialClauses) : newVal,
+              }));
+            }
+          );
+        } else {
+          setFormData((prev) => ({
+            ...prev,
+            specialClauses: prev.specialClauses ? `${prev.specialClauses} ${transcribed}` : transcribed,
+          }));
+        }
+      }
+    } else {
+      await startTemplateVoiceDictation();
+    }
+  };
+
+  const formatVoiceTimer = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(mins).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  // Listen for local voice command 'Save draft' in template editor
+  useEffect(() => {
+    const handleSaveDoc = () => {
+      try {
+        localStorage.setItem(`seera_template_draft_${selectedTemplate.id}`, JSON.stringify(formData));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('seera:show_toast', {
+              detail: {
+                message: currentLang === 'am' ? 'የቅጽ ረቂቅ ተቀምጧል' : currentLang === 'en' ? 'Template form draft saved!' : 'Wixineen foormichaa olkaawameera!',
+                emoji: '💾',
+              },
+            })
+          );
+        }
+      } catch (e) {}
+    };
+    window.addEventListener('seera:save_current_document', handleSaveDoc);
+    return () => window.removeEventListener('seera:save_current_document', handleSaveDoc);
+  }, [formData, selectedTemplate, currentLang]);
 
   const handleSelectTemplate = (tmpl: TemplateDefinition) => {
     setSelectedTemplate(tmpl);
@@ -856,12 +963,111 @@ LEGAL DRAFTING REQUIREMENTS:
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                    {selectedTemplate.id === 'legal_brief_comprehensive' ? 'Qabxiilee Falmii (Case Arguments):' : 'Uulaagaalee Addaa fi Keeyyattoota (Special Terms):'}
-                  </label>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1.5">
+                    <label className="text-[11px] font-semibold text-slate-300">
+                      {selectedTemplate.id === 'legal_brief_comprehensive' ? 'Qabxiilee Falmii fi Uulaagaalee (Case Arguments & Terms):' : 'Uulaagaalee Addaa fi Keeyyattoota (Special Terms):'}
+                    </label>
+
+                    {/* Hands-Free Voice-to-Text Button & Dialect Selector */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1 bg-slate-950 border border-slate-700/80 rounded-lg px-2 py-0.5">
+                        <Globe className="w-2.5 h-2.5 text-slate-400" />
+                        <select
+                          value={selectedTemplateSpeechDialect}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            setSelectedTemplateSpeechDialect(code);
+                            const match = SUPPORTED_SPEECH_DIALECTS.find((d) => d.code === code);
+                            if (match) setTemplateDictationLang(match.lang);
+                          }}
+                          className="bg-transparent text-slate-200 text-[10px] font-medium outline-none cursor-pointer"
+                          title="Select Speech Dialect (Afaan Oromoo, Amharic, or English)"
+                        >
+                          {SUPPORTED_SPEECH_DIALECTS.map((d) => (
+                            <option key={d.code} value={d.code} className="bg-slate-900 text-slate-200">
+                              {d.flag} {d.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleToggleTemplateVoice}
+                        disabled={isTemplateVoiceProcessing}
+                        className={`px-2.5 py-1 rounded-lg font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow ${
+                          isTemplateVoiceActive
+                            ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/50 animate-pulse border border-rose-400'
+                            : isTemplateVoiceProcessing
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                            : 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 hover:border-rose-400'
+                        }`}
+                        title={isTemplateVoiceActive ? 'Stop Recording' : 'Hands-Free Voice-to-Text'}
+                      >
+                        {isTemplateVoiceProcessing ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                            <span>{currentLang === 'om' ? 'Gara barruutti...' : 'በመገልበጥ ላይ...'}</span>
+                          </>
+                        ) : isTemplateVoiceActive ? (
+                          <>
+                            <Square className="w-3 h-3 fill-current" />
+                            <span className="font-mono font-bold">REC {formatVoiceTimer(templateVoiceDuration)}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="w-3.5 h-3.5 text-rose-400" />
+                            <span>{currentLang === 'om' ? 'Sagaleen Qopheessi' : currentLang === 'am' ? 'በድምፅ ፃፍ' : 'Voice-to-Text'}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Template Live Recording Status Banner */}
+                  {isTemplateVoiceActive && (
+                    <div className="p-2.5 mb-2 bg-rose-950/70 border border-rose-500/40 rounded-xl space-y-1.5 animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between text-[11px] text-rose-200">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                          <span className="font-semibold">
+                            {currentLang === 'om'
+                              ? `Sagalee dhaggeeffachaa jira (${templateDictationLang === 'om' ? 'Afaan Oromoo' : templateDictationLang === 'am' ? 'አማርኛ' : 'English'})...`
+                              : `Listening hands-free in ${templateDictationLang === 'om' ? 'Afaan Oromoo' : templateDictationLang === 'am' ? 'Amharic' : 'English'}...`}
+                          </span>
+                        </div>
+                        <span className="font-mono font-bold bg-rose-900/60 px-1.5 py-0.5 rounded text-[10px]">
+                          {formatVoiceTimer(templateVoiceDuration)}
+                        </span>
+                      </div>
+
+                      {/* Sound volume level visualizer bar */}
+                      <div className="w-full bg-rose-950 rounded-full h-1 overflow-hidden border border-rose-800/60">
+                        <div
+                          className="bg-rose-400 h-full transition-all duration-75 rounded-full"
+                          style={{ width: `${Math.min(100, Math.max(8, templateVoiceVolume * 100))}%` }}
+                        />
+                      </div>
+
+                      {/* Interim transcript stream */}
+                      {templateVoiceInterim && (
+                        <p className="text-[11px] text-rose-100 italic bg-rose-900/40 p-1.5 rounded border border-rose-800/40">
+                          "{templateVoiceInterim}"
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {templateVoiceError && (
+                    <div className="p-2 mb-2 bg-rose-950/50 border border-rose-800/80 rounded-lg text-[11px] text-rose-300">
+                      {templateVoiceError}
+                    </div>
+                  )}
+
                   {selectedTemplate.id === 'legal_brief_comprehensive' ? (
                     <div className="space-y-3">
                       <textarea
+                        ref={specialClausesRef}
                         value={formData.specialClauses.split('\n\nLEGAL ANALYSIS:')[0].replace('CASE ARGUMENTS: ', '')}
                         onChange={(e) => {
                           const parts = formData.specialClauses.split('\n\nLEGAL ANALYSIS:');
@@ -900,6 +1106,7 @@ LEGAL DRAFTING REQUIREMENTS:
                     </div>
                   ) : (
                     <textarea
+                      ref={specialClausesRef}
                       value={formData.specialClauses}
                       onChange={(e) => setFormData({ ...formData, specialClauses: e.target.value })}
                       rows={2}

@@ -2,11 +2,14 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Language } from '../i18n/translations';
 import { transcribeSpeechAudio } from '../services/api';
 import { correctOromoLegalText } from '../utils/oromoTextCorrector';
+import { executeLocalVoiceCommand, matchLocalVoiceCommand } from '../services/localVoiceCommandHandler';
 
 export interface UseLegalDictationOptions {
   language?: Language | 'auto';
   speechDialect?: string;
   legalMode?: boolean;
+  verbatimMode?: boolean;
+  enableVoiceCommands?: boolean;
   onTranscriptionResult?: (text: string, isFinal: boolean) => void;
   onError?: (errorMessage: string) => void;
 }
@@ -36,8 +39,9 @@ export interface UseLegalDictationReturn {
  * - Formats proclamation numbers (e.g. "labsii 1156" -> "Labsii Lakk. 1156/2019")
  * - Applies Harargee & Central Oromo legal orthography corrections
  */
-export function formatSpokenLegalText(rawText: string, lang: Language | 'auto' = 'om'): string {
+export function formatSpokenLegalText(rawText: string, lang: Language | 'auto' = 'om', legalMode: boolean = true): string {
   if (!rawText) return '';
+  if (!legalMode) return rawText.trim();
   let text = rawText.trim();
 
   // 1. Proclamation numbers formatting
@@ -84,6 +88,8 @@ export function useLegalDictation(options: UseLegalDictationOptions = {}): UseLe
     language = 'om',
     speechDialect,
     legalMode = true,
+    verbatimMode = false,
+    enableVoiceCommands = true,
     onTranscriptionResult,
     onError,
   } = options;
@@ -185,7 +191,10 @@ export function useLegalDictation(options: UseLegalDictationOptions = {}): UseLe
           mimeType = 'audio/ogg';
         }
 
-        const recorder = new MediaRecorder(stream, { mimeType });
+        const recorder = new MediaRecorder(stream, {
+          mimeType,
+          audioBitsPerSecond: 32000, // 32kbps compressed speech encoding (prevents 413 payload error)
+        });
         mediaRecorderRef.current = recorder;
 
         recorder.ondataavailable = (e) => {
@@ -221,8 +230,23 @@ export function useLegalDictation(options: UseLegalDictationOptions = {}): UseLe
             }
 
             if (finalBatch) {
-              sessionTextRef.current += (sessionTextRef.current ? ' ' : '') + finalBatch.trim();
-              const formatted = formatSpokenLegalText(sessionTextRef.current, language);
+              const trimmedBatch = finalBatch.trim();
+
+              // Intercept offline voice commands (e.g. "Save draft", "Search Cassation", "Wixinee olkaayi")
+              if (enableVoiceCommands) {
+                const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+                const cmdMatch = matchLocalVoiceCommand(trimmedBatch, isOffline);
+                if (cmdMatch.matched) {
+                  executeLocalVoiceCommand(trimmedBatch, {
+                    currentLang: language === 'auto' ? 'om' : language,
+                  });
+                  setInterimTranscript('');
+                  return;
+                }
+              }
+
+              sessionTextRef.current += (sessionTextRef.current ? ' ' : '') + trimmedBatch;
+              const formatted = formatSpokenLegalText(sessionTextRef.current, language, !verbatimMode && legalMode);
               onTranscriptionResult?.(formatted, true);
             }
 
@@ -247,9 +271,13 @@ export function useLegalDictation(options: UseLegalDictationOptions = {}): UseLe
 
       setIsRecording(true);
     } catch (err: any) {
-      console.error('Microphone dictation access denied:', err);
-      const errMsg = err?.name === 'NotAllowedError'
-        ? 'Hayyanni maaykirofoonii hin heyyamamne. Maaloo browser keessan keessatti eeyyamaa. / Microphone access was denied.'
+      console.warn('Microphone dictation access notice:', err?.name || err?.message || err);
+      const isPermDenied = err?.name === 'NotAllowedError' ||
+                           err?.name === 'PermissionDeniedError' ||
+                           String(err?.message || err).toLowerCase().includes('permission denied') ||
+                           String(err?.message || err).toLowerCase().includes('notallowederror');
+      const errMsg = isPermDenied
+        ? 'Hayyanni maaykirofoonii hin heyyamamne. Maaloo seera eeyyamaa browser keessan gubbaatti banaa (Click lock/microphone icon in URL bar to allow). / Microphone access was denied.'
         : 'Maaykirofoonii argachuu hin dandeenye. Maaloo meeshaa keessan qoradhaa. / Could not access microphone.';
       setError(errMsg);
       onError?.(errMsg);
@@ -310,6 +338,7 @@ export function useLegalDictation(options: UseLegalDictationOptions = {}): UseLe
               mimeType: recordedBlob.type || 'audio/webm',
               language: language === 'auto' ? undefined : language,
               legalMode,
+              verbatimMode,
             });
 
             if (apiRes && apiRes.transcription && apiRes.transcription.trim().length > 0) {
@@ -320,7 +349,19 @@ export function useLegalDictation(options: UseLegalDictationOptions = {}): UseLe
               }
             }
           } catch (serverErr) {
-            console.warn('Server transcription fallback to streaming text:', serverErr);
+            console.warn('Server transcription fallback to local Web Speech streaming text:', serverErr);
+            if (typeof window !== 'undefined' && finalResultText) {
+              window.dispatchEvent(
+                new CustomEvent('seera:show_toast', {
+                  detail: {
+                    message: language === 'am' ? '⚡ [ከመስመር ውጭ]: በአካባቢው የድምፅ ረቂቅ ተጠናቋል' : language === 'en' ? '⚡ [Offline Web Speech]: Transcribed locally via browser speech fallback.' : '⚡ [Offline Web Speech]: Sagaleen karaa local speech fallback waraabameera.',
+                    type: 'info',
+                    emoji: '🎙️',
+                    duration: 3000,
+                  },
+                })
+              );
+            }
           }
         }
       }
@@ -331,7 +372,20 @@ export function useLegalDictation(options: UseLegalDictationOptions = {}): UseLe
       setIsProcessing(false);
     }
 
-    const formatted = formatSpokenLegalText(finalResultText, language);
+    // Check if the finalized spoken phrase is a voice command
+    if (enableVoiceCommands && finalResultText) {
+      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      const cmdMatch = matchLocalVoiceCommand(finalResultText, isOffline);
+      if (cmdMatch.matched) {
+        executeLocalVoiceCommand(finalResultText, {
+          currentLang: language === 'auto' ? 'om' : language,
+        });
+        setInterimTranscript('');
+        return '';
+      }
+    }
+
+    const formatted = formatSpokenLegalText(finalResultText, language, !verbatimMode && legalMode);
     setInterimTranscript('');
     onTranscriptionResult?.(formatted, true);
     return formatted;

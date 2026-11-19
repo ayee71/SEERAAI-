@@ -82,6 +82,7 @@ async function runStorageRulesSuite(): Promise<void> {
   const auditorAStorage = () => testEnv.authenticatedContext('aud_a1', { email: 'aud.a1@court.gov.et', email_verified: true, courtRole: 'auditor', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).storage();
   const legalContentMgrStorage = () => testEnv.authenticatedContext('lcm_1', { email: 'lcm@seeraai.et', email_verified: true, legalContentManager: true, firebase: { sign_in_provider: 'password' } }).storage();
   const missingFirebaseMapStorage = () => testEnv.authenticatedContext('missing_fb_1', { email: 'nofb@example.org', email_verified: true, firebase: undefined as any }).storage();
+  const missingSignInProviderStorage = () => testEnv.authenticatedContext('missing_prov_1', { email: 'noprov@example.org', email_verified: true, firebase: {} as any }).storage();
 
   const results: StorageTestResult[] = [];
   const check = async (id: number, name: string, fn: () => Promise<void>) => {
@@ -282,6 +283,16 @@ async function runStorageRulesSuite(): Promise<void> {
       );
       await assertFails(
         missingFirebaseMapStorage()
+          .ref(`institutions/${INST_A}/courtDocuments/doc_a1/order.pdf`)
+          .getDownloadURL()
+      );
+      await assertFails(
+        missingSignInProviderStorage()
+          .ref('legal_docs/personal_missing_prov_1/missing_prov_1/note.pdf')
+          .put(samplePdf, { contentType: 'application/pdf' })
+      );
+      await assertFails(
+        missingSignInProviderStorage()
           .ref(`institutions/${INST_A}/courtDocuments/doc_a1/order.pdf`)
           .getDownloadURL()
       );

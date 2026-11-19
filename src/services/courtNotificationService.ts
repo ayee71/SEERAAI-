@@ -29,6 +29,7 @@ export interface CourtNotification {
   hearingTime?: string;
   bench?: string;
   urgency: 'low' | 'medium' | 'high' | 'critical';
+  recipientUid?: string;
   isRead: boolean;
   isPushSent?: boolean;
   createdAt: string;
@@ -133,19 +134,25 @@ export async function createCourtNotification(
 }
 
 /**
- * Fetch all notifications with local fallback
+ * Fetch all notifications for current user with local fallback
  */
 export async function fetchCourtNotifications(): Promise<CourtNotification[]> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) return getLocalNotifications();
+
   try {
-    const q = query(collection(db, NOTIFICATIONS_COLLECTION), limit(60));
+    const q = query(
+      collection(db, NOTIFICATIONS_COLLECTION), 
+      where('recipientUid', '==', currentUser.uid),
+      orderBy('createdAt', 'desc'),
+      limit(60)
+    );
     const snap = await getDocs(q);
     if (!snap.empty) {
       const items: CourtNotification[] = snap.docs.map(d => ({
         id: d.id,
         ...d.data()
       } as CourtNotification));
-      // Sort newest first
-      items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       saveLocalNotifications(items);
       return items;
     }
@@ -156,20 +163,31 @@ export async function fetchCourtNotifications(): Promise<CourtNotification[]> {
 }
 
 /**
- * Real-time subscription to court notifications
+ * Real-time subscription to court notifications for current user
  */
 export function subscribeToCourtNotifications(
   onUpdate: (notifications: CourtNotification[]) => void
 ): () => void {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    onUpdate(getLocalNotifications());
+    return () => {};
+  }
+
   try {
-    const q = query(collection(db, NOTIFICATIONS_COLLECTION), limit(60));
+    const q = query(
+      collection(db, NOTIFICATIONS_COLLECTION),
+      where('recipientUid', '==', currentUser.uid),
+      orderBy('createdAt', 'desc'),
+      limit(60)
+    );
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const items: CourtNotification[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
         ...docSnap.data()
       } as CourtNotification));
 
-      items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       saveLocalNotifications(items);
       onUpdate(items);
     }, (err) => {
@@ -210,10 +228,13 @@ export async function triggerServerDeadlineCheck(): Promise<{
   message: string;
 }> {
   try {
+    const { auth } = await import('./firebase');
+    const idToken = await auth.currentUser?.getIdToken().catch(() => '');
     const res = await fetch('/api/court/check-upcoming-deadlines', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
       }
     });
     if (!res.ok) {

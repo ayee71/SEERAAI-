@@ -605,8 +605,13 @@ service cloud.firestore {
       
       match /courtDocuments/{docId} {
         allow read: if isInstitutionStaff(institutionId);
-        allow create: if canEditCasesIn(institutionId) && hasValidOptionalDataUrl(incoming()) && incoming().get('institutionId', institutionId) == institutionId;
-        allow update: if canEditCasesIn(institutionId) && hasValidOptionalDataUrl(incoming()) && incoming().get('institutionId', existing().get('institutionId', institutionId)) == existing().get('institutionId', institutionId) && incoming().get('institutionId', institutionId) == institutionId;
+        allow create: if canEditCasesIn(institutionId) &&
+                         hasValidOptionalDataUrl(incoming()) &&
+                         incoming().get('institutionId', institutionId) == institutionId;
+        allow update: if canEditCasesIn(institutionId) &&
+                         hasValidOptionalDataUrl(incoming()) &&
+                         incoming().get('institutionId', existing().get('institutionId', institutionId)) == existing().get('institutionId', institutionId) &&
+                         incoming().get('institutionId', institutionId) == institutionId;
         allow delete: if isCourtAdminOf(institutionId);
       }
 

@@ -80,6 +80,7 @@ export const VoiceAndDocumentConverterView: React.FC<VoiceAndDocumentConverterVi
   const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
   const [transcribedText, setTranscribedText] = useState<string>('');
   const [detectedAudioLang, setDetectedAudioLang] = useState<Language | null>(null);
+  const [showMicPermissionModal, setShowMicPermissionModal] = useState<boolean>(false);
 
   // Audio recording timer & streams
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -196,7 +197,10 @@ export const VoiceAndDocumentConverterView: React.FC<VoiceAndDocumentConverterVi
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-      const recorder = new MediaRecorder(stream, { mimeType });
+      const recorder = new MediaRecorder(stream, {
+        mimeType,
+        audioBitsPerSecond: 32000, // Efficient compressed speech encoding (prevents 413 payload error)
+      });
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (event) => {
@@ -219,11 +223,23 @@ export const VoiceAndDocumentConverterView: React.FC<VoiceAndDocumentConverterVi
         setRecordingSeconds((prev) => prev + 1);
       }, 1000);
     } catch (err: any) {
-      console.error('Audio recording start error:', err);
+      console.warn('Audio recording start notice:', err?.name || err?.message || err);
+      const isPermDenied = err?.name === 'NotAllowedError' ||
+                           err?.name === 'PermissionDeniedError' ||
+                           String(err?.message || err).toLowerCase().includes('permission denied') ||
+                           String(err?.message || err).toLowerCase().includes('notallowederror');
+      setIsRecording(false);
+      setShowMicPermissionModal(true);
       setErrorMessage(
-        currentLang === 'om'
-          ? 'Mikrofoona fayyadamuuf eeyyama kennuun dirqama. Maaloo hayyama banaa.'
-          : 'ድምፅ ለመቅረጽ የማይክሮፎን ፈቃድ ያስፈልጋል። እባክዎ ፈቃድ ይስጡ።'
+        isPermDenied
+          ? (currentLang === 'om'
+              ? '🚫 Mikrofoona fayyadamuuf eeyyama kennuun dirqama. Maaloo seera eeyyamaa browser keessan gubbaatti banaa (Click lock icon in address bar to allow mic).'
+              : currentLang === 'am'
+              ? '🚫 ድምፅ ለመቅረጽ የማይክሮፎን ፈቃድ ያስፈልጋል። እባክዎ በብራውዘርዎ የላይኛው ጥግ የማይክሮፎን ፈቃድ ይስጡ።'
+              : '🚫 Microphone permission denied. Please allow microphone access in your browser settings.')
+          : (currentLang === 'om'
+              ? 'Maaykirofoonii argachuu hin dandeenye. Maaloo meeshaa keessan qoradhaa.'
+              : 'Could not access microphone hardware.')
       );
     }
   };
@@ -1605,6 +1621,96 @@ export const VoiceAndDocumentConverterView: React.FC<VoiceAndDocumentConverterVi
           </div>
         </div>
       )}
+      {/* Dedicated Microphone Permission Modal */}
+      {showMicPermissionModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-amber-500/40 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 text-slate-100">
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold text-xl shrink-0">
+                🎙️
+              </div>
+              <div>
+                <h3 className="text-base font-bold font-serif-legal text-slate-100">
+                  {currentLang === 'om'
+                    ? 'Hayyama Maaykirofoonii Banaa'
+                    : currentLang === 'am'
+                    ? 'የማይክሮፎን ፈቃድ ይስጡ'
+                    : 'Microphone Permission Required'}
+                </h3>
+                <p className="text-xs text-amber-400 font-mono">
+                  {currentLang === 'om'
+                    ? 'Maaykirofooniin cufameera / Browser Permission Blocked'
+                    : 'Permission Denied in Browser Settings'}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
+              <p className="font-semibold text-slate-200">
+                {currentLang === 'om'
+                  ? 'Tarkaanfiiwwan Hayyama Banaatiif (Steps to Allow):'
+                  : 'ትእዛዝ (How to allow microphone access):'}
+              </p>
+              <ol className="list-decimal list-inside space-y-1.5 text-slate-300">
+                <li>
+                  {currentLang === 'om'
+                    ? 'Mallattoo qulqullinaa 🔒 ykn 🎙️ address bar browser gubbaa tuqaa.'
+                    : 'በብራውዘርዎ ላይኛው ጥግ ያለውን የ 🔒 ወይም 🎙️ ምስል ይጫኑ።'}
+                </li>
+                <li>
+                  {currentLang === 'om'
+                    ? 'Filannoo "Microphone" jedhu "Allow" (Heyyami) godhaa.'
+                    : '"Microphone" የሚለውን መምረጫ "Allow" ያድርጉ።'}
+                </li>
+                <li>
+                  {currentLang === 'om'
+                    ? 'Ergasii kitto "Irra Deebi\'ii Yaali" jedhu gadi tuqaa.'
+                    : 'ከዚያ "እንደገና ሞክር" የሚለውን ይጫኑ።'}
+                </li>
+              </ol>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMicPermissionModal(false);
+                  handleStartRecording();
+                }}
+                className="flex-1 py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all shadow flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>🎙️</span>
+                <span>
+                  {currentLang === 'om' ? 'Irra Deebi\'ii Yaali' : 'እንደገና ሞክር (Try Again)'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMicPermissionModal(false);
+                  setAudioInputMode('upload');
+                }}
+                className="flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-all border border-slate-700 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>📁</span>
+                <span>
+                  {currentLang === 'om' ? 'Faayila Ol-Fe\'i' : 'ፋይል ስቀል (Upload File)'}
+                </span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowMicPermissionModal(false)}
+              className="w-full text-center text-xs text-slate-400 hover:text-slate-200 pt-1 cursor-pointer"
+            >
+              {currentLang === 'om' ? 'Cufi (Dismiss)' : 'ዝጋ (Dismiss)'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Voice Command Modal for Tab Navigation */}
       <VoiceCommandModal
         isOpen={isVoiceCmdModalOpen}

@@ -22,7 +22,13 @@ export type AdminActionType =
   | 'court_user_created' 
   | 'config_update' 
   | 'broadcast_update'
-  | 'security_policy_change';
+  | 'security_policy_change'
+  | 'admin_logout'
+  | 'document_upload'
+  | 'document_download'
+  | 'document_view'
+  | 'document_delete'
+  | 'document_edit';
 
 export interface AdminActivityLogEntry {
   id: string;

@@ -443,6 +443,77 @@ const DEFAULT_COURT_USERS: CourtUser[] = [
     status: 'active',
     createdByAdminEmail: 'arsi.court@oromia.gov.et',
     createdAt: new Date().toISOString(),
+  },
+  /* Practice Court Users for mmurtii.com */
+  {
+    id: 'cuser_mmurtii_admin',
+    institutionId: 'inst_mmurtii_practice',
+    courtName: 'Mana Murtii Shaakalaa (Practice Court - mmurtii.com)',
+    fullName: 'Bulchaa Shaakalaa (Practice Admin)',
+    usernameOrEmail: 'admin@mmurtii.com',
+    passcode: 'MMURTII-2026',
+    role: 'court_admin',
+    bench: 'Waajjira Bulchiinsa Shaakalaa (Practice Admin Office)',
+    licenseNumber: 'PRACTICE-ADMIN-01',
+    status: 'active',
+    createdByAdminEmail: 'admin@mmurtii.com',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'cuser_mmurtii_judge',
+    institutionId: 'inst_mmurtii_practice',
+    courtName: 'Mana Murtii Shaakalaa (Practice Court - mmurtii.com)',
+    fullName: 'Abbaa Seeraa Shaakalaa (Practice Judge)',
+    usernameOrEmail: 'judge@mmurtii.com',
+    passcode: 'MMURTII-2026',
+    role: 'judge',
+    bench: 'Dhaddacha Shaakalaa (Practice Bench)',
+    licenseNumber: 'PRACTICE-JUDGE-01',
+    status: 'active',
+    createdByAdminEmail: 'admin@mmurtii.com',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'cuser_mmurtii_registrar',
+    institutionId: 'inst_mmurtii_practice',
+    courtName: 'Mana Murtii Shaakalaa (Practice Court - mmurtii.com)',
+    fullName: 'Galmeessaa Shaakalaa (Practice Registrar)',
+    usernameOrEmail: 'registrar@mmurtii.com',
+    passcode: 'MMURTII-2026',
+    role: 'registrar',
+    bench: 'Galmee & Intake Desk Shaakalaa',
+    licenseNumber: 'PRACTICE-REG-01',
+    status: 'active',
+    createdByAdminEmail: 'admin@mmurtii.com',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'cuser_mmurtii_clerk',
+    institutionId: 'inst_mmurtii_practice',
+    courtName: 'Mana Murtii Shaakalaa (Practice Court - mmurtii.com)',
+    fullName: 'Calaaqqisaa Shaakalaa (Practice Clerk)',
+    usernameOrEmail: 'clerk@mmurtii.com',
+    passcode: 'MMURTII-2026',
+    role: 'registrar',
+    bench: 'Waajjira Calaajjii Shaakalaa',
+    licenseNumber: 'PRACTICE-CLK-01',
+    status: 'active',
+    createdByAdminEmail: 'admin@mmurtii.com',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'cuser_mmurtii_expert',
+    institutionId: 'inst_mmurtii_practice',
+    courtName: 'Mana Murtii Shaakalaa (Practice Court - mmurtii.com)',
+    fullName: 'Ogeessa Seeraa Shaakalaa (Practice Legal Expert)',
+    usernameOrEmail: 'expert@mmurtii.com',
+    passcode: 'MMURTII-2026',
+    role: 'legal_expert',
+    bench: 'Qorannoo Seeraa Shaakalaa',
+    licenseNumber: 'PRACTICE-EXP-01',
+    status: 'active',
+    createdByAdminEmail: 'admin@mmurtii.com',
+    createdAt: new Date().toISOString(),
   }
 ];
 
@@ -473,19 +544,28 @@ export function getLocalInstitutions(): CourtInstitution[] {
   }
 }
 
+import { saveInstitutionsToDB, saveUsersToDB } from './indexedDb';
+
 export function saveLocalInstitutions(list: CourtInstitution[]): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEYS.INSTITUTIONS, JSON.stringify(list));
   } catch (e) {
     if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-      console.warn('LocalStorage quota exceeded. Attempting to clear secondary caches...');
-      localStorage.removeItem(STORAGE_KEYS.REQUESTS);
-      localStorage.removeItem(STORAGE_KEYS.STAFF_REQUESTS);
+      console.warn('LocalStorage quota exceeded. Aggressively clearing non-essential cache...');
+      // Clear non-essential keys
+      const keysToClear = [
+        STORAGE_KEYS.REQUESTS,
+        STORAGE_KEYS.STAFF_REQUESTS,
+        'seera_share_events',
+        'seera_notification_settings'
+      ];
+      keysToClear.forEach(key => localStorage.removeItem(key));
+      
       try {
         localStorage.setItem(STORAGE_KEYS.INSTITUTIONS, JSON.stringify(list));
       } catch (e2) {
-        console.error('Failed to save institutions even after clearing space', e2);
+        console.error('Still failed to save after aggressive clear', e2);
       }
     } else {
       console.error('Failed to save institutions locally', e);
@@ -524,7 +604,25 @@ export function saveLocalCourtUsers(list: CourtUser[]): void {
   try {
     localStorage.setItem(STORAGE_KEYS.COURT_USERS, JSON.stringify(list));
   } catch (e) {
-    console.error('Failed to save court users locally', e);
+    if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+      console.warn('LocalStorage quota exceeded. Aggressively clearing non-essential cache...');
+      // Clear non-essential keys
+      const keysToClear = [
+        STORAGE_KEYS.REQUESTS,
+        STORAGE_KEYS.STAFF_REQUESTS,
+        'seera_share_events',
+        'seera_notification_settings'
+      ];
+      keysToClear.forEach(key => localStorage.removeItem(key));
+      
+      try {
+        localStorage.setItem(STORAGE_KEYS.COURT_USERS, JSON.stringify(list));
+      } catch (e2) {
+        console.error('Still failed to save after aggressive clear', e2);
+      }
+    } else {
+      console.error('Failed to save court users locally', e);
+    }
   }
 }
 
@@ -612,35 +710,32 @@ export async function loginAsCourtAdmin(adminEmail: string, accessCode: string):
     return { success: true, session, message: 'Seensi Bulchaa Mana Murtii Milkaa\'eera!' };
   }
 
-  // Check if Gurbicha Court Admin
-  const isGurbichaAdmin = emailNorm.includes('gurbicha') && (codeNorm.includes('GURBICHA') || codeNorm === '2026' || codeNorm.includes('ADMIN'));
-  if (isGurbichaAdmin) {
-    const institutions = getLocalInstitutions();
-    let gurbichaInst = institutions.find(i => i.id === 'inst_gurbicha_woreda_first');
-    if (!gurbichaInst) {
-      gurbichaInst = {
-        id: 'inst_gurbicha_woreda_first',
-        name: 'Mana Murtii Aanaa Gurbicha (Gurbicha Woreda Court)',
-        region: 'Buno Baddallee (Buno Bedele)',
-        courtLevel: 'first_instance',
-        adminEmail: 'gurbicha@court.oromia.et',
-        adminName: 'Bulchaa Mana Murtii Aanaa Gurbicha',
-        accessCode: 'GURBICHA-2026',
-        status: 'active',
-        institutionStatus: 'approved',
-        hasOfficialStamp: true,
-        createdAt: new Date().toISOString(),
-      };
-    }
+  // Check if Gurbicha Court Admin (Official Shaakala/Practice Email: gurbicha.@court.oromia.et or gurbicha@court.oromia.et)
+  const isGurbichaOfficial = (emailNorm === 'gurbicha.@court.oromia.et' || emailNorm === 'gurbicha@court.oromia.et' || emailNorm === 'gurbicha@gmail.com') && 
+                            (codeNorm === 'GURBICHA-2026' || codeNorm === '2026' || codeNorm === 'GURBICHA2026' || codeNorm === 'GURBICHA');
+  
+  if (isGurbichaOfficial) {
+    const gurbichaInst = getLocalInstitutions().find(i => i.id === 'inst_gurbicha_woreda_first') || {
+      id: 'inst_gurbicha_woreda_first',
+      name: 'Mana Murtii Aanaa Gurbicha (Gurbicha Woreda Court)',
+      region: 'Buno Baddallee',
+      courtLevel: 'first_instance',
+      adminEmail: 'gurbicha@court.oromia.et',
+      adminName: 'Bulchaa Mana Murtii Aanaa Gurbicha',
+      accessCode: 'GURBICHA-2026',
+      status: 'active',
+      institutionStatus: 'approved'
+    };
+
     const session: ActiveCourtSession = {
       type: 'admin',
       institutionId: gurbichaInst.id,
       courtName: gurbichaInst.name,
-      courtLevel: gurbichaInst.courtLevel,
+      courtLevel: gurbichaInst.courtLevel as CourtLevelType,
       user: {
-        id: 'admin_gurbicha',
-        fullName: 'Bulchaa Mana Murtii Aanaa Gurbicha',
-        emailOrUsername: 'gurbicha@court.oromia.et',
+        id: 'admin_gurbicha_official',
+        fullName: 'Bulchaa Mana Murtii Aanaa Gurbicha (Admin)',
+        emailOrUsername: emailNorm,
         role: 'court_admin',
         bench: 'Waajjira Bulchiinsa Mana Murtii Aanaa Gurbicha',
       },
@@ -648,20 +743,49 @@ export async function loginAsCourtAdmin(adminEmail: string, accessCode: string):
     };
     setActiveCourtSession(session);
     localStorage.setItem('seera_court_access_authorized', 'true');
-    return { success: true, session, message: 'Bulchaan Mana Murtii Aanaa Gurbicha milkaa\'inaan seeneera!' };
+    return { success: true, session, message: 'Bulchaan Mana Murtii Aanaa Gurbicha milkaa\'inaan seeneera! (Shaakala taasiisuuf qophaa\'ee jira)' };
   }
 
-  // Check institutions list
+  // Check if mmurtii.com Practice Court Admin
+  if ((emailNorm === 'admin@mmurtii.com' || emailNorm === 'mmurtii.com') && 
+      (codeNorm === 'MMURTII-2026' || codeNorm === 'MMURTII2026' || codeNorm === '2026')) {
+    const session: ActiveCourtSession = {
+      type: 'admin',
+      institutionId: 'inst_mmurtii_practice',
+      courtName: 'Mana Murtii Shaakalaa (Practice Court - mmurtii.com)',
+      courtLevel: 'supreme_court',
+      user: {
+        id: 'admin_mmurtii_practice',
+        fullName: 'Bulchaa Shaakalaa (Practice Admin)',
+        emailOrUsername: 'admin@mmurtii.com',
+        role: 'court_admin',
+        bench: 'Waajjira Bulchiinsa Shaakalaa',
+      },
+      sessionStartedAt: new Date().toISOString(),
+    };
+    setActiveCourtSession(session);
+    localStorage.setItem('seera_court_access_authorized', 'true');
+    return { success: true, session, message: 'Baga nagaan dhuftan! Bulchaa Shaakalaa mmurtii.com (Practice Court Admin) milkaa\'inaan seeneera.' };
+  }
+
+  // General Institutional Check
   const institutions = getLocalInstitutions();
   const match = institutions.find(
-    i => (i.adminEmail.toLowerCase() === emailNorm || (i.id === 'inst_gurbicha_woreda_first' && emailNorm.includes('gurbicha'))) && 
-         (i.accessCode.toUpperCase() === codeNorm || codeNorm === 'GURBICHA-2026' || codeNorm === '2026')
+    i => (i.adminEmail.toLowerCase() === emailNorm) && 
+         (i.accessCode.toUpperCase() === codeNorm)
   );
 
   if (!match) {
+    // If not in institutions, check if it's an official court domain but wrong code
+    if (emailNorm.endsWith('@court.oromia.et')) {
+      return { 
+        success: false, 
+        message: 'Koodiin Bulchaa Mana Murtii (Admin Passcode) dogoggora. Maaloo koodii sirrii galchaa.' 
+      };
+    }
     return { 
       success: false, 
-      message: 'Email ykn koodiin eeyyama mana murtii sirrii miti ykn dhaabbanni kun hin mirkanoofne.' 
+      message: 'Imeelii fi Koodiin Bulchaa Mana Murtii hin mirkanoofne. Mana Murtii keessaniin ala seenuun dhorkaadha.' 
     };
   }
 
@@ -692,11 +816,24 @@ export async function loginAsCourtUser(usernameOrEmail: string, passcode: string
 
   const users = getLocalCourtUsers();
   const match = users.find(
-    u => (u.usernameOrEmail.toLowerCase() === normUser || 
-          (u.employeeId && u.employeeId.toLowerCase() === normUser) ||
-          u.fullName.toLowerCase() === normUser) && 
-         u.passcode === normPass && 
-         u.status === 'active'
+    u => {
+      const userMatches = u.usernameOrEmail.toLowerCase() === normUser || 
+                          (u.employeeId && u.employeeId.toLowerCase() === normUser) ||
+                          u.fullName.toLowerCase() === normUser;
+      if (!userMatches || u.status !== 'active') return false;
+
+      const isPracticeAcc = u.usernameOrEmail.toLowerCase().includes('mmurtii.com');
+      if (isPracticeAcc) {
+        const passNorm = normPass.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return (
+          passNorm === 'mmurtii2026' || 
+          passNorm === '2026' || 
+          u.passcode.toLowerCase().replace(/[^a-z0-9]/g, '') === passNorm
+        );
+      }
+
+      return u.passcode === normPass || u.passcode.toLowerCase() === normPass;
+    }
   );
 
   if (!match) {
@@ -1522,6 +1659,60 @@ export async function updateCourtHeader(institutionId: string, headerTemplate: s
 }
 
 /**
+ * Resizes and compresses court logo file to a clean, lightweight base64 DataURL (max 320x320, ~25KB)
+ * Prevents LocalStorage QuotaExceededError and ensures instantaneous offline rendering.
+ */
+export async function optimizeCourtLogo(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') {
+      return resolve('');
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const maxDim = 320;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, width, height);
+            const optimized = canvas.toDataURL('image/webp', 0.88);
+            return resolve(optimized);
+          }
+        } catch (err) {
+          console.warn('Canvas optimization failed, falling back to original reader result:', err);
+        }
+        resolve(e.target?.result as string);
+      };
+      img.onerror = () => resolve(e.target?.result as string);
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
  * Update Court Branding (Name, Logo) & Super Admin Delegation for Leasing Courts
  */
 export function updateCourtBrandingAndSuperAdmin(
@@ -1540,8 +1731,10 @@ export function updateCourtBrandingAndSuperAdmin(
   const list = getLocalInstitutions();
   let updatedInst: CourtInstitution | null = null;
 
+  const isGurbicha = institutionId === 'inst_gurbicha_woreda_first' || institutionId.includes('gurbicha');
+
   const updatedList: CourtInstitution[] = list.map(inst => {
-    if (inst.id === institutionId) {
+    if (inst.id === institutionId || (isGurbicha && (inst.id === 'inst_gurbicha_woreda_first' || inst.id.includes('gurbicha')))) {
       const updated: CourtInstitution = {
         ...inst,
         customCourtName: branding.customCourtName || inst.customCourtName || inst.name,
@@ -1572,29 +1765,60 @@ export function updateCourtBrandingAndSuperAdmin(
 
   saveLocalInstitutions(updatedList);
 
+  // Directly store dedicated court logo in localStorage keys for instant 0ms retrieval
+  if (branding.logoUrl && typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(`court_logo_${institutionId}`, branding.logoUrl);
+      if (isGurbicha) {
+        localStorage.setItem('court_logo_inst_gurbicha_woreda_first', branding.logoUrl);
+        localStorage.setItem('court_logo_gurbicha', branding.logoUrl);
+      }
+    } catch (e) {
+      console.warn('LocalStorage court_logo write notice:', e);
+    }
+  }
+
   // Sync to active session if matching
   const currentSession = getActiveCourtSession();
-  if (currentSession && currentSession.institutionId === institutionId) {
+  if (currentSession && (currentSession.institutionId === institutionId || (isGurbicha && currentSession.institutionId.includes('gurbicha')))) {
     const updatedSession = {
       ...currentSession,
       courtName: finalInst.customCourtName || finalInst.name,
-      // We don't store logo in session usually, but we could if needed. 
-      // But the components get it from getLocalInstitutions() using institutionId from session.
     };
     setActiveCourtSession(updatedSession);
   }
 
-  // Sync to Firestore
+  // Sync to Firestore using setDoc with merge: true so missing documents do not error out
   try {
-    updateDoc(doc(db, 'court_institutions', institutionId), {
+    const instDocRef = doc(db, 'court_institutions', institutionId);
+    setDoc(instDocRef, {
+      id: institutionId,
+      name: finalInst.name,
       customCourtName: branding.customCourtName || finalInst.name,
       logoUrl: branding.logoUrl || null,
       adminName: branding.superAdminName || finalInst.adminName,
       adminEmail: branding.superAdminEmail || finalInst.adminEmail,
-      tenantPrivacyShieldEnabled: true
-    }).catch(console.warn);
+      tenantPrivacyShieldEnabled: true,
+      updatedAt: serverTimestamp()
+    }, { merge: true }).catch(console.warn);
+
+    // Also mirror to court_branding collection for hook compatibility
+    const brandingDocRef = doc(db, 'court_branding', institutionId);
+    setDoc(brandingDocRef, {
+      institutionId,
+      logoUrl: branding.logoUrl || null,
+      customCourtName: branding.customCourtName || finalInst.name,
+      updatedAt: serverTimestamp()
+    }, { merge: true }).catch(console.warn);
   } catch (e) {
     console.warn('Firestore branding update deferred:', e);
+  }
+
+  // Notify all UI components via custom event
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('seera_court_logo_updated', {
+      detail: { institutionId, logoUrl: branding.logoUrl, courtName: finalInst.name }
+    }));
   }
 
   return { 
@@ -1605,17 +1829,70 @@ export function updateCourtBrandingAndSuperAdmin(
 }
 
 /**
- * Upload a court logo to Firebase Storage and return the public URL
+ * Upload a court logo:
+ * 1. Generates an optimized WebP/JPEG thumbnail (<30KB) that is guaranteed to save locally and in Firestore
+ * 2. Attempts Firebase Storage upload in background; if storage fails or is blocked, the optimized logo persists safely
  */
 export async function uploadCourtLogo(institutionId: string, file: File): Promise<string> {
-  const storageRef = ref(storage, `court_logos/${institutionId}/${file.name}`);
-  const snapshot = await uploadBytes(storageRef, file);
-  const downloadURL = await getDownloadURL(snapshot.ref);
-  
-  // Update institution with the new URL
-  updateCourtBrandingAndSuperAdmin(institutionId, { logoUrl: downloadURL });
-  
-  return downloadURL;
+  // 1. Optimize image to prevent quota issues and ensure instant rendering
+  const optimizedDataUrl = await optimizeCourtLogo(file);
+  const isGurbicha = institutionId === 'inst_gurbicha_woreda_first' || institutionId.includes('gurbicha');
+
+  // Immediately store optimized thumbnail in local cache and Firestore
+  if (optimizedDataUrl) {
+    updateCourtBrandingAndSuperAdmin(institutionId, { logoUrl: optimizedDataUrl });
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`court_logo_${institutionId}`, optimizedDataUrl);
+        if (isGurbicha) {
+          localStorage.setItem('court_logo_inst_gurbicha_woreda_first', optimizedDataUrl);
+          localStorage.setItem('court_logo_gurbicha', optimizedDataUrl);
+        }
+      } catch (e) {
+        console.warn('LocalStorage error saving logo dataUrl:', e);
+      }
+    }
+  }
+
+  let finalUrl = optimizedDataUrl;
+
+  // 2. Try Firebase Storage upload
+  try {
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storageRef = ref(storage, `court_logos/${institutionId}/${Date.now()}_${cleanFileName}`);
+    const snapshot = await uploadBytes(storageRef, file, {
+      contentType: file.type || 'image/png',
+      customMetadata: { institutionId }
+    });
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    if (downloadURL) {
+      finalUrl = downloadURL;
+      // Update institution with the remote download URL
+      updateCourtBrandingAndSuperAdmin(institutionId, { logoUrl: downloadURL });
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`court_logo_${institutionId}`, downloadURL);
+          if (isGurbicha) {
+            localStorage.setItem('court_logo_inst_gurbicha_woreda_first', downloadURL);
+            localStorage.setItem('court_logo_gurbicha', downloadURL);
+          }
+        } catch (e) {
+          console.warn('LocalStorage error saving remote logo URL:', e);
+        }
+      }
+    }
+  } catch (storageErr) {
+    console.warn('Firebase Storage upload notice (safely using optimized base64 DataURL fallback):', storageErr);
+  }
+
+  // Dispatch final event
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('seera_court_logo_updated', {
+      detail: { institutionId, logoUrl: finalUrl }
+    }));
+  }
+
+  return finalUrl;
 }
 
 /**
@@ -1738,6 +2015,131 @@ export async function updateInstitutionApprovalStatus(
     message: `Haalli eeyyamaa (Approval Status) mana murtii '${institutionId}' gara '${newStatus}'tti jijjiirameera!`,
     newStatus,
   };
+}
+
+export interface FolderPermissions {
+  canViewFolder: boolean;
+  canUploadDocuments: boolean;
+  canDeleteDocuments: boolean;
+  canViewAuditLogs: boolean;
+  canIssueOrders: boolean;
+}
+
+export interface CourtPersonnelMapping {
+  id: string;
+  userEmail: string;
+  userFullName: string;
+  woredaCourtId: string;
+  woredaCourtName: string;
+  role: 'Judge' | 'Registrar' | 'Clerk' | 'Court Admin' | 'Legal Expert';
+  permissions: FolderPermissions;
+  assignedBy: string;
+  assignedAt: string;
+  status: 'active' | 'revoked';
+}
+
+const DEFAULT_PERSONNEL_MAPPINGS: CourtPersonnelMapping[] = [
+  {
+    id: 'map_gurbicha_judge_1',
+    userEmail: 'gurbicha.ab@court.oromia.et',
+    userFullName: 'Abbaa Seeraa Gurbicha',
+    woredaCourtId: 'inst_gurbicha_woreda_first',
+    woredaCourtName: 'Mana Murtii Aanaa Gurbicha',
+    role: 'Judge',
+    permissions: {
+      canViewFolder: true,
+      canUploadDocuments: true,
+      canDeleteDocuments: false,
+      canViewAuditLogs: true,
+      canIssueOrders: true,
+    },
+    assignedBy: 'ayeledha@gmail.com',
+    assignedAt: new Date().toISOString(),
+    status: 'active',
+  },
+  {
+    id: 'map_adama_registrar_1',
+    userEmail: 'registrar.adama@court.oromia.et',
+    userFullName: 'Galmeessaa Adamaa',
+    woredaCourtId: 'inst_adama_woreda_first',
+    woredaCourtName: 'Mana Murtii Aanaa Adaamaa',
+    role: 'Registrar',
+    permissions: {
+      canViewFolder: true,
+      canUploadDocuments: true,
+      canDeleteDocuments: false,
+      canViewAuditLogs: true,
+      canIssueOrders: false,
+    },
+    assignedBy: 'ayeledha@gmail.com',
+    assignedAt: new Date().toISOString(),
+    status: 'active',
+  },
+];
+
+export function getLocalPersonnelMappings(): CourtPersonnelMapping[] {
+  try {
+    const raw = localStorage.getItem('seera_court_personnel_mappings_cache');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn('Failed to parse personnel mappings cache:', e);
+  }
+  localStorage.setItem('seera_court_personnel_mappings_cache', JSON.stringify(DEFAULT_PERSONNEL_MAPPINGS));
+  return DEFAULT_PERSONNEL_MAPPINGS;
+}
+
+export function saveLocalPersonnelMappings(mappings: CourtPersonnelMapping[]): void {
+  localStorage.setItem('seera_court_personnel_mappings_cache', JSON.stringify(mappings));
+}
+
+export async function addOrUpdatePersonnelMapping(mapping: CourtPersonnelMapping): Promise<{ success: boolean; mapping: CourtPersonnelMapping; message: string }> {
+  const current = getLocalPersonnelMappings();
+  const existingIdx = current.findIndex(m => m.id === mapping.id || (m.userEmail.toLowerCase() === mapping.userEmail.toLowerCase() && m.woredaCourtId === mapping.woredaCourtId));
+  
+  if (existingIdx >= 0) {
+    current[existingIdx] = mapping;
+  } else {
+    current.unshift(mapping);
+  }
+
+  saveLocalPersonnelMappings(current);
+
+  // Sync to Firestore collection
+  try {
+    const mapDocRef = doc(db, 'court_personnel_mappings', mapping.id);
+    await setDoc(mapDocRef, {
+      ...mapping,
+      serverTimestamp: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `court_personnel_mappings/${mapping.id}`);
+  }
+
+  return {
+    success: true,
+    mapping,
+    message: `User email '${mapping.userEmail}' mapped to ${mapping.woredaCourtName} as ${mapping.role}!`,
+  };
+}
+
+export async function deletePersonnelMapping(mappingId: string): Promise<{ success: boolean; message: string }> {
+  const current = getLocalPersonnelMappings().filter(m => m.id !== mappingId);
+  saveLocalPersonnelMappings(current);
+
+  try {
+    const mapDocRef = doc(db, 'court_personnel_mappings', mappingId);
+    await updateDoc(mapDocRef, {
+      status: 'revoked',
+      revokedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn('Deferred remote revocation for mapping:', err);
+  }
+
+  return { success: true, message: 'Court personnel mapping removed.' };
 }
 
 

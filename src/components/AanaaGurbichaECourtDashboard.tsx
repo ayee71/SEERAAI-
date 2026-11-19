@@ -34,10 +34,23 @@ import {
   Mail,
   Check,
   XCircle,
-  ExternalLink
+  ExternalLink,
+  LogOut,
+  RefreshCw,
+  Upload,
+  Image as ImageIcon,
+  Bell
 } from 'lucide-react';
 import { Language, translations } from '../i18n/translations';
+import gurbichaCourtLogo from '../assets/images/gurbicha_court_logo.png';
 import { downloadCaseSummaryPDF } from '../services/caseSummaryService';
+import { StorageStatistics } from './StorageStatistics';
+import { auth } from '../services/firebase';
+import { signOut } from 'firebase/auth';
+import { useAuth } from '../context/AuthContext';
+import { uploadCourtLogo } from '../services/courtInstitutionService';
+import { useCourtBranding } from '../hooks/useCourtBranding';
+import { assignCaseToJudgeInFirestore, updateCaseHearingAlertInFirestore, CaseActivityLog, fetchCaseActivityLogs } from '../services/courtCaseService';
 
 interface AanaaGurbichaECourtDashboardProps {
   currentLang: Language;
@@ -111,6 +124,11 @@ export interface DetailedCourtCase {
     forwardedDate: string;
     appealStatus: string;
   };
+  
+  // 7. e-Filing Metadata
+  claimPdfUrl?: string;
+  claimPdfName?: string;
+  notes?: string;
 }
 
 export interface EFilingApplication {
@@ -123,6 +141,13 @@ export interface EFilingApplication {
   claimSubject: string;
   claimText: string;
   claimAmount: string;
+  pdfFileName?: string;
+  pdfDataUrl?: string;
+  courtFeeVerified?: boolean;
+  courtFeeReceiptNumber?: string;
+  summonsIssued?: boolean;
+  defenseReturnDate?: string;
+  respondentName?: string;
   submittedAt: string;
   status: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string;
@@ -547,6 +572,8 @@ const INITIAL_E_FILING_APPS: EFilingApplication[] = [
     claimSubject: 'Iyyannoo Himannaa Kaffaltii Waliigaltee Daldalaa',
     claimText: 'Obbo Bultiin Tasfaayee waliigaltee bittaa xaa\'oo raawwatame bu\'uureffachuun kaffaltii birrii 320,000 kaffalanii meeshaan dhiyaachuu dhabuu isaatiin iyyata dhiyeessanii jiru.',
     claimAmount: 'Birrii 320,000',
+    pdfFileName: 'Himannaa_Waliigaltee_Daldalaa.pdf',
+    pdfDataUrl: '#',
     submittedAt: '2026-10-28 14:20',
     status: 'pending'
   },
@@ -560,6 +587,9 @@ const INITIAL_E_FILING_APPS: EFilingApplication[] = [
     claimSubject: 'Iyyannoo Mirga Qabiyye Lafa Qonnaa Ganda Doobbaa',
     claimText: 'Lafa qonnaa hektara 1.5 daangaa ganda Doobbaa irratti falmii mirga qabiyyeetiif iyyannoo dhiyaate.',
     claimAmount: 'Qabeenya Lafa Qonnaa',
+    pdfFileName: 'Himannaa_Lafa_Qonnaa_Doobbaa.pdf',
+    pdfDataUrl: '#',
+    respondentName: 'Obbo Kabbadaa Guddisaa',
     submittedAt: '2026-10-29 09:10',
     status: 'pending'
   }
@@ -570,6 +600,42 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
   onNavigateToModule
 }) => {
   const t = translations[currentLang];
+  const { requestLogout } = useAuth();
+  const branding = useCourtBranding();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [courtLogo, setCourtLogo] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    return (
+      localStorage.getItem('court_logo_inst_gurbicha_woreda_first') ||
+      localStorage.getItem('court_logo_gurbicha') ||
+      ''
+    );
+  });
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingLogo(true);
+    try {
+      const newUrl = await uploadCourtLogo('inst_gurbicha_woreda_first', file);
+      setCourtLogo(newUrl);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('court_logo_inst_gurbicha_woreda_first', newUrl);
+        localStorage.setItem('court_logo_gurbicha', newUrl);
+      }
+      triggerNotice("🎉 Loogoon Mana Murtii Aanaa Gurbicha milkaa'inaan haaromfamee kuufameera!");
+    } catch (err: any) {
+      console.error('Logo upload error:', err);
+      triggerNotice('⚠️ Dogoggora loogoo fe\'uu: ' + (err?.message || 'Failed'));
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
+  const handleCourtAdminLogout = () => {
+    requestLogout();
+  };
   
   // Dashboard Core State
   const [casesList, setCasesList] = useState<DetailedCourtCase[]>(DEMO_GURBICHA_CASES);
@@ -588,10 +654,34 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
   const [showCaseListModal, setShowCaseListModal] = useState(false);
   const [showEFilingSubmitModal, setShowEFilingSubmitModal] = useState(false);
   const [showEFilingApprovalModal, setShowEFilingApprovalModal] = useState(false);
+  const [showDispatchModal, setShowDispatchModal] = useState(false);
+  const [selectedAppForDispatch, setSelectedAppForDispatch] = useState<EFilingApplication | null>(null);
+  const [dispatchTarget, setDispatchTarget] = useState('Mana Murtii Ol\'aanaa Godinaa');
+  const [dispatchNote, setDispatchNote] = useState('');
   const [showAuditModal, setShowAuditModal] = useState(false);
+  const [showAssignJudgeModal, setShowAssignJudgeModal] = useState(false);
+  const [showAssignmentHistoryModal, setShowAssignmentHistoryModal] = useState(false);
+  const [assignmentHistory, setAssignmentHistory] = useState<CaseActivityLog[]>([]);
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [showHearingAlertModal, setShowHearingAlertModal] = useState(false);
+  const [alertDate, setAlertDate] = useState('');
+  const [alertTime, setAlertTime] = useState('09:00');
+  const [alertNote, setAlertNote] = useState('');
+  const [stagedJudge, setStagedJudge] = useState<CourtStaffMember | null>(null);
+  const [judgeSearchQuery, setJudgeSearchQuery] = useState('');
+  const [isQuickSwapEngaged, setIsQuickSwapEngaged] = useState(false);
+  const [recentlyAssignedJudges, setRecentlyAssignedJudges] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    const saved = localStorage.getItem('gurbicha_recently_assigned_judges');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [auditResult, setAuditResult] = useState<CaseLogicAuditResult | null>(null);
   const [activeCardTitle, setActiveCardTitle] = useState<string>('Galmee Banamte/Saaqamte (Active Cases)');
   
+  const calculateCaseload = (judgeName: string) => {
+    return casesList.filter(c => c.assignedJudge === judgeName && c.status !== 'cufame').length;
+  };
+
   // Toast & Notifications
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
@@ -685,10 +775,14 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
     applicantName: '',
     applicantEmail: '',
     applicantPhone: '',
+    respondentName: '',
     claimCategory: 'Civil' as 'Civil' | 'Criminal' | 'Land',
+    targetInstitution: 'Mana Murtii Aanaa Gurbicha',
     claimSubject: '',
     claimText: '',
-    claimAmount: ''
+    claimAmount: '',
+    pdfFileName: '',
+    pdfDataUrl: ''
   });
 
   // Real-Time Filtered Cases Array
@@ -734,11 +828,14 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
       applicantName: newEFiling.applicantName,
       applicantEmail: newEFiling.applicantEmail || 'applicant@gmail.com',
       applicantPhone: newEFiling.applicantPhone || '+251 911 000000',
-      targetCourtAdminEmail: 'gurbicha@gmail.com',
+      targetCourtAdminEmail: newEFiling.targetInstitution === 'Mana Murtii Aanaa Gurbicha' ? 'gurbicha@gmail.com' : 'highercourt@gmail.com',
       claimCategory: newEFiling.claimCategory,
       claimSubject: newEFiling.claimSubject,
       claimText: newEFiling.claimText || 'Iyyannoo seera-qabeessa dhiyaate.',
       claimAmount: newEFiling.claimAmount || 'Tilmaama Maallaqaa',
+      pdfFileName: newEFiling.pdfFileName || 'Himannaa_Mata_Duree.pdf',
+      pdfDataUrl: newEFiling.pdfDataUrl || '#',
+      respondentName: newEFiling.respondentName || 'Himatamaa Eeggamaa',
       submittedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
       status: 'pending'
     };
@@ -749,26 +846,47 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
       applicantName: '',
       applicantEmail: '',
       applicantPhone: '',
+      respondentName: '',
       claimCategory: 'Civil',
+      targetInstitution: 'Mana Murtii Aanaa Gurbicha',
       claimSubject: '',
       claimText: '',
-      claimAmount: ''
+      claimAmount: '',
+      pdfFileName: '',
+      pdfDataUrl: ''
     });
 
-    triggerNotice('✅ Iyyanni E-Filing Mana Murtii Aanaa Gurbichaatti (gurbicha@gmail.com) milkaa\'inaan ergameera!');
+    triggerNotice(`✅ Iyyanni E-Filing gara '${newEFileApp.targetCourtAdminEmail}' milkaa'inaan ergameera!`);
+  };
+
+  const handleDispatchEFiling = (appId: string) => {
+    const app = efilingApplications.find(a => a.id === appId);
+    if (!app) return;
+
+    setEfilingApplications(prev => prev.map(a => 
+      a.id === appId ? { ...a, status: 'approved', rejectionReason: `Dispatched to: ${dispatchTarget}. Note: ${dispatchNote}` } : a
+    ));
+    
+    setShowDispatchModal(false);
+    triggerNotice(`📤 Iyyanni '${app.claimSubject}' gara '${dispatchTarget}' tti qajeelfameera (Dispatched).`);
   };
 
   // Admin Approval of E-Filing Request (`gurbicha@gmail.com`)
   const handleApproveEFiling = (app: EFilingApplication) => {
+    // 1. Check court fee verification requirement
     const assignedNum = `MMA-GUR/${Math.floor(100 + Math.random() * 900)}/2026`;
-    
+    const today = new Date();
+    const returnDateObj = new Date();
+    returnDateObj.setDate(today.getDate() + 15); // 15 days return date for statement of defense
+    const defenseReturnDateStr = returnDateObj.toISOString().substring(0, 10);
+
     const newCourtCase: DetailedCourtCase = {
       id: `case-efile-${Date.now()}`,
       caseNumber: assignedNum,
       claimantName: app.applicantName,
-      respondentName: 'Himatamaa (Summons Issued)',
+      respondentName: app.respondentName || 'Himatamaa (Summons & Claim Dispatched)',
       claimSubject: app.claimSubject,
-      filingDate: new Date().toISOString().substring(0, 10),
+      filingDate: today.toISOString().substring(0, 10),
       status: 'haaraa',
       priority: 'Olaanaa',
       assignedJudge: 'Abbaa Seeraa Caalaa Tasfaayee',
@@ -777,29 +895,32 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
       courtLevel: 'Mana Murtii Aanaa Gurbicha',
       category: app.claimCategory,
       claimText: app.claimText,
-      claimArticles: 'SDFHH Kwt 80, 222, 223',
+      claimArticles: 'SDFHH Kwt 80, 222, 223, 224 (PDF Himannaa Attached)',
+      claimPdfUrl: app.pdfDataUrl,
+      claimPdfName: app.pdfFileName,
       requestedRelief: app.claimAmount ? `Relief pray for ${app.claimAmount}` : 'Kaffaltii fi mirga seeraa',
-      defenseText: 'Himatamaan waamicha mana murtii eeggataa jira.',
-      defenseArticles: 'SDFHH Kwt 234',
+      defenseText: `Himatamaan waamicha mana murtii fi PDF himannaa qaqqabee guyyaa deebii (${defenseReturnDateStr}) qopheessuu qaba.`,
+      defenseArticles: 'SDFHH Kwt 234, 235 (Guyyaa Deebii / Return Date)',
       evidenceList: [
-        { id: `ev-${Date.now()}`, title: 'Iyyannoo E-Filing Verification Receipt', type: 'E-Filing Exhibit', providedBy: app.applicantName, status: 'Verified', sinqeeReceipt: 'SNQ-2026-EFILE' }
+        { id: `ev-${Date.now()}`, title: app.pdfFileName || 'Sanada Himannaa PDF', type: 'Statement of Claim PDF (e-File)', providedBy: app.applicantName, status: 'Verified', sinqeeReceipt: 'Nagahee Kaffaltii Abbaa Seerummaa Mirkana' }
       ],
       proceedingsHistory: [
-        { date: new Date().toISOString().substring(0, 10), sessionType: 'Simannaa Iyyata E-Filing', judgeNotes: 'Admin (gurbicha@gmail.com) iyyata ergame mirkaneessuun galmee qopheesseera.', orderIssued: 'Waamichi himatamaa akka qophaa\'u.' }
+        { date: today.toISOString().substring(0, 10), sessionType: 'Simannaa E-Filing & Kaffaltii Mirkaneessuu', judgeNotes: 'Ofisaran kaffaltii abbaa seerummaa mirkaneessee galmee saaqeera; waamichi himatamaa fi guyyaan deebii qophaa\'eera.', orderIssued: `Himataan waamicha himatamaa fi himannaa PDF waliin qaqqabsiisuu qaba. Guyyaa Deebii: ${defenseReturnDateStr}` }
       ],
       legalOfficerChecklist: [
-        { task: 'Simannaa E-Filing & Nagahee Sinqee Mirkaneessuu', status: 'Completed', updatedBy: 'Admin (gurbicha@gmail.com)', timestamp: new Date().toISOString().substring(0, 16) },
-        { task: 'Waamicha Himatamaa Qopheessuu', status: 'In Progress', updatedBy: 'Ofiisara Seeraa', timestamp: new Date().toISOString().substring(0, 16) }
+        { task: 'Kaffaltii Abbaa Seerummaa Mirkaneessuu (Verified)', status: 'Completed', updatedBy: 'Ofisara Seeraa Gurbicha', timestamp: new Date().toISOString().substring(0, 16) },
+        { task: 'Galmee Saaquu & Lakk. Galmee Kennuu', status: 'Completed', updatedBy: 'Ofisara Seeraa Gurbicha', timestamp: new Date().toISOString().substring(0, 16) },
+        { task: 'Waamicha Himatamaa & Guyyaa Deebii Qopheessuu', status: 'Completed', updatedBy: 'Ofisara Seeraa Gurbicha', timestamp: new Date().toISOString().substring(0, 16) }
       ]
     };
 
     // Update E-Filing status
-    setEfilingApplications(prev => prev.map(a => a.id === app.id ? { ...a, status: 'approved', assignedCaseNumber: assignedNum } : a));
+    setEfilingApplications(prev => prev.map(a => a.id === app.id ? { ...a, status: 'approved', assignedCaseNumber: assignedNum, courtFeeVerified: true, summonsIssued: true, defenseReturnDate: defenseReturnDateStr } : a));
     
     // Add to Active Court Cases
     setCasesList(prev => [newCourtCase, ...prev]);
 
-    triggerNotice(`🎉 Iyyanni ${app.applicantName} mirkanaa'ee Lakk. Galmee ${assignedNum} kennameeraaf!`);
+    triggerNotice(`🎉 Kaffaltiin abbaa seerummaa mirkanaa'ee galmeen saaqameera! Lakk. Galmee: ${assignedNum}. Guyyaa Deebii: ${defenseReturnDateStr}`);
   };
 
   // Admin Rejection of E-Filing
@@ -852,6 +973,129 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
     triggerNotice(`🔍 Qorannoo Loojikii Galmee ${c.caseNumber} raawwatameera! Score: ${result.proceduralCompletenessScore}%`);
   };
 
+  const handleAssignJudge = async (judgeName: string) => {
+    if (!selectedCase) return;
+    setIsAssigning(true);
+    try {
+      // 1. Save to Firestore using courtCaseService
+      await assignCaseToJudgeInFirestore(selectedCase.id, judgeName, 'Admin Gurbicha (Dashboard)');
+
+      // 2. Update local state
+      const updatedCases = casesList.map(c => 
+        c.id === selectedCase.id ? { ...c, assignedJudge: judgeName } : c
+      );
+      setCasesList(updatedCases);
+      setSelectedCase({ ...selectedCase, assignedJudge: judgeName });
+      
+      // Update recently assigned judges
+      setRecentlyAssignedJudges(prev => {
+        const updated = [judgeName, ...prev.filter(name => name !== judgeName)].slice(0, 5);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('gurbicha_recently_assigned_judges', JSON.stringify(updated));
+        }
+        return updated;
+      });
+
+      setShowAssignJudgeModal(false);
+      setJudgeSearchQuery('');
+      triggerNotice(`⚖️ Abbaan Seeraa '${judgeName}' galmee ${selectedCase.caseNumber} irratti milkaa'inaan ramadameera (Firestore Saved).`);
+    } catch (err: any) {
+      console.error('Error assigning judge:', err);
+      alert('Dogoggora ramaddii abbaa seeraa: ' + (err.message || 'Firestore connection failed'));
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
+  const handleSaveHearingAlert = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCase || !alertDate || !alertTime) return;
+
+    try {
+      // 1. Calculate time difference for the alert (simulated for UI)
+      const alertDateTime = new Date(`${alertDate}T${alertTime}`);
+      const now = new Date();
+      const diffMs = alertDateTime.getTime() - now.getTime();
+      
+      if (diffMs < 0) {
+        alert("Maaloo yeroo fuulduraa filadhaa.");
+        return;
+      }
+
+      // 2. Save to Firestore
+      await updateCaseHearingAlertInFirestore(
+        selectedCase.id, 
+        alertDate, 
+        alertTime, 
+        alertNote, 
+        'Admin Gurbicha (Dashboard)'
+      );
+
+      // 3. Update Case in local state (for immediate UI refresh)
+      const updatedCases = casesList.map(c => {
+        if (c.id === selectedCase.id) {
+          const alertText = `🚨 Akeekkachiisa Beellamaa: ${alertDate} @ ${alertTime} - ${alertNote}`;
+          return {
+            ...c,
+            notes: ((c.notes || '') + '\n' + alertText).trim()
+          };
+        }
+        return c;
+      });
+      setCasesList(updatedCases);
+      
+      // 4. Close Modal & Notify
+      setShowHearingAlertModal(false);
+      triggerNotice(`🔔 Akeekkachiisni beellamaa galmee ${selectedCase.caseNumber} tiif milkaa'inaan galmaa'eera!`);
+      
+      // Note: In a real PWA/Mobile app, this would register a local push notification.
+      console.log(`[Push Notification Scheduled] Case: ${selectedCase.caseNumber}, Time: ${alertDateTime.toISOString()}, Note: ${alertNote}`);
+
+    } catch (err) {
+      console.error("Alert scheduling error:", err);
+      alert("Dogoggora akeekkachiisa galmeessuu.");
+    }
+  };
+
+  const handleExportCaseMetadata = () => {
+    if (!selectedCase) return;
+    
+    const milestones = selectedCase.proceedingsHistory.map(ph => ({
+      date: ph.date,
+      type: ph.sessionType,
+      outcome: ph.orderIssued
+    }));
+
+    const metadata = {
+      id: selectedCase.id,
+      caseNumber: selectedCase.caseNumber,
+      claimSubject: selectedCase.claimSubject,
+      claimant: selectedCase.claimantName,
+      respondent: selectedCase.respondentName,
+      filingDate: selectedCase.filingDate,
+      status: selectedCase.status,
+      assignedJudge: selectedCase.assignedJudge,
+      bench: selectedCase.benchName,
+      court: selectedCase.courtLevel,
+      milestones: milestones,
+      auditScore: runCaseLogicAudit(selectedCase).proceduralCompletenessScore,
+      exportedAt: new Date().toISOString()
+    };
+
+    // JSON Export
+    const jsonStr = JSON.stringify(metadata, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Metadata_Galmee_${selectedCase.caseNumber.replace(/\//g, '_')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    triggerNotice('📥 Metadata galmee JSON dhaan bu\'ee jira!');
+  };
+
   return (
     <div className="space-y-6 text-slate-100 font-sans">
       {/* Toast Notice */}
@@ -877,8 +1121,27 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-slate-800/80 pb-6">
           <div className="flex items-center gap-4">
-            <div className="p-4 rounded-2xl bg-amber-500 text-slate-950 font-black text-2xl shadow-xl shadow-amber-500/20">
-              🏛️
+            <div className="relative group w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-950 border-2 border-amber-500/60 p-1 flex items-center justify-center overflow-hidden shadow-xl shrink-0">
+              <img
+                src={courtLogo || branding.logoUrl || gurbichaCourtLogo}
+                alt="Loogoo Mana Murtii Aanaa Gurbicha"
+                className="w-full h-full object-contain rounded-xl"
+                onError={() => setCourtLogo('')}
+              />
+              <label 
+                title="Loogoo Mana Murtii Jijjiiri / Fe'i"
+                className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-[9px] font-bold text-amber-300 text-center p-1"
+              >
+                <Upload className="w-4 h-4 mb-0.5 text-amber-400" />
+                <span>{isUploadingLogo ? 'Fe\'aa jira...' : 'Loogoo Fe\'i'}</span>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  disabled={isUploadingLogo}
+                  onChange={handleLogoUpload} 
+                  className="hidden" 
+                />
+              </label>
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -925,6 +1188,23 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
               <Mail className="w-4 h-4" />
               <span>Simannaa E-Filing ({efilingApplications.filter(a => a.status === 'pending').length})</span>
             </button>
+
+            {/* Secure Firebase Auth Logout Button */}
+            <button
+              type="button"
+              onClick={handleCourtAdminLogout}
+              disabled={isLoggingOut}
+              aria-label="Secure Logout"
+              className="px-4 py-2.5 rounded-xl bg-rose-600/25 hover:bg-rose-600 text-rose-200 hover:text-white border border-rose-500/50 hover:border-rose-400 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-lg active:scale-95 disabled:opacity-50"
+              title={currentLang === 'om' ? "Sirna Keessaa Ba'i (Firebase Auth Sign Out)" : "Logout"}
+            >
+              {isLoggingOut ? (
+                <RefreshCw className="w-4 h-4 animate-spin text-rose-300" />
+              ) : (
+                <LogOut className="w-4 h-4" />
+              )}
+              <span>{isLoggingOut ? (currentLang === 'om' ? "Bahaa jira..." : "Signing Out...") : (currentLang === 'om' ? "Ba'i (Logout)" : "Logout")}</span>
+            </button>
           </div>
         </div>
 
@@ -954,7 +1234,10 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
         </div>
 
         {/* 6 Core Stat Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 pt-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4 pt-2">
+          {/* Card 7: Storage Stats */}
+          <StorageStatistics institutionId="gurbicha-court" />
+
           {/* Card 1: Galmee Hundaa */}
           <button
             onClick={() => handleCardClick('all', `Galmee Hundaa (${casesList.length})`)}
@@ -1040,6 +1323,97 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
           </button>
         </div>
       </div>
+
+      {/* =========================================================================
+          SECTION: INCOMING E-FILING QUEUE (Pending Review)
+          ========================================================================= */}
+      {efilingApplications.filter(a => a.status === 'pending').length > 0 && (
+        <div className="bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-xl space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-purple-500/20 border border-purple-500/40 text-purple-300">
+                <Mail className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>📩 Iyyannoo E-Filing Eeggataa Jiran (Incoming Queue)</span>
+                  <span className="px-2 py-0.5 rounded-full bg-purple-500 text-white text-[10px] font-mono font-black animate-pulse">
+                    {efilingApplications.filter(a => a.status === 'pending').length} Pending
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Iyyata haaraa dhiyaatan qorachuun galmee saaqi (Review and Open Case)
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowEFilingApprovalModal(true)}
+              className="text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors cursor-pointer"
+            >
+              Hunda Ilaali ➔
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {efilingApplications.filter(a => a.status === 'pending').slice(0, 3).map((app) => (
+              <div key={app.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-purple-500/50 transition-all space-y-3 shadow-md group">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 text-[10px] font-mono border border-purple-500/20">
+                      {app.claimCategory}
+                    </span>
+                    <h5 className="text-xs font-bold text-white line-clamp-1">{app.claimSubject}</h5>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {app.pdfDataUrl && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedFile({ title: app.pdfFileName || 'Himannaa PDF', type: 'Incoming e-File PDF', providedBy: app.applicantName, status: 'Pending' });
+                        }}
+                        className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/30 transition-all cursor-pointer shadow-sm"
+                        title="View Statement of Claim PDF"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <div className="p-1.5 rounded-lg bg-slate-900 border border-slate-800">
+                      <Zap className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-400 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <Users className="w-3 h-3" />
+                    <span>{app.applicantName} vs {app.respondentName || '...'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3 h-3" />
+                    <span>{app.submittedAt}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-900 flex items-center justify-between">
+                  <span className="text-[10px] text-slate-500 font-mono">E-Filing ID: {app.id.slice(-6)}</span>
+                  <button
+                    onClick={() => {
+                      // Trigger the specific approval flow for this app
+                      // We can just open the modal and it will be there, 
+                      // but better to have a direct "Quick Review" button
+                      setShowEFilingApprovalModal(true);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] transition-all cursor-pointer flex items-center gap-1 shadow-lg shadow-purple-500/10"
+                  >
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Galmee Saaqi</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* =========================================================================
           SECTION: REAL-TIME SEARCH & FILTER BAR DIRECTLY IN THE 'GALMEELEE' VIEW
@@ -1138,15 +1512,29 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
                   <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-mono font-extrabold group-hover:scale-105 transition-transform">
                     {c.caseNumber}
                   </span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    c.status === 'adeemsa_irra' ? 'bg-amber-500/20 text-amber-300' :
-                    c.status === 'cufame' ? 'bg-emerald-500/20 text-emerald-300' :
-                    c.status === 'haaraa' ? 'bg-blue-500/20 text-blue-300' :
-                    c.status === 'oliyyata_irratti' ? 'bg-teal-500/20 text-teal-300' :
-                    'bg-rose-500/20 text-rose-300'
-                  }`}>
-                    {c.status === 'adeemsa_irra' ? '⚡ Adeemsa Irra' : c.status === 'cufame' ? '✅ Cufame' : c.status === 'haaraa' ? '🆕 Haaraa' : c.status === 'oliyyata_irratti' ? '📤 Ol\'iyyata' : '📋 Mallattoo Eegaa'}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {c.claimPdfUrl && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedFile({ title: c.claimPdfName || 'Himannaa PDF', type: 'Statement of Claim PDF', providedBy: c.claimantName, status: 'Verified' });
+                        }}
+                        className="p-1 rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500 hover:text-slate-950 transition-all cursor-pointer"
+                        title="View Claim PDF"
+                      >
+                        <FileText className="w-3 h-3" />
+                      </button>
+                    )}
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      c.status === 'adeemsa_irra' ? 'bg-amber-500/20 text-amber-300' :
+                      c.status === 'cufame' ? 'bg-emerald-500/20 text-emerald-300' :
+                      c.status === 'haaraa' ? 'bg-blue-500/20 text-blue-300' :
+                      c.status === 'oliyyata_irratti' ? 'bg-teal-500/20 text-teal-300' :
+                      'bg-rose-500/20 text-rose-300'
+                    }`}>
+                      {c.status === 'adeemsa_irra' ? '⚡ Adeemsa Irra' : c.status === 'cufame' ? '✅ Cufame' : c.status === 'haaraa' ? '🆕 Haaraa' : c.status === 'oliyyata_irratti' ? '📤 Ol\'iyyata' : '📋 Mallattoo Eegaa'}
+                    </span>
+                  </div>
                 </div>
 
                 <h4 className="text-xs font-bold text-white group-hover:text-amber-400 transition-colors line-clamp-1">
@@ -1472,6 +1860,18 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
                                 <ShieldCheck className="w-3.5 h-3.5" />
                                 <span>Audit Logic</span>
                               </button>
+                              {c.claimPdfUrl && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedFile({ title: c.claimPdfName || 'Himannaa PDF', type: 'Statement of Claim PDF', providedBy: c.claimantName, status: 'Verified' });
+                                  }}
+                                  className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/30 transition-all cursor-pointer"
+                                  title="View Claim PDF"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleOpenCaseDossier(c)}
                                 className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-all cursor-pointer"
@@ -1507,7 +1907,7 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
                     Iyyannoo / E-Filing Haaraa Ergi
                   </h3>
                   <p className="text-xs text-slate-400 font-mono">
-                    Target Admin Court Email: <span className="text-amber-400 font-bold">gurbicha@gmail.com</span>
+                    Qaama Iyyanni Ergamuu: <span className="text-amber-400 font-bold">{newEFiling.targetInstitution}</span>
                   </p>
                 </div>
               </div>
@@ -1542,6 +1942,33 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
+                  <label className="block text-slate-300 font-bold mb-1">Maqaa Himatamaa (Respondent Name) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newEFiling.respondentName}
+                    onChange={(e) => setNewEFiling({ ...newEFiling, respondentName: e.target.value })}
+                    placeholder="e.g. Obbo Kabbadaa Guddisaa"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Qaama Iyyatichi Galuuf (Target Body) *</label>
+                  <select
+                    value={newEFiling.targetInstitution}
+                    onChange={(e) => setNewEFiling({ ...newEFiling, targetInstitution: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="Mana Murtii Aanaa Gurbicha">Mana Murtii Aanaa Gurbicha</option>
+                    <option value="Mana Murtii Ol'aanaa Godinaa">Mana Murtii Ol'aanaa Godinaa</option>
+                    <option value="Waajjira Abbaa Alangaa Aanaa">Waajjira Abbaa Alangaa Aanaa</option>
+                    <option value="Komishinii Poolisii Aanaa">Komishinii Poolisii Aanaa</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
                   <label className="block text-slate-300 font-bold mb-1">Lakk. Bilbilaa</label>
                   <input
                     type="text"
@@ -1563,6 +1990,25 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
                     <option value="Land">Lafa & Maatii (Land)</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">Sanada Himannaa PDF * (Statement of Claim PDF attachment)</label>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  required
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setNewEFiling(prev => ({ ...prev, pdfFileName: file.name, pdfDataUrl: URL.createObjectURL(file) }));
+                    }
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-500/20 file:text-emerald-300 hover:file:bg-emerald-500/30"
+                />
+                {newEFiling.pdfFileName && (
+                  <p className="text-[10px] text-emerald-400 mt-1 font-mono">✓ PDF Attached: {newEFiling.pdfFileName}</p>
+                )}
               </div>
 
               <div>
@@ -1600,7 +2046,7 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
                   type="submit"
                   className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold shadow"
                 >
-                  Ergi (`gurbicha@gmail.com`)
+                  Ergi (`{newEFiling.targetInstitution}`)
                 </button>
               </div>
             </form>
@@ -1656,33 +2102,165 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
                       </span>
                     </div>
 
-                    <div className="text-xs text-slate-200 space-y-1">
-                      <div><strong className="text-amber-400">Mata Duree:</strong> {app.claimSubject}</div>
-                      <div className="p-3 rounded-xl bg-slate-900 border border-slate-800/80 text-slate-300 text-[11px] leading-relaxed">
-                        {app.claimText}
+                    <div className="text-xs text-slate-200 space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-900/50 p-3 rounded-xl border border-slate-800">
+                        <div>
+                          <strong className="text-amber-400 block text-[10px] uppercase">Himataa (Plaintiff):</strong>
+                          <span className="text-white font-bold">{app.applicantName}</span>
+                        </div>
+                        <div>
+                          <strong className="text-blue-400 block text-[10px] uppercase">Himatamaa (Defendant):</strong>
+                          <span className="text-white font-bold">{app.respondentName || 'Hin galmoofne'}</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <strong className="text-amber-400 block mb-1">Mata Duree Himannaa:</strong> 
+                        <div className="text-slate-100 font-bold text-sm bg-slate-900 p-2 rounded-lg border border-slate-800 mb-2">
+                          {app.claimSubject}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <strong className="text-amber-400 block">Qabiyyee Himannaa (Statement of Claim):</strong>
+                        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-slate-100 text-xs leading-relaxed max-h-40 overflow-y-auto whitespace-pre-wrap font-sans shadow-inner">
+                          {app.claimText}
+                        </div>
+                      </div>
+
+                      {/* PDF Attachment Badge */}
+                      <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-emerald-500/30 text-[11px]">
+                        <div className="flex items-center gap-2 text-emerald-300 font-mono">
+                          <FileText className="w-4 h-4 text-emerald-400" />
+                          <span>Sanada PDF Himannaa: <strong>{app.pdfFileName || 'Himannaa_Mata_Duree.pdf'}</strong></span>
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/35">
+                          ✓ Qindaa'eera (PDF Attached)
+                        </span>
                       </div>
                     </div>
 
                     {app.status === 'pending' && (
-                      <div className="pt-2 flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleRejectEFiling(app.id)}
-                          className="px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 font-bold text-xs transition-all cursor-pointer"
-                        >
-                          Kufaa Godhi
-                        </button>
-                        <button
-                          onClick={() => handleApproveEFiling(app)}
-                          className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow transition-all cursor-pointer flex items-center gap-1"
-                        >
-                          <Check className="w-4 h-4" />
-                          <span>Hayyamu & Galmeessuu</span>
-                        </button>
+                      <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-slate-800 mt-3 bg-amber-500/5 p-3 rounded-2xl">
+                        <div className="space-y-1">
+                          <div className="text-[11px] text-amber-400 font-bold flex items-center gap-1.5">
+                            <AlertCircle className="w-4 h-4" />
+                            <span>Maaloo sanada PDF gubbaatti dhiyaate dubbisuu keessan mirkaneessaa.</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">Kaffaltiin abbaa seerummaa Sinqee Baankiin kaffalamuu isaa ofiisarri mirkaneessuu qaba.</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {app.pdfDataUrl && (
+                            <button
+                              onClick={() => setSelectedFile({ title: app.pdfFileName || 'Himannaa PDF', type: 'Statement of Claim (e-File)', providedBy: app.applicantName, status: 'Verified' })}
+                              className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs shadow-lg transition-all cursor-pointer flex items-center gap-2 hover:scale-105"
+                            >
+                              <FileText className="w-4 h-4" />
+                              <span>Himannaa PDF Banii</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              setSelectedAppForDispatch(app);
+                              setShowDispatchModal(true);
+                            }}
+                            className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs transition-all cursor-pointer flex items-center gap-2"
+                          >
+                            <Send className="w-4 h-4" />
+                            <span>Qaama Birootti Ergi</span>
+                          </button>
+                          <button
+                            onClick={() => handleRejectEFiling(app.id)}
+                            className="px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 font-bold text-xs transition-all cursor-pointer"
+                          >
+                            Kufaa Godhi
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (!app.pdfDataUrl) {
+                                alert("Sananni PDF himannaa hin argamne.");
+                                return;
+                              }
+                              handleApproveEFiling(app);
+                            }}
+                            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg transition-all cursor-pointer flex items-center gap-1"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>Verify & Galmee Saaqi</span>
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDispatchModal && selectedAppForDispatch && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-teal-500/40 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-2xl bg-teal-500/20 text-teal-300 text-xl font-bold">
+                  📤
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    Qaama Birootti Qajeelchi (Dispatch)
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Iyyata: <span className="text-teal-400 font-bold">{selectedAppForDispatch.claimSubject}</span>
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowDispatchModal(false)} className="p-2 hover:bg-slate-800 rounded-xl text-slate-400"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-slate-300 font-bold mb-1 text-xs">Qaama Iyyatichi Qajeelfamuuf (Target Body) *</label>
+                <select
+                  value={dispatchTarget}
+                  onChange={(e) => setDispatchTarget(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-teal-500"
+                >
+                  <option value="Mana Murtii Ol'aanaa Godinaa">Mana Murtii Ol'aanaa Godinaa</option>
+                  <option value="Mana Murtii Waliigalaa Oromiyaa">Mana Murtii Waliigalaa Oromiyaa</option>
+                  <option value="Waajjira Abbaa Alangaa Aanaa">Waajjira Abbaa Alangaa Aanaa</option>
+                  <option value="Komishinii Poolisii Aanaa">Komishinii Poolisii Aanaa</option>
+                  <option value="Waajjira Bulchiinsa Aanaa">Waajjira Bulchiinsa Aanaa</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1 text-xs">Yaada ykn Sababa Qajeelchaa (Dispatch Note)</label>
+                <textarea
+                  rows={3}
+                  value={dispatchNote}
+                  onChange={(e) => setDispatchNote(e.target.value)}
+                  placeholder="Maaloo sababa iyyatichi gara qaama biraatti qajeelfameef gabaabsi ibsi..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-3">
+              <button
+                onClick={() => setShowDispatchModal(false)}
+                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-all"
+              >
+                Haqi (Cancel)
+              </button>
+              <button
+                onClick={() => handleDispatchEFiling(selectedAppForDispatch.id)}
+                className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow-lg transition-all flex items-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                Ergi (Dispatch)
+              </button>
             </div>
           </div>
         </div>
@@ -1726,7 +2304,92 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-end sm:self-center">
+              <motion.div 
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ 
+                  opacity: 1, 
+                  x: 0,
+                  scale: isQuickSwapEngaged ? 1.02 : 1
+                }}
+                transition={{ 
+                  type: "spring", 
+                  stiffness: 260, 
+                  damping: 20,
+                  delay: 0.1,
+                  scale: { duration: 0.2 }
+                }}
+                className="case-header-controls flex items-center gap-2 self-end sm:self-center"
+              >
+                {/* QUICK SWAP BUTTON */}
+                <div 
+                  className="relative group"
+                  onMouseEnter={() => setIsQuickSwapEngaged(true)}
+                  onMouseLeave={() => setIsQuickSwapEngaged(false)}
+                >
+                  <button
+                    className="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-blue-500/50 text-slate-300 font-bold text-xs flex items-center gap-2.5 shadow-lg transition-all cursor-pointer group-hover:bg-slate-800"
+                    title="Quick Swap Judge"
+                  >
+                    <div className="p-1.5 rounded-lg bg-blue-500/10">
+                      <RefreshCw className="w-3.5 h-3.5 text-blue-400 group-hover:rotate-180 transition-transform duration-500" />
+                    </div>
+                    <div className="flex flex-col items-start leading-tight pr-1">
+                      <span className="text-[8px] text-slate-500 uppercase tracking-tighter font-black">Judge</span>
+                      <span className="text-white truncate max-w-[110px] text-[10px]">{selectedCase.assignedJudge}</span>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-600 rotate-90" />
+                  </button>
+
+                  {/* Recently Assigned Dropdown */}
+                  <div className="absolute top-full right-0 mt-2 w-52 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 pointer-events-none group-hover:pointer-events-auto transition-all z-50 p-2 space-y-1 overflow-hidden ring-1 ring-white/5">
+                    <div className="px-3 py-1.5 flex items-center justify-between border-b border-slate-800 mb-1">
+                      <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Recent Judges</span>
+                      <Users className="w-3 h-3 text-slate-600" />
+                    </div>
+                    {recentlyAssignedJudges.length > 0 ? (
+                      recentlyAssignedJudges.filter(name => name !== selectedCase.assignedJudge).length > 0 ? (
+                        recentlyAssignedJudges.filter(name => name !== selectedCase.assignedJudge).map((name) => (
+                          <button
+                            key={name}
+                            onClick={() => handleAssignJudge(name)}
+                            disabled={isAssigning}
+                            className="w-full text-left px-3 py-2 rounded-xl hover:bg-blue-600/20 hover:text-blue-300 text-[11px] text-slate-400 transition-all flex items-center justify-between group/item"
+                          >
+                            <span className="truncate">{name}</span>
+                            <ArrowRight className="w-3 h-3 text-blue-500 opacity-0 group-hover/item:opacity-100 translate-x-[-4px] group-hover/item:translate-x-0 transition-all" />
+                          </button>
+                        ))
+                      ) : (
+                        <div className="p-3 text-center">
+                          <p className="text-[10px] text-slate-600 italic leading-tight">All recent judges are currently assigned.</p>
+                        </div>
+                      )
+                    ) : (
+                      <div className="p-4 text-center space-y-2">
+                        <Users className="w-6 h-6 text-slate-800 mx-auto" />
+                        <p className="text-[10px] text-slate-600 italic leading-tight">No judges in your quick-swap history yet.</p>
+                      </div>
+                    )}
+                    
+                    <button 
+                      onClick={() => setShowAssignJudgeModal(true)}
+                      className="w-full mt-1 border-t border-slate-800 pt-1 text-[10px] text-blue-400 hover:text-blue-300 py-1.5 font-bold text-center transition-colors"
+                    >
+                      Browse Full List
+                    </button>
+                  </div>
+                </div>
+
+                {/* ASSIGN JUDGE BUTTON */}
+                <button
+                  onClick={() => setShowAssignJudgeModal(true)}
+                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition-all cursor-pointer"
+                  title="Assign Judge to this case"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Abbaa Seeraa Ramadi</span>
+                </button>
+
                 {/* AUDIT CASE LOGIC BUTTON */}
                 <button
                   onClick={() => handleTriggerCaseAudit(selectedCase)}
@@ -1745,6 +2408,28 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
                 >
                   <Send className="w-4 h-4" />
                   <span>Oliyyata Ergi</span>
+                </button>
+
+                <button
+                  onClick={handleExportCaseMetadata}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold text-xs flex items-center gap-1.5 shadow transition-all cursor-pointer"
+                  title="Export case milestones and assignment metadata"
+                >
+                  <Download className="w-4 h-4 text-blue-400" />
+                  <span>Metadata Export</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setAlertDate(selectedCase.proceedingsHistory[selectedCase.proceedingsHistory.length - 1]?.date || new Date().toISOString().split('T')[0]);
+                    setAlertNote(`Beellama Galmee ${selectedCase.caseNumber}`);
+                    setShowHearingAlertModal(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition-all cursor-pointer"
+                  title="Add Hearing Notification Alert"
+                >
+                  <Bell className="w-4 h-4" />
+                  <span>Beellama Galmeessi</span>
                 </button>
 
                 <button
@@ -1771,7 +2456,7 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
                 >
                   <X className="w-5 h-5" />
                 </button>
-              </div>
+              </motion.div>
             </div>
 
             {/* Dossier Navigation Tabs */}
@@ -1848,7 +2533,18 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
                         <span>📜</span>
                         <span>Iyyannoo Himannaa (Statement of Claim - Himataa)</span>
                       </h4>
-                      <span className="text-[11px] font-mono text-slate-400">Guyyaa: {selectedCase.filingDate}</span>
+                      <div className="flex items-center gap-3">
+                        {selectedCase.claimPdfUrl && (
+                          <button
+                            onClick={() => setSelectedFile({ title: selectedCase.claimPdfName || 'Himannaa PDF', type: 'Statement of Claim (e-File)', providedBy: selectedCase.claimantName, status: 'Verified' })}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/40 text-[10px] font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-emerald-500/5 animate-pulse hover:animate-none"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>PDF Himannaa Ilaali</span>
+                          </button>
+                        )}
+                        <span className="text-[11px] font-mono text-slate-400 whitespace-nowrap">Guyyaa: {selectedCase.filingDate}</span>
+                      </div>
                     </div>
                     <p className="text-xs text-slate-200 leading-relaxed font-sans">
                       {selectedCase.claimText}
@@ -2555,6 +3251,311 @@ export const AanaaGurbichaECourtDashboard: React.FC<AanaaGurbichaECourtDashboard
               Status: {selectedFile.status}.
             </div>
           </div>
+        </div>
+      )}
+      {/* =========================================================================
+          MODAL 6: ASSIGN JUDGE MODAL
+          ========================================================================= */}
+      {showAssignJudgeModal && selectedCase && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-slate-900 border border-blue-500/40 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-2xl bg-blue-500/20 text-blue-300 text-xl font-bold">
+                  ⚖️
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    {stagedJudge ? 'Ramaddii Mirkaneessi' : 'Abbaa Seeraa Ramadi'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Galmee Lakk. <span className="text-blue-400 font-mono font-bold">{selectedCase.caseNumber}</span>
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => { setShowAssignJudgeModal(false); setStagedJudge(null); }} className="p-2 hover:bg-slate-800 rounded-xl text-slate-400"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="space-y-4">
+              {!stagedJudge ? (
+                <>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Maaloo Abbaa Seeraa galmee kana irratti ramadamuuf tajaajila kennu filadhaa:
+                  </p>
+
+                  {/* JUDGE SEARCH INPUT */}
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      value={judgeSearchQuery}
+                      onChange={(e) => setJudgeSearchQuery(e.target.value)}
+                      placeholder="Maqaa ykn ID Abbaa Seeraa Barbaadi..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    />
+                    {judgeSearchQuery && (
+                      <button 
+                        onClick={() => setJudgeSearchQuery('')}
+                        className="absolute right-3 top-2 text-slate-400 hover:text-white text-xs font-bold"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {staffList
+                      .filter(s => s.role.includes('Abbaa Seeraa'))
+                      .filter(s => {
+                        const q = judgeSearchQuery.toLowerCase().trim();
+                        return !q || s.fullName.toLowerCase().includes(q) || s.badgeNumber.toLowerCase().includes(q);
+                      })
+                      .map((judge) => (
+                        <button
+                          key={judge.id}
+                          onClick={() => setStagedJudge(judge)}
+                          className="w-full p-3 rounded-2xl bg-slate-950 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-900 text-left transition-all group flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors">{judge.fullName}</p>
+                              <span className="text-[9px] font-mono text-slate-500 bg-slate-900 px-1 rounded border border-slate-800">{judge.badgeNumber}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-500">{judge.benchName}</p>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-blue-400 group-hover:translate-x-1 transition-all" />
+                        </button>
+                      ))}
+                    
+                    {staffList.filter(s => s.role.includes('Abbaa Seeraa')).filter(s => {
+                      const q = judgeSearchQuery.toLowerCase().trim();
+                      return !q || s.fullName.toLowerCase().includes(q) || s.badgeNumber.toLowerCase().includes(q);
+                    }).length === 0 && (
+                      <div className="p-8 text-center text-slate-500 text-xs italic">
+                        {judgeSearchQuery ? `Abbaan Seeraa '${judgeSearchQuery}' hin argamne.` : 'Abbootiin seeraa galmaa\'an hin jiran.'}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-5 animate-in slide-in-from-right-4 duration-300">
+                  <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center text-xl">
+                        👨‍⚖️
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white">{stagedJudge.fullName}</h4>
+                        <p className="text-[10px] text-slate-400">{stagedJudge.benchName}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                      <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800">
+                        <p className="text-[10px] text-slate-500 mb-1">Baay'ina Galmee</p>
+                        <div className="flex items-end gap-2">
+                          <span className="text-lg font-bold text-white">{calculateCaseload(stagedJudge.fullName)}</span>
+                          <span className="text-[10px] text-slate-500 mb-1 pb-0.5">Active</span>
+                        </div>
+                      </div>
+                      <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800">
+                        <p className="text-[10px] text-slate-500 mb-1">Lakk. Badge</p>
+                        <p className="text-xs font-mono font-bold text-blue-400">{stagedJudge.badgeNumber}</p>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
+                      <div className="flex gap-2">
+                        <AlertCircle className="w-4 h-4 text-yellow-500 shrink-0" />
+                        <p className="text-[10px] text-yellow-200/80 leading-relaxed">
+                          Hubachiisa: Abbaa seeraa kana ramaduun dura baay'ina hojii (caseload) isaan amma qaban madaaluun keessan gaariidha.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setStagedJudge(null)}
+                      className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-all flex items-center justify-center gap-2"
+                    >
+                      Duubatti (Back)
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleAssignJudge(stagedJudge.fullName);
+                        setStagedJudge(null);
+                      }}
+                      disabled={isAssigning}
+                      className="flex-[1.5] py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"
+                    >
+                      {isAssigning ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Mirkaneessaa...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4" />
+                          Ramaddii Mirkaneessi
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {!stagedJudge && (
+              <div className="pt-2 flex justify-between gap-3">
+                <button
+                  onClick={async () => {
+                    const logs = await fetchCaseActivityLogs(selectedCase.id);
+                    setAssignmentHistory(logs.filter(log => log.action === 'case_assigned'));
+                    setShowAssignmentHistoryModal(true);
+                  }}
+                  className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-400 font-bold text-xs transition-all flex items-center gap-2"
+                >
+                  <Eye className="w-4 h-4" />
+                  Duubii Ramaddii (Assignment History)
+                </button>
+                <button
+                  onClick={() => setShowAssignJudgeModal(false)}
+                  className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-all"
+                >
+                  Haqi (Cancel)
+                </button>
+              </div>
+            )}
+          </motion.div>
+        </div>
+      )}
+      {showHearingAlertModal && selectedCase && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-slate-900 border border-indigo-500/40 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-2xl bg-indigo-500/20 text-indigo-300 text-xl font-bold">
+                  🔔
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    Akeekkachiisa Beellamaa
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Galmee Lakk. <span className="text-indigo-400 font-mono font-bold">{selectedCase.caseNumber}</span>
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowHearingAlertModal(false)} className="p-2 hover:bg-slate-800 rounded-xl text-slate-400"><X className="w-5 h-5" /></button>
+            </div>
+
+            <form onSubmit={handleSaveHearingAlert} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1 text-[10px] uppercase tracking-wider">Guyyaa Beellamaa</label>
+                  <input
+                    type="date"
+                    required
+                    value={alertDate}
+                    onChange={(e) => setAlertDate(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1 text-[10px] uppercase tracking-wider">Sa'aatii</label>
+                  <input
+                    type="time"
+                    required
+                    value={alertTime}
+                    onChange={(e) => setAlertTime(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1 text-[10px] uppercase tracking-wider">Yaada Akeekkachiisaa (Note)</label>
+                <textarea
+                  rows={2}
+                  required
+                  value={alertNote}
+                  onChange={(e) => setAlertNote(e.target.value)}
+                  placeholder="Fkn: Beellama ragaa dhagahuu..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
+                <div className="flex gap-2">
+                  <Clock className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <p className="text-[10px] text-indigo-200/80 leading-relaxed italic">
+                    Notification: Sistemni kun yeroo beellamni qaqqabu 'Push Notification' gama browser ykn mobile keessaniin isiniif erga.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowHearingAlertModal(false)}
+                  className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-all"
+                >
+                  Haqi
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-500/20 transition-all"
+                >
+                  Alert Galmeessi
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+      {showAssignmentHistoryModal && selectedCase && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-slate-900 border border-teal-500/40 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white">Duubii Ramaddii Abbaa Seeraa</h3>
+              <button onClick={() => setShowAssignmentHistoryModal(false)} className="p-2 hover:bg-slate-800 rounded-xl text-slate-400"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+              {assignmentHistory.length > 0 ? (
+                assignmentHistory.map((log: CaseActivityLog, idx) => (
+                  <div key={log.id} className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                    <p className="text-xs text-white font-bold">{log.description}</p>
+                    <p className="text-[10px] text-slate-500 font-mono mt-1">{new Date(log.timestamp).toLocaleString()}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-slate-500 text-xs py-4">Duubbiin ramaddii hin argamne.</p>
+              )}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setShowAssignmentHistoryModal(false)}
+                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-all"
+              >
+                Cufi (Close)
+              </button>
+            </div>
+          </motion.div>
         </div>
       )}
     </div>

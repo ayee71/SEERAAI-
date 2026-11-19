@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Language, translations } from '../i18n/translations';
 import { useAuth } from '../context/AuthContext';
 import { CourtWorkView } from './CourtWorkView';
+import { CourtAIDashboardView } from './CourtAIDashboardView';
 import { JudicialExpertToolsView } from './JudicialExpertToolsView';
 import { CourtScheduleView } from './CourtScheduleView';
 import { CassationLibraryView } from './CassationLibraryView';
@@ -19,13 +20,14 @@ import { CourtDomainLauncherBar } from '../components/CourtDomainLauncherBar';
 import { CourtFolderGateway } from '../components/CourtFolderGateway';
 import { CourtFolderExplorer } from '../components/CourtFolderExplorer';
 import { CourtFolderUserGuide } from '../components/CourtFolderUserGuide';
+import { CourtModulesView } from './CourtModulesView';
 
 interface CourtPersonnelFolderViewProps {
   currentLang: Language;
   initialLevel?: 'first' | 'high' | 'cassation';
 }
 
-type CourtFolderTab = 'overview' | 'folders_explorer' | 'folder_user_guide' | 'litigation_workflow' | 'judge_work' | 'first_instance' | 'high_court' | 'cassation' | 'calendar';
+type CourtFolderTab = 'court_ai_dashboard' | 'court_modules' | 'overview' | 'folders_explorer' | 'folder_user_guide' | 'litigation_workflow' | 'judge_work' | 'first_instance' | 'high_court' | 'cassation' | 'calendar' | 'research';
 
 export const CourtPersonnelFolderView: React.FC<CourtPersonnelFolderViewProps> = ({
   currentLang,
@@ -38,7 +40,7 @@ export const CourtPersonnelFolderView: React.FC<CourtPersonnelFolderViewProps> =
   const allInstitutions = getLocalInstitutions();
   const currentInst = allInstitutions.find((i: any) => i.id === activeSession?.institutionId) || allInstitutions[0];
 
-  const [showBrandingModal, setShowBrandingModal] = useState(false);
+  const [showBrandingModal, setShowBrandingModal] = React.useState(false);
 
   const isOwner = isOwnerAccount(
     user?.email || (profile as any)?.email,
@@ -55,21 +57,21 @@ export const CourtPersonnelFolderView: React.FC<CourtPersonnelFolderViewProps> =
     firestoreRole === 'prosecutor' ||
     firestoreRole === 'admin';
 
-  const [isAuthorized, setIsAuthorized] = useState<boolean>(() => {
+  const [isAuthorized, setIsAuthorized] = React.useState<boolean>(() => {
     return Boolean(hasCourtPersonnelRole || isCourtAccessAuthorized());
   });
 
-  const [activeFolderTab, setActiveFolderTab] = useState<CourtFolderTab>(() => {
+  const [activeFolderTab, setActiveFolderTab] = React.useState<CourtFolderTab>(() => {
     if (initialLevel === 'first') return 'first_instance';
     if (initialLevel === 'high') return 'high_court';
     if (initialLevel === 'cassation') return 'cassation';
-    return 'overview';
+    return 'court_ai_dashboard';
   });
 
-  const [usernameOrEmail, setUsernameOrEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
+  const [usernameOrEmail, setUsernameOrEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [authError, setAuthError] = React.useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = React.useState(false);
 
   const handleStaffLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,9 +87,37 @@ export const CourtPersonnelFolderView: React.FC<CourtPersonnelFolderViewProps> =
 
     setIsVerifying(true);
     try {
+      // Practice / Official Court Email check (gurbicha.@court.oromia.et or similar)
+      const isGurbichaEmail = usernameOrEmail.toLowerCase().includes('gurbicha.@court.oromia.et') || 
+                             usernameOrEmail.toLowerCase() === 'gurbicha@court.oromia.et' ||
+                             usernameOrEmail.toLowerCase() === 'gurbicha@gmail.com';
+      
+      if (isGurbichaEmail && (password === 'GURBICHA-2026' || password === '2026' || password === 'admin123')) {
+        const { setActiveCourtSession } = await import('../services/courtInstitutionService');
+        setActiveCourtSession({
+          type: 'judge_or_staff',
+          institutionId: 'inst_gurbicha_woreda_first',
+          courtName: 'Mana Murtii Aanaa Gurbicha',
+          courtLevel: 'first_instance',
+          user: {
+            id: 'gurbicha_officer_' + Date.now(),
+            fullName: 'Ogeessa Mana Murtii Aanaa Gurbicha',
+            emailOrUsername: usernameOrEmail,
+            role: 'registrar',
+            bench: 'Waajjira Galmee & Abbaa Seeraa',
+          },
+          sessionStartedAt: new Date().toISOString(),
+        });
+        localStorage.setItem('seera_court_access_authorized', 'true');
+        setIsAuthorized(true);
+        setIsVerifying(false);
+        return;
+      }
+
       // Try admin login first if email contains admin or password matches admin
       const adminRes = await loginAsCourtAdmin(usernameOrEmail, password);
       if (adminRes.success) {
+        localStorage.setItem('seera_court_access_authorized', 'true');
         setIsAuthorized(true);
         setIsVerifying(false);
         return;
@@ -96,43 +126,13 @@ export const CourtPersonnelFolderView: React.FC<CourtPersonnelFolderViewProps> =
       // Try institutional court user login
       const userRes = await loginAsCourtUser(usernameOrEmail, password);
       if (userRes.success) {
+        localStorage.setItem('seera_court_access_authorized', 'true');
         setIsAuthorized(true);
         setIsVerifying(false);
         return;
       }
 
-      // Fallback permissive login for demo/testing staff accounts
-      if (
-        (usernameOrEmail.includes('@') && password.length >= 4) ||
-        usernameOrEmail.toLowerCase().includes('court') ||
-        usernameOrEmail.toLowerCase().includes('judge') ||
-        password === 'admin123' ||
-        password === 'court2026' ||
-        password === 'GURBICHA-2026'
-      ) {
-        // Initialize a valid session for Gurbicha or generic court
-        import('../services/courtInstitutionService').then(({ setActiveCourtSession }) => {
-          setActiveCourtSession({
-            type: 'judge_or_staff',
-            institutionId: usernameOrEmail.includes('gurbicha') ? 'inst_gurbicha_woreda_first' : 'inst_oromia_supreme',
-            courtName: usernameOrEmail.includes('gurbicha') ? 'Mana Murtii Aanaa Gurbicha' : 'Mana Murtii Waliigalaa Oromiyaa',
-            courtLevel: usernameOrEmail.includes('gurbicha') ? 'first_instance' : 'supreme_court',
-            user: {
-              id: 'staff_auth_' + Date.now(),
-              fullName: usernameOrEmail.split('@')[0] || 'Court Staff',
-              emailOrUsername: usernameOrEmail,
-              role: usernameOrEmail.includes('ab') ? 'judge' : usernameOrEmail.includes('ktas') ? 'registrar' : 'registrar',
-              bench: 'Dhaddacha Waliigalaa',
-            },
-            sessionStartedAt: new Date().toISOString(),
-          });
-        });
-        setIsAuthorized(true);
-        setIsVerifying(false);
-        return;
-      }
-
-      setAuthError(userRes.message || (currentLang === 'om' ? 'Ragaan Hojjataa Mana Murtii galchitan sirrii miti.' : 'ያስገቡት የፍርድ ቤት ሰራተኛ መረጃ ትክክል አይደለም።'));
+      setAuthError(userRes.message || (currentLang === 'om' ? 'Ragaan Hojjataa Mana Murtii galchitan sirrii miti. Hayyama ogeessa mana murtii (Registrar/Judge) dhiyeessaa.' : 'ያስገቡት የፍርድ ቤት ሰራተኛ መረጃ ትክክል አይደለም። የፍርድ ቤት አባል መሆንዎን ያረጋግጡ።'));
     } catch (err: any) {
       setAuthError(err?.message || 'Authentication error');
     } finally {
@@ -156,16 +156,18 @@ export const CourtPersonnelFolderView: React.FC<CourtPersonnelFolderViewProps> =
         {/* Internal Navigation Tabs for all Court Personnel Sub-modules */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar bg-slate-900/90 border border-slate-800 p-2 rounded-2xl shadow-lg">
           {[
-            { id: 'overview' as CourtFolderTab, label: currentLang === 'om' ? '📊 Waliigala & Live D3' : 'ማጠቃለያ & D3', emoji: '📊' },
-            { id: 'folders_explorer' as CourtFolderTab, label: currentLang === 'om' ? '📂 Fooldara & Sanadoota' : 'ማህደሮች እና ሰነዶች', emoji: '📂' },
-            { id: 'folder_user_guide' as CourtFolderTab, label: currentLang === 'om' ? '📖 Qajeelfama Fooldaraa & Fakkeenya' : currentLang === 'am' ? '📖 የማህደር አጠቃቀም መመሪያ' : '📖 Folder Guide & Examples', emoji: '📖' },
+            { id: 'court_ai_dashboard' as CourtFolderTab, label: currentLang === 'om' ? '🏛️ Dashboordii Mana Murtii (Court-AI)' : currentLang === 'am' ? '🏛️ የፍርድ ቤት ዳሽቦርድ (Court-AI)' : '🏛️ Court AI Dashboard', emoji: '⚖️' },
+            { id: 'overview' as CourtFolderTab, label: currentLang === 'om' ? '📊 Waliigala & Moduloota (6)' : currentLang === 'am' ? '📊 ማጠቃለያ & ሞጁሎች' : '📊 Overview & Modules (6)', emoji: '🏛️' },
             { id: 'litigation_workflow' as CourtFolderTab, label: currentLang === 'om' ? '⚖️ Galmee, Mormii & Waamicha' : 'የክስ አቀባበል እና መጥሪያ', emoji: '⚖️' },
+            { id: 'folders_explorer' as CourtFolderTab, label: currentLang === 'om' ? '📂 Fooldara & Sanadoota' : 'ማህደሮች እና ሰነዶች', emoji: '📂' },
             { id: 'judge_work' as CourtFolderTab, label: currentLang === 'om' ? '⚖️ Hojii Abbaa Seeraa' : 'የዳኛ ሥራ', emoji: '⚖️' },
-            { id: 'first_instance' as CourtFolderTab, label: currentLang === 'om' ? '🏛️ Sadarkaa Jalqabaa' : 'የኛ ደረጃ', emoji: '🏛️' },
+            { id: 'first_instance' as CourtFolderTab, label: currentLang === 'om' ? '🏛️ Sadarkaa Jalqabaa' : 'የመጀመሪያ ደረጃ', emoji: '🏛️' },
             { id: 'high_court' as CourtFolderTab, label: currentLang === 'om' ? '🏢 Mana Murtii Olaanaa' : 'ከፍተኛ ፍርድ ቤት', emoji: '🏢' },
             { id: 'cassation' as CourtFolderTab, label: currentLang === 'om' ? '⚖️ Dhaddacha Ijibbaataa' : 'የሰበር ችሎት', emoji: '⚖️' },
-            { id: 'calendar' as CourtFolderTab, label: currentLang === 'om' ? '📅 Kalandara Beellamaa' : 'የቀጠሮ ካንደር', emoji: '📅' },
+            { id: 'calendar' as CourtFolderTab, label: currentLang === 'om' ? '📅 Kalandara Beellamaa' : 'የቀጠሮ ካላንደር', emoji: '📅' },
             { id: 'research' as any, label: currentLang === 'om' ? '🔍 Qorannoo Seeraa' : 'የሕግ ምርምር', emoji: '🔍' },
+            { id: 'folder_user_guide' as CourtFolderTab, label: currentLang === 'om' ? '📖 Qajeelfama Fooldaraa' : currentLang === 'am' ? '📖 የማህደር መመሪያ' : '📖 Folder Guide', emoji: '📖' },
+            { id: 'court_modules' as CourtFolderTab, label: currentLang === 'om' ? '🏛️ Moduloota Mana Murtii' : currentLang === 'am' ? '🏛️ የፍርድ ቤት ሞጁሎች' : '🏛️ Court Modules', emoji: '🏛️' },
           ].map(tab => (
             <button
               key={tab.id}
@@ -187,14 +189,97 @@ export const CourtPersonnelFolderView: React.FC<CourtPersonnelFolderViewProps> =
 
         {/* Sub-module Content Rendering with Dynamic Fade-In Transition */}
         <div key={activeFolderTab} className="animate-folder-fade-in">
+          {activeFolderTab === 'court_ai_dashboard' && (
+            <div className="animate-in fade-in duration-200">
+              <CourtAIDashboardView 
+                currentLang={currentLang} 
+                onSelectModule={(modKey) => {
+                  if (modKey === 'control') setActiveFolderTab('overview');
+                  else if (modKey === 'litigation_workflow') setActiveFolderTab('litigation_workflow');
+                  else if (modKey === 'folders_explorer') setActiveFolderTab('folders_explorer');
+                  else if (modKey === 'security_auth') setShowBrandingModal(true);
+                  else if (modKey === 'cases_analysis') setActiveFolderTab('court_ai_dashboard');
+                  else if (modKey === 'meeting') {
+                    window.dispatchEvent(new CustomEvent('seera_navigate_tab', { detail: { tab: 'meeting' } }));
+                  } else {
+                    setActiveFolderTab(modKey as any);
+                  }
+                }}
+              />
+            </div>
+          )}
+          {activeFolderTab === 'court_modules' && (
+            <div className="animate-in fade-in duration-200">
+              <CourtModulesView 
+                currentLang={currentLang} 
+                onNavigate={(moduleTab) => {
+                  if (moduleTab === 'control') setActiveFolderTab('overview');
+                  else if (moduleTab === 'courtWork') setActiveFolderTab('litigation_workflow');
+                  else if (moduleTab === 'library') setActiveFolderTab('folders_explorer');
+                  else if (moduleTab === 'settings') setShowBrandingModal(true);
+                  else if (moduleTab === 'analyticsFeedback') setActiveFolderTab('overview');
+                  else if (moduleTab === 'meeting') {
+                    window.dispatchEvent(new CustomEvent('seera_navigate_tab', { detail: { tab: 'meeting' } }));
+                  } else {
+                    window.dispatchEvent(new CustomEvent('seera_navigate_tab', { detail: { tab: moduleTab } }));
+                  }
+                }} 
+              />
+            </div>
+          )}
+
           {activeFolderTab === 'overview' && (
             <div className="space-y-6">
+              {/* 6 Modules Navigation Strip inside Court Overview */}
+              <div className="bg-slate-900/90 border border-amber-500/30 rounded-3xl p-5 shadow-xl">
+                <div className="flex items-center justify-between mb-3.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🏛️</span>
+                    <div>
+                      <h3 className="font-bold text-white text-sm sm:text-base font-serif-legal">
+                        {currentLang === 'om' ? 'Moduloota Mana Murtii (6)' : currentLang === 'am' ? 'የፍርድ ቤት ሞጁሎች (6)' : 'Court Work Modules (6)'}
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        {currentLang === 'om' ? 'Bulchiinsa irraa hanga Walqunnamtiitti (Admin & Setting ➔ Communication)' : 'Administration & Setting ➔ Communication'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setActiveFolderTab('court_modules')}
+                    className="text-xs px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-bold border border-amber-500/30 cursor-pointer transition-all"
+                  >
+                    {currentLang === 'om' ? 'Moduloota Hunda Ilaali ➔' : 'View All 6 Modules ➔'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                  {[
+                    { id: 'control', label: '1. Admin & Setting', icon: '🏢', action: () => setActiveFolderTab('overview') },
+                    { id: 'courtWork', label: '2. Case Mgmt (Core)', icon: '⚖️', action: () => setActiveFolderTab('litigation_workflow') },
+                    { id: 'library', label: '3. DMS & Evidence', icon: '📂', action: () => setActiveFolderTab('folders_explorer') },
+                    { id: 'settings', label: '4. Security & Auth', icon: '🛡️', action: () => setShowBrandingModal(true) },
+                    { id: 'analyticsFeedback', label: '5. Analysis & Report', icon: '📊', action: () => setActiveFolderTab('overview') },
+                    { id: 'meeting', label: '6. Communication', icon: '💬', action: () => window.dispatchEvent(new CustomEvent('seera_navigate_tab', { detail: { tab: 'meeting' } })) },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={item.action}
+                      className="p-3 rounded-2xl bg-slate-950 border border-slate-800 hover:border-amber-400/50 hover:bg-slate-850 text-left transition-all cursor-pointer flex flex-col justify-between group"
+                    >
+                      <span className="text-xl mb-1.5 group-hover:scale-110 transition-transform">{item.icon}</span>
+                      <span className="text-xs font-semibold text-slate-200 group-hover:text-amber-300 truncate">
+                        {item.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <CourtTranscriptD3Chart currentLang={currentLang} />
               <CourtFolderExplorer 
                 currentLang={currentLang}
                 institutionName={currentInst?.customCourtName || currentInst?.name || activeSession?.courtName}
                 institutionId={currentInst?.id || activeSession?.institutionId}
-                currentUser={activeSession?.user ? { fullName: activeSession.user.fullName, role: activeSession.user.role } : undefined}
+                currentUser={activeSession?.user ? { uid: activeSession.user.id, fullName: activeSession.user.fullName, role: activeSession.user.role } : undefined}
               />
               <CourtWorkView currentLang={currentLang} initialLevel={initialLevel} />
             </div>
@@ -206,7 +291,7 @@ export const CourtPersonnelFolderView: React.FC<CourtPersonnelFolderViewProps> =
                 currentLang={currentLang}
                 institutionName={currentInst?.customCourtName || currentInst?.name || activeSession?.courtName}
                 institutionId={currentInst?.id || activeSession?.institutionId}
-                currentUser={activeSession?.user ? { fullName: activeSession.user.fullName, role: activeSession.user.role } : undefined}
+                currentUser={activeSession?.user ? { uid: activeSession.user.id, fullName: activeSession.user.fullName, role: activeSession.user.role } : undefined}
               />
             </div>
           )}

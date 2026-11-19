@@ -47,9 +47,17 @@ async function run() {
     process.exit(1);
   }
 
-  // 3. (REMOVED) Mirror dist to build for deployment compatibility
-  // In the current environment, we only need dist/ to save space and avoid 250MB limits.
-  console.log('ℹ️ Skipping mirroring dist/ to build/ to optimize workspace size.');
+  // 3. Mirror dist to build for deployment compatibility
+  console.log('📂 Mirroring dist/ to build/ for deployment compatibility...');
+  try {
+    if (fs.existsSync(buildDir)) {
+      fs.rmSync(buildDir, { recursive: true, force: true });
+    }
+    fs.cpSync(distDir, buildDir, { recursive: true });
+    console.log('✅ Mirrored dist/ to build/ successfully.');
+  } catch (err) {
+    console.error('⚠️ Warning: Failed to mirror dist/ to build/:', err);
+  }
 
   // 4. Calculate statistics and write build manifest
   let totalFiles = 0;

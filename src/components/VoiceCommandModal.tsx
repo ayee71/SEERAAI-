@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Sparkles, X, Volume2, Command, ArrowRight } from 'lucide-react';
+import { Mic, MicOff, Sparkles, X, Volume2, Command, ArrowRight, WifiOff, Check } from 'lucide-react';
 import { Language } from '../i18n/translations';
 import { normalizeHarargeeDictation } from '../utils/harargeePhonetics';
+import { executeLocalVoiceCommand, matchLocalVoiceCommand } from '../services/localVoiceCommandHandler';
 
 interface VoiceCommandModalProps {
   isOpen: boolean;
@@ -46,71 +47,33 @@ export const VoiceCommandModal: React.FC<VoiceCommandModalProps> = ({
 
   const processCommand = (rawText: string) => {
     const text = rawText.toLowerCase().trim();
-    setFeedbackMessage(`Fakkeenya: "${rawText}" (Lolaasifamaa jira...)`);
-
     // Normalize Harargee / Afaan Oromoo phonetics
     const cleanText = selectedLangCode.startsWith('om') ? normalizeHarargeeDictation(text) : text;
 
-    // Command matching
-    if (text.includes('cassation') || text.includes('murtii ijibbaataa') || text.includes('ibsa murtii') || text.includes('precedent')) {
-      const query = text.replace(/seeraai|find|cassation|precedent|murtii|jibbaataa|barbaadi|ilaali/gi, '').trim();
-      setFeedbackMessage(currentLang === 'om' ? `Gara Murtii Ijibbaataatti dabarsaa jira...` : `Navigating to Cassation Precedents...`);
-      setTimeout(() => {
-        onNavigateTab('cassation');
-        onClose();
-      }, 1000);
+    // Execute via local command handler (with offline fallback capability)
+    const result = executeLocalVoiceCommand(cleanText, {
+      onNavigateTab: (tab, query) => {
+        onNavigateTab(tab, query);
+        setTimeout(() => onClose(), 800);
+      },
+      onSaveDraft: () => {
+        window.dispatchEvent(new CustomEvent('seera:save_current_document'));
+        setTimeout(() => onClose(), 1200);
+      },
+      currentLang,
+    });
+
+    if (result.matched) {
+      const msg = result.feedbackMessage[currentLang] || result.feedbackMessage.om;
+      setFeedbackMessage(msg);
       return;
     }
 
-    if (text.includes('translate') || text.includes('hiika') || text.includes('hikti')) {
-      setFeedbackMessage(currentLang === 'om' ? 'Gara Baankii Hiikaa Seeraatti dabarsaa jira...' : 'Navigating to Legal Translation...');
-      setTimeout(() => {
-        onNavigateTab('translate');
-        onClose();
-      }, 1000);
-      return;
-    }
-
-    if (text.includes('explain') || text.includes('ibsa seeraa') || text.includes('gorsaa')) {
-      setFeedbackMessage(currentLang === 'om' ? 'Gara Ibsaa Seeraatti dabarsaa jira...' : 'Navigating to Explain Law...');
-      setTimeout(() => {
-        onNavigateTab('explainLaw');
-        onClose();
-      }, 1000);
-      return;
-    }
-
-    if (text.includes('home') || text.includes('mana') || text.includes('jalqaba')) {
-      setFeedbackMessage(currentLang === 'om' ? 'Gara Fuula Jalqabaatti deebi\'aa jira...' : 'Navigating to Home...');
-      setTimeout(() => {
-        onNavigateTab('home');
-        onClose();
-      }, 1000);
-      return;
-    }
-
-    if (text.includes('setting') || text.includes('qindeessuu')) {
-      setFeedbackMessage(currentLang === 'om' ? 'Gara Qindeeffamaatti dabarsaa jira...' : 'Navigating to Settings...');
-      setTimeout(() => {
-        onNavigateTab('settings');
-        onClose();
-      }, 1000);
-      return;
-    }
-
-    if (text.includes('create') || text.includes('waliigaltee') || text.includes('barreessi')) {
-      setFeedbackMessage(currentLang === 'om' ? 'Gara Qopheessa Wixineetti dabarsaa jira...' : 'Navigating to Document Drafting...');
-      setTimeout(() => {
-        onNavigateTab('create');
-        onClose();
-      }, 1000);
-      return;
-    }
-
-    // Default fallback: Search in command palette or library
-    setFeedbackMessage(currentLang === 'om' ? `Barbaacha: "${cleanText}"` : `Searching for "${cleanText}"...`);
+    // Default fallback: Search Cassation or Legal Library
+    const fallbackMsg = currentLang === 'om' ? `Barbaacha: "${cleanText}"` : `Searching for "${cleanText}"...`;
+    setFeedbackMessage(fallbackMsg);
     setTimeout(() => {
-      onNavigateTab('cassation');
+      onNavigateTab('cassation', cleanText);
       onClose();
     }, 1200);
   };
@@ -243,14 +206,29 @@ export const VoiceCommandModal: React.FC<VoiceCommandModalProps> = ({
 
         {/* Footer Examples */}
         <div className="bg-slate-950/70 p-3.5 rounded-2xl border border-slate-800/80 text-[11px] text-slate-400 space-y-1.5">
-          <div className="font-bold text-slate-300 flex items-center gap-1">
-            <span>💡</span> {currentLang === 'om' ? 'Fkn Ajajootaa (Example Voice Commands):' : 'Example Commands:'}
+          <div className="font-bold text-slate-300 flex items-center justify-between">
+            <span className="flex items-center gap-1">
+              <span>💡</span> {currentLang === 'om' ? 'Ajajoota Sagalee Offline (Local Commands):' : 'Offline Local Voice Commands:'}
+            </span>
+            <span className="text-[10px] text-emerald-400 font-mono">⚡ Web Speech Local Fallback</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 font-mono text-[10px] text-slate-300">
-            <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">"SeeraAI, find cassation precedent..."</div>
-            <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">"SeeraAI, open legal translation"</div>
-            <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">"SeeraAI, explain labor law"</div>
-            <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">"SeeraAI, go to home"</div>
+            <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 flex items-center gap-1.5">
+              <span>💾</span>
+              <span>"Save draft" / "Wixinee olkaayi"</span>
+            </div>
+            <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 flex items-center gap-1.5">
+              <span>🔍</span>
+              <span>"Search Cassation" / "Murtii Ijibbaataa"</span>
+            </div>
+            <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 flex items-center gap-1.5">
+              <span>⚖️</span>
+              <span>"Courtroom Assistant" / "Dhaddacha"</span>
+            </div>
+            <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 flex items-center gap-1.5">
+              <span>📝</span>
+              <span>"Create document" / "Waliigaltee uumi"</span>
+            </div>
           </div>
         </div>
 

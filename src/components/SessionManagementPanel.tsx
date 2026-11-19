@@ -20,7 +20,7 @@ interface SessionManagementPanelProps {
 }
 
 export const SessionManagementPanel: React.FC<SessionManagementPanelProps> = ({ currentLang = 'om' }) => {
-  const { user, profile, logout } = useAuth();
+  const { user, profile, requestLogout } = useAuth();
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
@@ -139,7 +139,7 @@ export const SessionManagementPanel: React.FC<SessionManagementPanelProps> = ({ 
       setSessions(prev => prev.filter(s => s.id !== sessionIdToRevoke));
       if (sessionIdToRevoke === currentSessionId) {
         sessionStorage.removeItem('seera_session_id');
-        setTimeout(() => logout(), 1200);
+        setTimeout(() => requestLogout(), 800);
       }
       setFeedbackMsg({
         type: 'success',
@@ -184,11 +184,11 @@ export const SessionManagementPanel: React.FC<SessionManagementPanelProps> = ({ 
           : 'Browser session successfully revoked.',
       });
 
-      // If revoking current browser, log out
+      // If revoking current browser, trigger guarded logout modal
       if (sessionIdToRevoke === currentSessionId) {
         setTimeout(() => {
-          logout();
-        }, 1200);
+          requestLogout();
+        }, 800);
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, userDocPath);
@@ -217,9 +217,9 @@ export const SessionManagementPanel: React.FC<SessionManagementPanelProps> = ({ 
           ? 'የሁሉም አሳሾች ፈቃድ ተሰርዟል! ሁሉም ክፍለ-ጊዜዎች ተቋርጠዋል፣ እባክዎ እንደገና ይግቡ።'
           : 'All authorized browser sessions revoked! Global re-authentication enforced.',
       });
-      setTimeout(async () => {
-        await logout();
-      }, 1500);
+      setTimeout(() => {
+        requestLogout();
+      }, 800);
       setLoading(false);
       return;
     }
@@ -259,10 +259,10 @@ export const SessionManagementPanel: React.FC<SessionManagementPanelProps> = ({ 
           : 'All authorized browser sessions revoked! Global re-authentication enforced.',
       });
 
-      // Force instant logout to complete global re-authentication requirement
-      setTimeout(async () => {
-        await logout();
-      }, 1500);
+      // Force guarded logout flow to complete global re-authentication requirement
+      setTimeout(() => {
+        requestLogout();
+      }, 800);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, userDocPath);
     } finally {

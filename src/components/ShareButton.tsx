@@ -19,10 +19,14 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
   const t = translations[currentLang];
   const [copied, setCopied] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
-  const [shareType, setShareType] = useState<'current' | 'app'>('current');
+  const [shareType, setShareType] = useState<'short' | 'current' | 'app'>('short');
   const [creatorName, setCreatorName] = useState<string>(getSavedCreatorName());
 
   const getShareUrl = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app';
+    if (shareType === 'short') {
+      return `${origin}/mmurtii`;
+    }
     return createPersonalizedUrl(
       creatorName.trim() || undefined,
       shareType === 'app' ? 'home' : currentState.tab,
@@ -65,8 +69,11 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
           url,
         });
         return;
-      } catch (e) {
-        // User cancelled or share failed, fallback to copy
+      } catch (e: any) {
+        // User cancelled, do nothing. If other error, fallback to copy.
+        if (e.name === 'AbortError') {
+          return;
+        }
       }
     }
     handleCopyLink();
@@ -177,31 +184,44 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
             </p>
           </div>
 
-          {/* Share Type Selector */}
-          <div className="grid grid-cols-2 gap-2 mt-3">
+          {/* Share Type Selector with mmurtii Short Link */}
+          <div className="grid grid-cols-3 gap-1.5 mt-3">
+            <button
+              type="button"
+              onClick={() => setShareType('short')}
+              className={`py-2 px-2 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                shareType === 'short'
+                  ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold shadow-sm'
+                  : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+              title="Liinkii Gabaabaa: /mmurtii"
+            >
+              <span>🔗</span>
+              <span>mmurtii</span>
+            </button>
             <button
               type="button"
               onClick={() => setShareType('app')}
-              className={`py-2 px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              className={`py-2 px-2 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1 ${
                 shareType === 'app'
                   ? 'bg-amber-500/15 border-amber-500 text-amber-300 font-bold'
                   : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Globe className="w-3.5 h-3.5" />
-              <span>Appilikeeshinii Guutuu</span>
+              <Globe className="w-3 h-3" />
+              <span>Guutuu</span>
             </button>
             <button
               type="button"
               onClick={() => setShareType('current')}
-              className={`py-2 px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              className={`py-2 px-2 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-1 ${
                 shareType === 'current'
                   ? 'bg-amber-500/15 border-amber-500 text-amber-300 font-bold'
                   : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Fuula Ammaa ({getTabLabel(currentState.tab)})</span>
+              <Sparkles className="w-3 h-3" />
+              <span>Fuula Ammaa</span>
             </button>
           </div>
 
@@ -233,14 +253,14 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
                 Suuraa & Liinkii Qoodamu (Link Preview):
               </span>
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">
-                Aye Harmee Ayee Be
+                SEERAAI Court Portal
               </span>
             </div>
 
             <div className="rounded-xl overflow-hidden border border-slate-800 bg-slate-900 shadow-md">
               <img
                 src="/og-image.jpg"
-                alt="Aye Harmee Ayee Be - Lady Justice Legal Emblem"
+                alt="SEERAAI - Lady Justice Legal Emblem"
                 className="w-full h-32 object-cover"
               />
               <div className="p-2.5 space-y-0.5">
@@ -248,10 +268,10 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
                   ais-pre-4awllzboxdldjxf2nmehfj-551578258786.europe-west3.run.app
                 </span>
                 <h5 className="text-xs font-bold text-slate-200 line-clamp-1">
-                  SeeraAI • {creatorName || 'Ayele Be Dha'} | Sirna Seeraa Itoophiyaa
+                  SeeraAI • {creatorName || 'Judicial Officer'} | Sirna Seeraa Itoophiyaa
                 </h5>
                 <p className="text-[10px] text-slate-400 line-clamp-1">
-                  Aye Harmee Ayee Be • Trilingual Ethiopian Legal AI Platform
+                  SEERAAI • Sirna Hoogganaa Galmee fi Qorannoo Seeraa Mana Murtii (Trilingual Legal AI Platform)
                 </p>
               </div>
             </div>
@@ -274,7 +294,7 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
                 onClick={() => {
                   const url = getShareUrl();
                   const tgUrl = `${url}${url.includes('?') ? '&' : '?'}utm_source=telegram`;
-                  const text = encodeURIComponent(`⚖️ SeeraAI - Sirna Seeraa Afaan-Sadee (Aye Harmee Ayee Be)\n${tgUrl}`);
+                  const text = encodeURIComponent(`⚖️ SeeraAI - Sirna Hoogganaa Galmee Mana Murtii (AI Legal Intelligence)\n${tgUrl}`);
                   window.open(`https://t.me/share/url?url=${encodeURIComponent(tgUrl)}&text=${text}`, '_blank');
                 }}
                 className="py-1.5 px-2 rounded-xl bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-500/40 text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer hover:scale-[1.02]"

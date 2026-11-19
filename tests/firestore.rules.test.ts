@@ -110,6 +110,7 @@ async function runFirestoreRulesSuite(): Promise<void> {
   const ctxExpertUnverified = () => testEnv.authenticatedContext('exp_unver_1', { email: 'exp.unver@court.gov.et', email_verified: false, courtRole: 'legal_expert', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).firestore();
   const ctxExpertNoInst = () => testEnv.authenticatedContext('exp_noinst_1', { email: 'exp.noinst@court.gov.et', email_verified: true, courtRole: 'legal_expert', firebase: { sign_in_provider: 'password' } }).firestore();
   const ctxMissingFirebaseMap = () => testEnv.authenticatedContext('missing_fb_1', { email: 'nofb@example.org', email_verified: true, firebase: undefined as any }).firestore();
+  const ctxMissingSignInProvider = () => testEnv.authenticatedContext('missing_prov_1', { email: 'noprov@example.org', email_verified: true, firebase: {} as any }).firestore();
 
   const results: TestResult[] = [];
   const check = async (id: number, name: string, fn: () => Promise<void>) => {
@@ -335,6 +336,8 @@ async function runFirestoreRulesSuite(): Promise<void> {
       await assertFails(ctxUnauth().doc('legislation_repository/proc_unauth').set({ title: 'Blocked' }));
       await assertFails(ctxMissingFirebaseMap().doc('legislation_repository/proc_nofb').set({ title: 'Blocked' }));
       await assertFails(ctxMissingFirebaseMap().doc('user_documents/ud_nofb').set({ userId: 'missing_fb_1', ownerId: 'missing_fb_1', title: 'Blocked' }));
+      await assertFails(ctxMissingSignInProvider().doc('legislation_repository/proc_noprov').set({ title: 'Blocked' }));
+      await assertFails(ctxMissingSignInProvider().doc('user_documents/ud_noprov').set({ userId: 'missing_prov_1', ownerId: 'missing_prov_1', title: 'Blocked' }));
     });
 
     await check(19, 'Option C: legal_expert strict containment against privilege escalation, admin collections, and cross-institution/court writes', async () => {

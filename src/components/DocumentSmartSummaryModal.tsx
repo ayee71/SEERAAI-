@@ -44,7 +44,7 @@ Ensure strict adherence to Zero Asterisks (*) and Zero Hashes (#) rules for imma
         analysisType: 'summarize',
         outputLanguages: ['om', 'am', 'en'],
         customInstructions,
-        modelTier: 'gemini-3.8-flash',
+        modelTier: 'gemini-4-hydrogen',
       });
 
       if (response && response.analysis) {

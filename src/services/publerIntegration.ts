@@ -8,7 +8,6 @@ export interface PublerPublishOptions {
   content: string;
   title?: string;
   accounts?: string[]; // Social account IDs (Facebook, Telegram, LinkedIn, X, etc.)
-  mediaUrls?: string[];
   scheduledTime?: string; // ISO string for scheduled posting or leave empty for immediate
   postType?: 'text' | 'article' | 'announcement';
 }
@@ -47,11 +46,11 @@ export async function publishToPubler(options: PublerPublishOptions): Promise<Pu
     text: options.title ? `📜 ${options.title}\n\n${options.content}` : options.content,
     workspace_id: workspaceId || undefined,
     accounts: options.accounts && options.accounts.length > 0 ? options.accounts : ['default'],
-    media_urls: options.mediaUrls || [],
+    media_urls: [],
     scheduled_at: options.scheduledTime || null,
     metadata: {
       platform: 'SeeraAI - Trilingual Ethiopian Legal Platform',
-      source: 'www.saorethio1.com',
+      source: 'www.saiethio.com',
       timestamp: new Date().toISOString()
     }
   };

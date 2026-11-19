@@ -9,8 +9,10 @@ import {
   Check, 
   Key, 
   RefreshCw,
-  LogOut
+  LogOut,
+  Settings
 } from 'lucide-react';
+import { AdminPanelManagement } from './AdminPanelManagement';
 import { Language } from '../i18n/translations';
 import { 
   ActiveCourtSession, 
@@ -38,7 +40,7 @@ export const CourtAdminPanel: React.FC<CourtAdminPanelProps> = ({
   onNavigateToBench,
   onRefreshRoster
 }) => {
-  const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<'workflows' | 'roster' | 'office_letter'>('workflows');
+  const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<'workflows' | 'roster' | 'office_letter' | 'admin_management'>('workflows');
   
   // Office Letter editing state
   const [adminLetterRefNo, setAdminLetterRefNo] = useState('');
@@ -190,6 +192,18 @@ export const CourtAdminPanel: React.FC<CourtAdminPanelProps> = ({
             <FileText className="w-3.5 h-3.5" />
             <span>Xalayaa Mana Hojii</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setAdminWorkspaceTab('admin_management')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              adminWorkspaceTab === 'admin_management'
+                ? 'bg-amber-500 text-slate-950 shadow-md'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>Admin Management</span>
+          </button>
         </div>
       </div>
 
@@ -311,7 +325,7 @@ export const CourtAdminPanel: React.FC<CourtAdminPanelProps> = ({
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex flex-col items-end">
-                        <span className="text-[10px] text-slate-500 font-mono">Code: {u.passcode}</span>
+                        <span className="text-[10px] text-slate-500 font-mono">Code: ••••••••</span>
                         <button
                           onClick={() => handleCopyPasscode(u.id, u.passcode)}
                           className="text-[10px] text-amber-400 hover:underline flex items-center gap-1"
@@ -411,6 +425,9 @@ export const CourtAdminPanel: React.FC<CourtAdminPanelProps> = ({
             </button>
           </form>
         </div>
+      )}
+      {adminWorkspaceTab === 'admin_management' && (
+        <AdminPanelManagement currentLang={currentLang} />
       )}
     </div>
   );

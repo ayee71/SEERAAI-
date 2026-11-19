@@ -17,7 +17,9 @@ import {
 import { Language, translations } from '../i18n/translations';
 import { 
   CourtInstitution, 
-  updateCourtBrandingAndSuperAdmin 
+  updateCourtBrandingAndSuperAdmin,
+  uploadCourtLogo,
+  optimizeCourtLogo
 } from '../services/courtInstitutionService';
 
 interface CourtTenantBrandingModalProps {
@@ -50,15 +52,25 @@ export const CourtTenantBrandingModal: React.FC<CourtTenantBrandingModalProps> =
 
   if (!isOpen) return null;
 
-  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setLogoUrl(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const optimized = await optimizeCourtLogo(file);
+      if (optimized) {
+        setLogoUrl(optimized);
+      }
+      uploadCourtLogo(institution.id, file).then(url => {
+        if (url) setLogoUrl(url);
+      }).catch(console.warn);
+    } catch {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLogoUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSaveBranding = (e: React.FormEvent) => {
@@ -234,7 +246,7 @@ export const CourtTenantBrandingModal: React.FC<CourtTenantBrandingModalProps> =
                 <div>
                   <label className="block text-slate-400 text-[11px] mb-1">Koodii Seensaa (Access Passcode) *</label>
                   <input
-                    type="text"
+                    type="password"
                     value={accessCode}
                     onChange={e => setAccessCode(e.target.value)}
                     className="w-full bg-slate-900 border border-amber-500/50 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-400"
@@ -272,7 +284,7 @@ export const CourtTenantBrandingModal: React.FC<CourtTenantBrandingModalProps> =
                     type="email"
                     value={courtEmailAddress}
                     onChange={e => setCourtEmailAddress(e.target.value)}
-                    placeholder="fkn. legal.dispatch@oromia.gov.et"
+                    placeholder="fkn. manamurtii@seeraai.com"
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>

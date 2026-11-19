@@ -30,7 +30,7 @@ export const ControlDashboardView: React.FC<ControlDashboardViewProps> = ({ curr
     lastUpdated?: any;
   } | null>(null);
 
-  const [googleMeetLink, setGoogleMeetLink] = useState('https://meet.google.com/abc-defg-hij');
+  const [googleMeetLink, setGoogleMeetLink] = useState('https://meet.jit.si/SeeraAI_Oromia_Courtroom_Session');
   const [courtLogoUrl, setCourtLogoUrl] = useState('https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=300&q=80');
   const [theme, setTheme] = useState<'dark' | 'midnight' | 'gold' | 'light'>('dark');
   const [volume, setVolume] = useState<number>(50);
@@ -38,14 +38,14 @@ export const ControlDashboardView: React.FC<ControlDashboardViewProps> = ({ curr
   const [autoJoin, setAutoJoin] = useState<boolean>(false);
   const [showRawJson, setShowRawJson] = useState<boolean>(false);
 
-  const [vkLink, setVkLink] = useState('');
+  const [vkLink, setVkLink] = useState('https://meet.jit.si/SeeraAI_Oromia_Courtroom_Session');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [emailStatus, setEmailStatus] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [invitationStatus, setInvitationStatus] = useState<string | null>(null);
   const [configJson, setConfigJson] = useState(
-    JSON.stringify({ theme: 'dark', volume: 50, targetSession: 'Mana Murtii Waliigalaa Oromiyaa', googleMeetLink: 'https://meet.google.com/abc-defg-hij', courtLogoUrl: '' }, null, 2)
+    JSON.stringify({ theme: 'dark', volume: 50, targetSession: 'Mana Murtii Waliigalaa Oromiyaa', googleMeetLink: 'https://meet.jit.si/SeeraAI_Oromia_Courtroom_Session', courtLogoUrl: '' }, null, 2)
   );
   const [configStatus, setConfigStatus] = useState<string | null>(null);
   const [institutionName, setInstitutionName] = useState('Mana Murtii Waliigalaa Oromiyaa');
@@ -138,6 +138,7 @@ export const ControlDashboardView: React.FC<ControlDashboardViewProps> = ({ curr
 
   // Real-Time Streaming Listener for Kiosk Session & Activity Logs
   useEffect(() => {
+    if (!user) return; // FIX: Only listen if user is signed in
     const docRef = doc(db, 'courtroom_sessions', 'main-courtroom');
     const unsubscribe = onSnapshot(docRef, async (docSnap) => {
       if (docSnap.exists()) {
@@ -168,8 +169,8 @@ export const ControlDashboardView: React.FC<ControlDashboardViewProps> = ({ curr
         }
       } else {
         await setDoc(docRef, {
-          vkLink: 'https://meet.google.com/abc-defg-hij',
-          googleMeetLink: 'https://meet.google.com/abc-defg-hij',
+          vkLink: 'https://meet.jit.si/SeeraAI_Oromia_Courtroom_Session',
+          googleMeetLink: 'https://meet.jit.si/SeeraAI_Oromia_Courtroom_Session',
           institutionName: 'Mana Murtii Waliigalaa Oromiyaa',
           courtLogoUrl: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=300&q=80',
           autoJoin: false,
@@ -178,7 +179,7 @@ export const ControlDashboardView: React.FC<ControlDashboardViewProps> = ({ curr
             theme: 'dark',
             volume: 50,
             targetSession: 'Mana Murtii Waliigalaa Oromiyaa',
-            googleMeetLink: 'https://meet.google.com/abc-defg-hij',
+            googleMeetLink: 'https://meet.jit.si/SeeraAI_Oromia_Courtroom_Session',
             courtLogoUrl: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=300&q=80'
           },
           lastUpdated: serverTimestamp(),
@@ -192,7 +193,7 @@ export const ControlDashboardView: React.FC<ControlDashboardViewProps> = ({ curr
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   const updateSession = async (updates: any) => {
     try {
@@ -571,7 +572,7 @@ export const ControlDashboardView: React.FC<ControlDashboardViewProps> = ({ curr
           <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
             <h3 className="text-sm font-bold text-slate-200 font-serif-legal flex items-center gap-2">
               <span>📹</span>
-              <span>Live Meeting / Video Stream Link (VK / Conference Link)</span>
+              <span>Live Meeting / Direct WebRTC Video Stream Link</span>
             </h3>
 
             <div>
@@ -580,7 +581,7 @@ export const ControlDashboardView: React.FC<ControlDashboardViewProps> = ({ curr
                 type="text"
                 value={vkLink}
                 onChange={(e) => setVkLink(e.target.value)}
-                placeholder="https://vk.com/call/join/... or WebRTC meeting URL"
+                placeholder="https://meet.jit.si/SeeraAI_Oromia_Courtroom_Session or WebRTC meeting URL"
                 className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-100 font-mono text-xs focus:border-amber-500 focus:outline-none"
               />
             </div>
@@ -865,7 +866,7 @@ export const ControlDashboardView: React.FC<ControlDashboardViewProps> = ({ curr
                     </span>
                     <button
                       type="button"
-                      onClick={() => setGoogleMeetLink('https://meet.google.com/abc-defg-hij')}
+                      onClick={() => setGoogleMeetLink('https://meet.jit.si/SeeraAI_Oromia_Courtroom_Session')}
                       className="text-[10px] text-sky-400 hover:underline font-normal cursor-pointer"
                     >
                       Preset Example
@@ -875,7 +876,7 @@ export const ControlDashboardView: React.FC<ControlDashboardViewProps> = ({ curr
                     type="url"
                     value={googleMeetLink}
                     onChange={(e) => setGoogleMeetLink(e.target.value)}
-                    placeholder="https://meet.google.com/abc-defg-hij"
+                    placeholder="https://meet.jit.si/SeeraAI_Oromia_Courtroom_Session"
                     className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-100 font-mono text-xs focus:border-amber-500 focus:outline-none"
                   />
                 </div>

@@ -8,6 +8,7 @@ import { LegalAnalyticsChart } from '../components/LegalAnalyticsChart';
 import { getDeviceInfo } from '../utils/device';
 import { db } from '../services/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { getUserContent, SavedLegalContent } from '../services/userContentService';
 
 interface ProfileViewProps {
   currentLang: Language;
@@ -18,7 +19,7 @@ export type LegalRole = 'advocate' | 'judge' | 'prosecutor' | 'advisor' | 'stude
 
 export const ProfileView: React.FC<ProfileViewProps> = ({ currentLang, onNavigateTab }) => {
   const t = translations[currentLang];
-  const { user, profile, updateProfile, logout } = useAuth();
+  const { user, profile, updateProfile, requestLogout } = useAuth();
 
   const currentSessionId = sessionStorage.getItem('seera_session_id') || '';
   const otherSessionsCount = profile?.activeSessions
@@ -59,6 +60,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentLang, onNavigat
   const [credits, setCredits] = useState<number>(5);
   const [savedDraft, setSavedDraft] = useState<string>('');
   const [savedContext, setSavedContext] = useState<string>('');
+  const [userSavedContent, setUserSavedContent] = useState<SavedLegalContent[]>([]);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [displayName, setDisplayName] = useState(profile?.visitorName || 'Ayele Be Dha');
   const [institution, setInstitution] = useState(profile?.licenseOrInstitution || 'Federal Supreme Court Cassation Bar');
@@ -213,6 +215,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentLang, onNavigat
     getSavedDocumentsAsync().then(setSavedDocs);
     if (user?.uid) {
       getUserCredits(user.uid).then(setCredits);
+      getUserContent(user.uid).then(setUserSavedContent);
     }
     try {
       const draft = localStorage.getItem('seera_ai_draft_prompt') || '';
@@ -476,7 +479,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentLang, onNavigat
 
             <button
               type="button"
-              onClick={() => logout()}
+              onClick={() => requestLogout()}
               className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 text-xs font-bold transition-all cursor-pointer shadow-sm"
               title="Kaawuntii keessaa ba'i (Log Out)"
             >
@@ -1053,7 +1056,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentLang, onNavigat
 
             <button
               type="button"
-              onClick={() => logout()}
+              onClick={() => requestLogout()}
               className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white font-bold text-xs shadow-lg transition-all cursor-pointer hover:shadow-rose-950/50"
               title="Kaawuntii keessaa ba'i (Sign Out from Firebase)"
             >
@@ -1304,6 +1307,29 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentLang, onNavigat
                         {new Date(doc.createdAt).toLocaleDateString()} • {doc.taskType}
                       </span>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h3 className="text-sm font-bold text-slate-100 font-serif-legal flex items-center gap-2">
+                <FileText className="w-4 h-4 text-emerald-400" />
+                <span>Saved User Legal Content ({userSavedContent.length})</span>
+              </h3>
+            </div>
+            {userSavedContent.length === 0 ? (
+              <div className="text-center py-6">
+                <p className="text-xs text-slate-500">No saved legal content yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
+                {userSavedContent.map((item) => (
+                  <div key={item.id} className="p-4 rounded-xl bg-slate-950 border border-slate-800 transition-all">
+                    <h4 className="text-xs font-bold text-slate-200">{item.title}</h4>
+                    <span className="text-[10px] text-slate-400 block mt-1">{item.type}</span>
                   </div>
                 ))}
               </div>

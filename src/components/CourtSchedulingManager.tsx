@@ -43,6 +43,7 @@ export const CourtSchedulingManager: React.FC<CourtSchedulingManagerProps> = ({ 
   const { user } = useAuth();
   const [hearings, setHearings] = useState<CourtHearingEvent[]>(getStoredHearingEvents());
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showTomorrowFirst, setShowTomorrowFirst] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('All');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -253,6 +254,19 @@ export const CourtSchedulingManager: React.FC<CourtSchedulingManagerProps> = ({ 
             <span>{currentLang === 'om' ? 'Beellama Haaraa Qabadhu' : 'Schedule New Hearing'}</span>
           </button>
         </div>
+      </div>
+      
+      {/* Settings / Controls */}
+      <div className="flex items-center gap-3 p-4 bg-slate-900 border border-slate-800 rounded-2xl">
+        <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer">
+          <input 
+            type="checkbox" 
+            checked={showTomorrowFirst} 
+            onChange={(e) => setShowTomorrowFirst(e.target.checked)} 
+            className="accent-amber-500" 
+          />
+          {currentLang === 'om' ? 'Beellama Boruu Dursa Agarsiisi' : 'Show Tomorrow\'s Deadlines First'}
+        </label>
       </div>
 
       {/* Calendar Controls & View Toggle Bar (Month / Week / Day / List) */}

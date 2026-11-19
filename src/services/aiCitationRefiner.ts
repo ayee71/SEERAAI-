@@ -249,7 +249,7 @@ export async function refineCitationWithAI(params: {
 }): Promise<RefinedCitationResult[]> {
   const { fullText, targetCitation = '', surroundingContext = '', language = 'om' } = params;
   const settings = getUserSettings();
-  const modelTier = settings.aiModelTier || 'gemini-flash-lite-latest';
+  const modelTier = settings.aiModelTier || 'gemini-4-hydrogen';
 
   try {
     const res = await fetch('/api/refine-citation', {

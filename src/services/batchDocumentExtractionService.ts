@@ -90,7 +90,7 @@ Strict Requirement: Return ONLY a valid JSON object without markdown fences, wit
       prompt,
       taskType: 'explain_law',
       outputLanguages: [currentLang],
-      modelTier: 'gemini-flash-lite-latest',
+      modelTier: 'gemini-4-hydrogen',
     });
 
     const jsonText = res.content

@@ -1106,6 +1106,55 @@ export function showCitationTooltip(
   tooltip.style.left = `${leftOffset}px`;
 }
 
+/**
+ * Highlights all citations sharing the same identifier key
+ */
+export function highlightLinkedCitations(key: string, isPersistent = false) {
+  if (!key) return;
+  const badges = document.querySelectorAll<HTMLElement>(`.legal-citation-badge[data-citation-key="${key}"]`);
+  badges.forEach(b => {
+    b.classList.add('highlight-linked');
+    if (isPersistent) {
+      b.setAttribute('data-highlight-persistent', 'true');
+    }
+  });
+}
+
+/**
+ * Removes the linked highlight from all citations.
+ * By default only clears non-persistent (hover) highlights.
+ */
+export function clearLinkedHighlights(forcePersistent = false) {
+  const selector = forcePersistent 
+    ? '.legal-citation-badge.highlight-linked' 
+    : '.legal-citation-badge.highlight-linked:not([data-highlight-persistent="true"])';
+  const badges = document.querySelectorAll<HTMLElement>(selector);
+  badges.forEach(b => {
+    b.classList.remove('highlight-linked');
+    if (forcePersistent) {
+      b.removeAttribute('data-highlight-persistent');
+    }
+  });
+}
+
+/**
+ * Toggles a persistent highlight state for a specific citation key
+ */
+export function togglePersistentHighlight(key: string) {
+  if (!key) return;
+  
+  // Check if this key is already the one persistently highlighted
+  const isCurrentlyPersistent = document.querySelector(`.legal-citation-badge[data-citation-key="${key}"][data-highlight-persistent="true"]`);
+  
+  // Clear all existing persistent highlights
+  clearLinkedHighlights(true);
+  
+  // If it wasn't persistent before, make it persistent now
+  if (!isCurrentlyPersistent) {
+    highlightLinkedCitations(key, true);
+  }
+}
+
 export function hideGlobalTooltip() {
   if (activeDismissTimeout) clearTimeout(activeDismissTimeout);
   activeDismissTimeout = setTimeout(() => {
@@ -1204,28 +1253,47 @@ export function scanAndEnhanceLegalElement(
       badge.setAttribute('aria-label', `Legal citation: ${matchText}`);
 
       const info = lookupOfficialLegalSource(matchText);
+      const citationKey = (info.proclamationNumber || info.articleNumber || matchText).trim().replace(/\s+/g, '_').toLowerCase();
+      
       badge.setAttribute('data-official-title', info.officialTitle[currentLang] || info.officialTitle.om);
       badge.setAttribute('data-official-source', info.officialSource[currentLang] || info.officialSource.om);
+      badge.setAttribute('data-citation-key', citationKey);
 
       // Event listeners for hover and focus pop-up tooltips
       badge.addEventListener('mouseenter', () => {
         showCitationTooltip(badge, info, currentLang);
+        highlightLinkedCitations(citationKey);
       });
       badge.addEventListener('mouseleave', () => {
         hideGlobalTooltip();
+        clearLinkedHighlights();
       });
       badge.addEventListener('focus', () => {
         showCitationTooltip(badge, info, currentLang);
+        highlightLinkedCitations(citationKey);
       });
       badge.addEventListener('blur', () => {
         hideGlobalTooltip();
+        clearLinkedHighlights();
       });
 
-      // Click event handler for the legal citation badge that triggers navigation to legislation tab
+      // Click event handler for the legal citation badge that toggles persistent highlights
       badge.addEventListener('click', (e) => {
         e.stopPropagation();
-        navigateToLegislationRepository(info.searchQuery || info.proclamationNumber || info.citation);
-        hideGlobalTooltip();
+        togglePersistentHighlight(citationKey);
+        
+        // Dispatch global event for the Side Panel to show linked instances across the database
+        window.dispatchEvent(new CustomEvent('seera:open_citation_panel', {
+          detail: { 
+            citationKey, 
+            info
+          }
+        }));
+
+        // Navigation is still available via the tooltip 'Open' button or Title click,
+        // which prevents accidental context jumps while just trying to see recurring refs.
+        // We show the tooltip on click too if it's not already visible.
+        showCitationTooltip(badge, info, currentLang);
       });
 
       fragment.appendChild(badge);

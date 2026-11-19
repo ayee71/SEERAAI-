@@ -73,7 +73,7 @@ export async function exportVerificationHistoryToPdf(history: HashVerificationRe
   
   doc.setFontSize(8);
   doc.text('This document is a system-generated audit report confirming the cryptographic integrity checks performed by the SEERAAI platform.', 14, finalY + 30);
-  doc.text('Authoritative Hash Registry: saorethio1.com / GitHub @ayeledha', 14, finalY + 35);
+  doc.text('Authoritative Hash Registry: saiethio.com / GitHub @ayeledha', 14, finalY + 35);
 
   return doc.output('blob');
 }

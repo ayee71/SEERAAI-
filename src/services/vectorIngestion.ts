@@ -46,7 +46,7 @@ export async function ingestLegalDocument(fileBuffer: Buffer, fileName: string, 
 
     const ai = await getServerAi();
     const embeddingResult = await ai.models.embedContent({
-      model: "gemini-embedding-2-preview",
+      model: "gemini-embedding-2",
       contents: trimmedChunk,
     });
     

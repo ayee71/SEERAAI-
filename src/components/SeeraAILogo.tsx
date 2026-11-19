@@ -1,5 +1,6 @@
 import { Language } from '../i18n/translations';
-import ethiopianJusticeLogo from '../assets/images/seeraai_authoritative_logo_1792935506374.jpg';
+import seeraaiLegalLogo from '../assets/images/seeraai_legal_logo_1793870098158.jpg';
+import gurbichaCourtLogo from '../assets/images/gurbicha_court_logo.png';
 
 interface SeeraAILogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
@@ -7,6 +8,7 @@ interface SeeraAILogoProps {
   className?: string;
   currentLang?: Language;
   onClick?: () => void;
+  courtId?: string; // e.g. 'gurbicha'
 }
 
 export const SeeraAILogo: React.FC<SeeraAILogoProps> = ({
@@ -15,6 +17,7 @@ export const SeeraAILogo: React.FC<SeeraAILogoProps> = ({
   className = '',
   currentLang = 'om',
   onClick,
+  courtId,
 }) => {
   const dimensions = {
     sm: { box: 'w-8 h-8', text: 'text-base', sub: 'text-[9px]', icon: 'w-4 h-4' },
@@ -22,6 +25,8 @@ export const SeeraAILogo: React.FC<SeeraAILogoProps> = ({
     lg: { box: 'w-14 h-14', text: 'text-2xl sm:text-3xl', sub: 'text-xs', icon: 'w-7 h-7' },
     xl: { box: 'w-20 h-20', text: 'text-4xl', sub: 'text-sm', icon: 'w-10 h-10' },
   }[size];
+
+  const isGurbicha = courtId === 'gurbicha' || (typeof window !== 'undefined' && window.location.href.includes('gurbicha'));
 
   return (
     <div 
@@ -34,7 +39,7 @@ export const SeeraAILogo: React.FC<SeeraAILogoProps> = ({
         <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
         
         <img
-          src={ethiopianJusticeLogo}
+          src={isGurbicha ? gurbichaCourtLogo : seeraaiLegalLogo}
           alt="SeeraAI Authoritative Brand Logo"
           className="w-full h-full object-contain p-0.5 rounded-lg transition-all duration-500 group-hover:scale-110"
         />
