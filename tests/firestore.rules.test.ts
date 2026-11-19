@@ -109,7 +109,7 @@ async function runFirestoreRulesSuite(): Promise<void> {
   const ctxCourtAdminAWithLcm = () => testEnv.authenticatedContext('cadmin_lcm_a1', { email: 'cadmin.lcm@court.gov.et', email_verified: true, courtRole: 'court_admin', institutionId: INST_A, legalContentManager: true, firebase: { sign_in_provider: 'password' } }).firestore();
   const ctxExpertUnverified = () => testEnv.authenticatedContext('exp_unver_1', { email: 'exp.unver@court.gov.et', email_verified: false, courtRole: 'legal_expert', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).firestore();
   const ctxExpertNoInst = () => testEnv.authenticatedContext('exp_noinst_1', { email: 'exp.noinst@court.gov.et', email_verified: true, courtRole: 'legal_expert', firebase: { sign_in_provider: 'password' } }).firestore();
-  const ctxMissingFirebaseMap = () => testEnv.authenticatedContext('missing_fb_1', { email: 'nofb@example.org', email_verified: true }).firestore();
+  const ctxMissingFirebaseMap = () => testEnv.authenticatedContext('missing_fb_1', { email: 'nofb@example.org', email_verified: true, firebase: undefined as any }).firestore();
 
   const results: TestResult[] = [];
   const check = async (id: number, name: string, fn: () => Promise<void>) => {

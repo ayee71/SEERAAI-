@@ -81,7 +81,7 @@ async function runStorageRulesSuite(): Promise<void> {
   const courtAdminAStorage = () => testEnv.authenticatedContext('cadmin_a1', { email: 'admin.a1@court.gov.et', email_verified: true, courtRole: 'court_admin', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).storage();
   const auditorAStorage = () => testEnv.authenticatedContext('aud_a1', { email: 'aud.a1@court.gov.et', email_verified: true, courtRole: 'auditor', institutionId: INST_A, firebase: { sign_in_provider: 'password' } }).storage();
   const legalContentMgrStorage = () => testEnv.authenticatedContext('lcm_1', { email: 'lcm@seeraai.et', email_verified: true, legalContentManager: true, firebase: { sign_in_provider: 'password' } }).storage();
-  const missingFirebaseMapStorage = () => testEnv.authenticatedContext('missing_fb_1', { email: 'nofb@example.org', email_verified: true }).storage();
+  const missingFirebaseMapStorage = () => testEnv.authenticatedContext('missing_fb_1', { email: 'nofb@example.org', email_verified: true, firebase: undefined as any }).storage();
 
   const results: StorageTestResult[] = [];
   const check = async (id: number, name: string, fn: () => Promise<void>) => {
